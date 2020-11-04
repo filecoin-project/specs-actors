@@ -143,7 +143,7 @@ func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (Message, error) {
 
 	return Message{
 		From:   ma.Worker,
-		To:     ma.RobustAddress,
+		To:     ma.IDAddress,
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 		Params: &params,
@@ -208,7 +208,7 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 
 	return Message{
 		From:   ma.Worker,
-		To:     ma.RobustAddress,
+		To:     ma.IDAddress,
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.ProveCommitSector,
 		Params: &params,
@@ -227,7 +227,7 @@ func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber 
 
 	return Message{
 		From:   ma.Worker,
-		To:     ma.RobustAddress,
+		To:     ma.IDAddress,
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: &params,
