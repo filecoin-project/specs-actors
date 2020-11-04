@@ -196,6 +196,9 @@ func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	return pt, nil
 }
 
+// This is the Filecoin algorithm for winning a ticket within a block with the tickets replaced
+// with random numbers. It lets miners win according to a Poisson distribution with rate
+// proportional to the miner's fraction of network power.
 func (s *Sim) WinCount(minerPower abi.StoragePower, totalPower abi.StoragePower) uint64 {
 	E := big2.NewRat(5, 1)
 	lambdaR := new(big2.Rat)
