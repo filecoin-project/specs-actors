@@ -49,7 +49,7 @@ func TestCreate100Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	//t.Skip("this is slow")
+	t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 	minerCount := 10

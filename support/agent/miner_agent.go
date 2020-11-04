@@ -3,42 +3,45 @@ package agent
 import (
 	"container/heap"
 	"crypto/sha256"
-	"github.com/filecoin-project/go-bitfield"
-	mh "github.com/multiformats/go-multihash"
 	"math"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
-	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
 type MinerAgentConfig struct {
-	PrecommitRate   float64 // average number of precommits per epoch
-	ProofType       abi.RegisteredSealProof
-	StartingBalance abi.TokenAmount
+	PrecommitRate   float64                 // average number of precommits per epoch
+	ProofType       abi.RegisteredSealProof // seal proof type for this miner
+	StartingBalance abi.TokenAmount         // initial actor balance for miner actor
 }
 
 type MinerAgent struct {
-	Config        MinerAgentConfig
+	Config        MinerAgentConfig // parameters used to define miner prior to creation
 	Owner         address.Address
 	Worker        address.Address
 	IDAddress     address.Address
 	RobustAddress address.Address
-	PreCommits    uint64
 
+	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
-	deadlines         [miner.WPoStPeriodDeadlines][]bitfield.BitField
-	nextPrecommit     float64
-	nextSectorNumber  abi.SectorNumber
-	rnd               *rand.Rand
+	// which sector belongs to which deadline/partition
+	deadlines [miner.WPoStPeriodDeadlines][]bitfield.BitField
+	// offset used to maintain precommit rate (as a fraction of an epoch).
+	nextPrecommit float64
+	// tracks which sector number to use next
+	nextSectorNumber abi.SectorNumber
+	// random numnber generator provided by sim
+	rnd *rand.Rand
 }
 
 func NewMinerAgent(owner address.Address, worker address.Address, idAddress address.Address, robustAddress address.Address,
@@ -57,7 +60,7 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 	}
 }
 
-func (ma *MinerAgent) Tick(v *vm.VM) ([]Message, error) {
+func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 	var messages []Message
 
 	// start precommits, for now assume we have enough pledge funds
@@ -92,7 +95,7 @@ func (ma *MinerAgent) Tick(v *vm.VM) ([]Message, error) {
 }
 
 // proove sectors in deadline
-func (ma *MinerAgent) proveDeadline(v *vm.VM, dlIdx uint64) Message {
+func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) Message {
 	var partitions []miner.PoStPartition
 	for pIdx, bf := range ma.deadlines[dlIdx] {
 		if empty, err := bf.IsEmpty(); err != nil {
@@ -126,14 +129,14 @@ func (ma *MinerAgent) proveDeadline(v *vm.VM, dlIdx uint64) Message {
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
 		Params: &params,
-		ReturnHandler: func(v *vm.VM, _ Message, _ cbor.Marshaler) error {
+		ReturnHandler: func(v VMState, _ Message, _ cbor.Marshaler) error {
 			return ma.scheduleNextProof(v, dlIdx)
 		},
 	}
 }
 
 // looks up sector deadline and partition so we can start adding it to PoSts
-func (ma *MinerAgent) registerSector(v *vm.VM, sectorNumber abi.SectorNumber) error {
+func (ma *MinerAgent) registerSector(v VMState, sectorNumber abi.SectorNumber) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -161,7 +164,7 @@ func (ma *MinerAgent) registerSector(v *vm.VM, sectorNumber abi.SectorNumber) er
 }
 
 // schedule a proof within the deadline's bounds
-func (ma *MinerAgent) scheduleNextProof(v *vm.VM, dlIdx uint64) error {
+func (ma *MinerAgent) scheduleNextProof(v VMState, dlIdx uint64) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -196,9 +199,8 @@ func (ma *MinerAgent) createProveCommit(sectorNumber abi.SectorNumber) Message {
 }
 
 // register an op for next epoch (after batch prove) to schedule a post for the sector
-func (ma *MinerAgent) handleProveCommit(v *vm.VM, msg Message, _ cbor.Marshaler) error {
+func (ma *MinerAgent) handleProveCommit(v VMState, msg Message, _ cbor.Marshaler) error {
 	sn := msg.Params.(*miner.ProveCommitSectorParams).SectorNumber
-	ma.PreCommits--
 	ma.operationSchedule.ScheduleOp(v.GetEpoch(), registerSectorAction{sectorNumber: sn})
 	return nil
 }
@@ -218,8 +220,7 @@ func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber 
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: &params,
-		ReturnHandler: func(_ *vm.VM, _ Message, _ cbor.Marshaler) error {
-			ma.PreCommits++
+		ReturnHandler: func(_ VMState, _ Message, _ cbor.Marshaler) error {
 			ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
 			return nil
 		},

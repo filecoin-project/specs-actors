@@ -31,6 +31,12 @@ type Sim struct {
 	statsByMethod map[vm.MethodKey]*vm.CallStats
 }
 
+type VMState interface {
+	GetEpoch() abi.ChainEpoch
+	GetState(addr address.Address, out cbor.Unmarshaler) error
+	Store() adt.Store
+}
+
 type SimConfig struct {
 	AccountCount           int
 	AccountInitialBalance  abi.TokenAmount
@@ -38,7 +44,7 @@ type SimConfig struct {
 	CreateMinerProbability float32
 }
 
-type ReturnHandler func(v *vm.VM, msg Message, ret cbor.Marshaler) error
+type ReturnHandler func(v VMState, msg Message, ret cbor.Marshaler) error
 
 type Message struct {
 	From          address.Address
@@ -243,7 +249,7 @@ func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) Message {
 			Worker:        owner,
 			SealProofType: cfg.ProofType,
 		},
-		ReturnHandler: func(_ *vm.VM, msg Message, ret cbor.Marshaler) error {
+		ReturnHandler: func(_ VMState, msg Message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
 			if !ok {
 				return errors.Errorf("create miner return has wrong type: %v", ret)
