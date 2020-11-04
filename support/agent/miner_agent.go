@@ -62,7 +62,13 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 	var messages []Message
 
-	// start precommits, for now assume we have enough pledge funds
+	// Start precommits.
+	// Precommits are triggered with a Poisson distribution at the precommit rate.
+	// This is done by choosing delays and adding precommits until the total delay is greater
+	// than one epoch. The next epoch, we decrement the delay and start from there. This
+	// permits multiple precommits per epoch while also allowing multiple epochs to pass between
+	// precommits.
+	// For now always assume we have enough funds for the precommit deposit.
 	ma.nextPrecommit -= 1.0
 	for ma.nextPrecommit < 1.0 {
 		// go ahead and choose when we're going to activate this sector
