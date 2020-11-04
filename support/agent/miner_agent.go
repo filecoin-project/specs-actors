@@ -55,7 +55,7 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 
 		operationSchedule: &opQueue{},
 		nextPrecommit:     1.0 + precommitDelay(config.PrecommitRate, rnd), // next tick + random delay
-		rnd:               rnd,
+		rnd:               rand.New(rand.NewSource(rnd.Int63())),           // rng for this miner isolated from original source
 	}
 }
 
