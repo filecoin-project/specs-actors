@@ -59,8 +59,8 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 	}
 }
 
-func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
-	var messages []Message
+func (ma *MinerAgent) Tick(v VMState) ([]message, error) {
+	var messages []message
 
 	// Start precommits.
 	// Precommits are triggered with a Poisson distribution at the precommit rate.
@@ -107,11 +107,11 @@ func (ma *MinerAgent) Tick(v VMState) ([]Message, error) {
 }
 
 // proove sectors in deadline
-func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (Message, error) {
+func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (message, error) {
 	var partitions []miner.PoStPartition
 	for pIdx, bf := range ma.deadlines[dlIdx] {
 		if empty, err := bf.IsEmpty(); err != nil {
-			return Message{}, err
+			return message{}, err
 		} else if !empty {
 			partitions = append(partitions, miner.PoStPartition{
 				Index:   uint64(pIdx),
@@ -138,10 +138,10 @@ func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (Message, error) {
 
 	// assume prove sectors succeeds and schedule its first PoSt (if necessary)
 	if err := ma.scheduleNextProof(v, dlIdx); err != nil {
-		return Message{}, err
+		return message{}, err
 	}
 
-	return Message{
+	return message{
 		From:   ma.Worker,
 		To:     ma.IDAddress,
 		Value:  big.Zero(),
@@ -198,7 +198,7 @@ func (ma *MinerAgent) scheduleNextProof(v VMState, dlIdx uint64) error {
 }
 
 // create prove commit message
-func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber) Message {
+func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber) message {
 	params := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
@@ -206,7 +206,7 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 	// register an op for next epoch (after batch prove) to schedule a post for the sector
 	ma.operationSchedule.ScheduleOp(epoch, registerSectorAction{sectorNumber: sectorNumber})
 
-	return Message{
+	return message{
 		From:   ma.Worker,
 		To:     ma.IDAddress,
 		Value:  big.Zero(),
@@ -216,7 +216,7 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 }
 
 // create precommit message and activation trigger
-func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber abi.SectorNumber, sectorActivation abi.ChainEpoch) Message {
+func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber abi.SectorNumber, sectorActivation abi.ChainEpoch) message {
 	params := miner.PreCommitSectorParams{
 		SealProof:     ma.Config.ProofType,
 		SectorNumber:  sectorNumber,
@@ -225,7 +225,7 @@ func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber 
 		Expiration:    ma.sectorExpiration(currentEpoch),
 	}
 
-	return Message{
+	return message{
 		From:   ma.Worker,
 		To:     ma.IDAddress,
 		Value:  big.Zero(),

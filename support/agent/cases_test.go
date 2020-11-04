@@ -36,9 +36,12 @@ func TestCreate100Miners(t *testing.T) {
 		require.NoError(t, sim.Tick())
 	}
 
-	assert.Equal(t, minerCount, len(sim.Miners))
+	assert.Equal(t, minerCount, len(sim.Agents))
 
-	for _, miner := range sim.Miners {
+	for _, a := range sim.Agents {
+		miner, ok := a.(*agent.MinerAgent)
+		require.True(t, ok)
+
 		actor, found, err := sim.GetVM().GetActor(miner.IDAddress)
 		require.NoError(t, err)
 		require.True(t, found)
@@ -49,7 +52,7 @@ func TestCreate100Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	t.Skip("this is slow")
+	//t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 	minerCount := 10

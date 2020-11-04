@@ -34,7 +34,7 @@ import (
 type Sim struct {
 	Config        SimConfig
 	Accounts      []address.Address
-	Miners        []*MinerAgent
+	Agents        []Agent
 	v             *vm.VM
 	rnd           *rand.Rand
 	statsByMethod map[vm.MethodKey]*vm.CallStats
@@ -46,6 +46,10 @@ type VMState interface {
 	Store() adt.Store
 }
 
+type Agent interface {
+	Tick(v VMState) ([]message, error)
+}
+
 type SimConfig struct {
 	AccountCount           int
 	AccountInitialBalance  abi.TokenAmount
@@ -53,34 +57,12 @@ type SimConfig struct {
 	CreateMinerProbability float32
 }
 
-type ReturnHandler func(v VMState, msg Message, ret cbor.Marshaler) error
-
-type Message struct {
-	From          address.Address
-	To            address.Address
-	Value         abi.TokenAmount
-	Method        abi.MethodNum
-	Params        interface{}
-	ReturnHandler ReturnHandler
-}
-
-type MinerPowerTable struct {
-	addr    address.Address
-	qaPower abi.StoragePower
-}
-
-type PowerTable struct {
-	blockReward  abi.TokenAmount
-	totalQAPower abi.StoragePower
-	minerPower   []MinerPowerTable
-}
-
 func NewSim(ctx context.Context, t require.TestingT, store adt.Store, config SimConfig) *Sim {
 	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
 	return &Sim{
 		Config:   config,
 		Accounts: vm.CreateAccounts(ctx, t, v, config.AccountCount, config.AccountInitialBalance, config.Seed),
-		Miners:   []*MinerAgent{},
+		Agents:   []Agent{},
 		v:        v,
 		rnd:      rand.New(rand.NewSource(config.Seed)),
 	}
@@ -88,17 +70,17 @@ func NewSim(ctx context.Context, t require.TestingT, store adt.Store, config Sim
 
 func (s *Sim) Tick() error {
 	var err error
-	var blockMessages []Message
+	var blockMessages []message
 
 	// compute power table before state transition to create block rewards at the end
-	powerTable, err := ComputePowerTable(s.v, s.Miners)
+	powerTable, err := ComputePowerTable(s.v, s.Agents)
 	if err != nil {
 		return err
 	}
 
-	// add all miner messages
-	for _, miner := range s.Miners {
-		msgs, err := miner.Tick(s.v)
+	// add all agent messages
+	for _, agent := range s.Agents {
+		msgs, err := agent.Tick(s.v)
 		if err != nil {
 			return err
 		}
@@ -107,8 +89,8 @@ func (s *Sim) Tick() error {
 	}
 
 	// add at most 1 miner per epoch.
-	if len(s.Miners) < len(s.Accounts) && s.rnd.Float32() < s.Config.CreateMinerProbability {
-		addr := s.Accounts[len(s.Miners)]
+	if len(s.Agents) < len(s.Accounts) && s.rnd.Float32() < s.Config.CreateMinerProbability {
+		addr := s.Accounts[len(s.Agents)]
 		blockMessages = append(blockMessages, s.createMiner(addr, MinerAgentConfig{
 			PrecommitRate:   2.5,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
@@ -183,29 +165,31 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	return nil
 }
 
-func ComputePowerTable(v *vm.VM, miners []*MinerAgent) (PowerTable, error) {
-	pt := PowerTable{}
+func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
+	pt := powerTable{}
 
 	var rwst reward.State
 	if err := v.GetState(builtin.RewardActorAddr, &rwst); err != nil {
-		return PowerTable{}, err
+		return powerTable{}, err
 	}
 	pt.blockReward = rwst.ThisEpochReward
 
 	var st power.State
 	if err := v.GetState(builtin.StoragePowerActorAddr, &st); err != nil {
-		return PowerTable{}, err
+		return powerTable{}, err
 	}
 	pt.totalQAPower = st.TotalQualityAdjPower
 
-	for _, miner := range miners {
-		if claim, found, err := st.GetClaim(v.Store(), miner.IDAddress); err != nil {
-			return pt, err
-		} else if found {
-			if sufficient, err := st.MinerNominalPowerMeetsConsensusMinimum(v.Store(), miner.IDAddress); err != nil {
+	for _, agent := range agents {
+		if miner, ok := agent.(*MinerAgent); ok {
+			if claim, found, err := st.GetClaim(v.Store(), miner.IDAddress); err != nil {
 				return pt, err
-			} else if sufficient {
-				pt.minerPower = append(pt.minerPower, MinerPowerTable{miner.IDAddress, claim.QualityAdjPower})
+			} else if found {
+				if sufficient, err := st.MinerNominalPowerMeetsConsensusMinimum(v.Store(), miner.IDAddress); err != nil {
+					return pt, err
+				} else if sufficient {
+					pt.minerPower = append(pt.minerPower, minerPowerTable{miner.IDAddress, claim.QualityAdjPower})
+				}
 			}
 		}
 	}
@@ -247,8 +231,8 @@ func (s *Sim) GetVM() *vm.VM {
 	return s.v
 }
 
-func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) Message {
-	return Message{
+func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) message {
+	return message{
 		From:   owner,
 		To:     builtin.StoragePowerActorAddr,
 		Value:  s.Config.AccountInitialBalance, // miner gets all account funds
@@ -258,7 +242,7 @@ func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) Message {
 			Worker:        owner,
 			SealProofType: cfg.ProofType,
 		},
-		ReturnHandler: func(_ VMState, msg Message, ret cbor.Marshaler) error {
+		ReturnHandler: func(_ VMState, msg message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
 			if !ok {
 				return errors.Errorf("create miner return has wrong type: %v", ret)
@@ -270,8 +254,36 @@ func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) Message {
 			}
 
 			miner := NewMinerAgent(params.Owner, params.Worker, createMinerRet.IDAddress, createMinerRet.RobustAddress, s.rnd, cfg)
-			s.Miners = append(s.Miners, miner)
+			s.Agents = append(s.Agents, miner)
 			return nil
 		},
 	}
+}
+
+//////////////////////////////////////////////
+//
+//  Internal Types
+//
+//////////////////////////////////////////////
+
+type returnHandler func(v VMState, msg message, ret cbor.Marshaler) error
+
+type message struct {
+	From          address.Address
+	To            address.Address
+	Value         abi.TokenAmount
+	Method        abi.MethodNum
+	Params        interface{}
+	ReturnHandler returnHandler
+}
+
+type minerPowerTable struct {
+	addr    address.Address
+	qaPower abi.StoragePower
+}
+
+type powerTable struct {
+	blockReward  abi.TokenAmount
+	totalQAPower abi.StoragePower
+	minerPower   []minerPowerTable
 }
