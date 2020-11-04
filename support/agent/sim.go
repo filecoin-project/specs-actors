@@ -33,21 +33,22 @@ import (
 // * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
 	Config        SimConfig
-	Accounts      []address.Address
 	Agents        []Agent
 	v             *vm.VM
 	rnd           *rand.Rand
 	statsByMethod map[vm.MethodKey]*vm.CallStats
 }
 
-type VMState interface {
+type SimState interface {
 	GetEpoch() abi.ChainEpoch
 	GetState(addr address.Address, out cbor.Unmarshaler) error
 	Store() adt.Store
+	AddAgent(a Agent)
+	Rnd() int64
 }
 
 type Agent interface {
-	Tick(v VMState) ([]message, error)
+	Tick(v SimState) ([]message, error)
 }
 
 type SimConfig struct {
@@ -60,11 +61,10 @@ type SimConfig struct {
 func NewSim(ctx context.Context, t require.TestingT, store adt.Store, config SimConfig) *Sim {
 	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
 	return &Sim{
-		Config:   config,
-		Accounts: vm.CreateAccounts(ctx, t, v, config.AccountCount, config.AccountInitialBalance, config.Seed),
-		Agents:   []Agent{},
-		v:        v,
-		rnd:      rand.New(rand.NewSource(config.Seed)),
+		Config: config,
+		Agents: []Agent{},
+		v:      v,
+		rnd:    rand.New(rand.NewSource(config.Seed)),
 	}
 }
 
@@ -80,22 +80,12 @@ func (s *Sim) Tick() error {
 
 	// add all agent messages
 	for _, agent := range s.Agents {
-		msgs, err := agent.Tick(s.v)
+		msgs, err := agent.Tick(s)
 		if err != nil {
 			return err
 		}
 
 		blockMessages = append(blockMessages, msgs...)
-	}
-
-	// add at most 1 miner per epoch.
-	if len(s.Agents) < len(s.Accounts) && s.rnd.Float32() < s.Config.CreateMinerProbability {
-		addr := s.Accounts[len(s.Agents)]
-		blockMessages = append(blockMessages, s.createMiner(addr, MinerAgentConfig{
-			PrecommitRate:   2.5,
-			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-			StartingBalance: s.Config.AccountInitialBalance, // miner gets all account funds
-		}))
 	}
 
 	// shuffle messages
@@ -113,7 +103,7 @@ func (s *Sim) Tick() error {
 		}
 
 		if msg.ReturnHandler != nil {
-			if err := msg.ReturnHandler(s.v, msg, ret); err != nil {
+			if err := msg.ReturnHandler(s, msg, ret); err != nil {
 				return err
 			}
 		}
@@ -142,6 +132,38 @@ func (s *Sim) Tick() error {
 	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
 	return err
 }
+
+//////////////////////////////////////////////////
+//
+//  SimState Methods
+//
+//////////////////////////////////////////////////
+
+func (s *Sim) GetEpoch() abi.ChainEpoch {
+	return s.v.GetEpoch()
+}
+
+func (s *Sim) GetState(addr address.Address, out cbor.Unmarshaler) error {
+	return s.v.GetState(addr, out)
+}
+
+func (s *Sim) Store() adt.Store {
+	return s.v.Store()
+}
+
+func (s *Sim) AddAgent(a Agent) {
+	s.Agents = append(s.Agents, a)
+}
+
+func (s *Sim) Rnd() int64 {
+	return s.rnd.Int63()
+}
+
+//////////////////////////////////////////////////
+//
+//  Misc Methods
+//
+//////////////////////////////////////////////////
 
 func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
 	return s.statsByMethod
@@ -234,42 +256,13 @@ func (s *Sim) GetVM() *vm.VM {
 	return s.v
 }
 
-func (s *Sim) createMiner(owner address.Address, cfg MinerAgentConfig) message {
-	return message{
-		From:   owner,
-		To:     builtin.StoragePowerActorAddr,
-		Value:  s.Config.AccountInitialBalance, // miner gets all account funds
-		Method: builtin.MethodsPower.CreateMiner,
-		Params: &power.CreateMinerParams{
-			Owner:         owner,
-			Worker:        owner,
-			SealProofType: cfg.ProofType,
-		},
-		ReturnHandler: func(_ VMState, msg message, ret cbor.Marshaler) error {
-			createMinerRet, ok := ret.(*power.CreateMinerReturn)
-			if !ok {
-				return errors.Errorf("create miner return has wrong type: %v", ret)
-			}
-
-			params := msg.Params.(*power.CreateMinerParams)
-			if !ok {
-				return errors.Errorf("create miner params has wrong type: %v", msg.Params)
-			}
-
-			miner := NewMinerAgent(params.Owner, params.Worker, createMinerRet.IDAddress, createMinerRet.RobustAddress, s.rnd, cfg)
-			s.Agents = append(s.Agents, miner)
-			return nil
-		},
-	}
-}
-
 //////////////////////////////////////////////
 //
 //  Internal Types
 //
 //////////////////////////////////////////////
 
-type returnHandler func(v VMState, msg message, ret cbor.Marshaler) error
+type returnHandler func(v SimState, msg message, ret cbor.Marshaler) error
 
 type message struct {
 	From          address.Address

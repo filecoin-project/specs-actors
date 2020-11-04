@@ -3,6 +3,9 @@ package agent
 import (
 	"container/heap"
 	"crypto/sha256"
+	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/pkg/errors"
 	"math"
 	"math/rand"
 
@@ -22,6 +25,63 @@ type MinerAgentConfig struct {
 	PrecommitRate   float64                 // average number of precommits per epoch
 	ProofType       abi.RegisteredSealProof // seal proof type for this miner
 	StartingBalance abi.TokenAmount         // initial actor balance for miner actor
+}
+
+type MinerGenerator struct {
+	config                 MinerAgentConfig // eventually this should become a set of probabilities to support miner differentiation
+	createMinerProbability float32
+	minersCreated          int
+	accounts               []address.Address
+	rnd                    *rand.Rand
+}
+
+func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, createMinerProbability float32, rndSeed int64) *MinerGenerator {
+	rnd := rand.New(rand.NewSource(rndSeed))
+	return &MinerGenerator{
+		config:                 config,
+		createMinerProbability: createMinerProbability,
+		accounts:               accounts,
+		rnd:                    rnd,
+	}
+}
+
+func (mg *MinerGenerator) Tick(v SimState) ([]message, error) {
+	// add at most 1 miner per epoch.
+	var msgs []message
+	if mg.minersCreated < len(mg.accounts) && mg.rnd.Float32() < mg.createMinerProbability {
+		addr := mg.accounts[mg.minersCreated]
+		mg.minersCreated++
+		msgs = append(msgs, mg.createMiner(addr, mg.config))
+	}
+	return msgs, nil
+}
+
+func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) message {
+	return message{
+		From:   owner,
+		To:     builtin.StoragePowerActorAddr,
+		Value:  mg.config.StartingBalance, // miner gets all account funds
+		Method: builtin.MethodsPower.CreateMiner,
+		Params: &power.CreateMinerParams{
+			Owner:         owner,
+			Worker:        owner,
+			SealProofType: cfg.ProofType,
+		},
+		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
+			createMinerRet, ok := ret.(*power.CreateMinerReturn)
+			if !ok {
+				return errors.Errorf("create miner return has wrong type: %v", ret)
+			}
+
+			params := msg.Params.(*power.CreateMinerParams)
+			if !ok {
+				return errors.Errorf("create miner params has wrong type: %v", msg.Params)
+			}
+
+			s.AddAgent(NewMinerAgent(params.Owner, params.Worker, createMinerRet.IDAddress, createMinerRet.RobustAddress, mg.rnd.Int63(), cfg))
+			return nil
+		},
+	}
 }
 
 type MinerAgent struct {
@@ -44,8 +104,9 @@ type MinerAgent struct {
 }
 
 func NewMinerAgent(owner address.Address, worker address.Address, idAddress address.Address, robustAddress address.Address,
-	rnd *rand.Rand, config MinerAgentConfig,
+	rndSeed int64, config MinerAgentConfig,
 ) *MinerAgent {
+	rnd := rand.New(rand.NewSource(rndSeed))
 	return &MinerAgent{
 		Config:        config,
 		Owner:         owner,
@@ -55,11 +116,11 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 
 		operationSchedule: &opQueue{},
 		nextPrecommit:     1.0 + precommitDelay(config.PrecommitRate, rnd), // next tick + random delay
-		rnd:               rand.New(rand.NewSource(rnd.Int63())),           // rng for this miner isolated from original source
+		rnd:               rnd,                                             // rng for this miner isolated from original source
 	}
 }
 
-func (ma *MinerAgent) Tick(v VMState) ([]message, error) {
+func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	var messages []message
 
 	// Start precommits.
@@ -107,7 +168,7 @@ func (ma *MinerAgent) Tick(v VMState) ([]message, error) {
 }
 
 // proove sectors in deadline
-func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (message, error) {
+func (ma *MinerAgent) proveDeadline(v SimState, dlIdx uint64) (message, error) {
 	var partitions []miner.PoStPartition
 	for pIdx, bf := range ma.deadlines[dlIdx] {
 		if empty, err := bf.IsEmpty(); err != nil {
@@ -151,7 +212,7 @@ func (ma *MinerAgent) proveDeadline(v VMState, dlIdx uint64) (message, error) {
 }
 
 // looks up sector deadline and partition so we can start adding it to PoSts
-func (ma *MinerAgent) registerSector(v VMState, sectorNumber abi.SectorNumber) error {
+func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -179,7 +240,7 @@ func (ma *MinerAgent) registerSector(v VMState, sectorNumber abi.SectorNumber) e
 }
 
 // schedule a proof within the deadline's bounds
-func (ma *MinerAgent) scheduleNextProof(v VMState, dlIdx uint64) error {
+func (ma *MinerAgent) scheduleNextProof(v SimState, dlIdx uint64) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {

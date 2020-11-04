@@ -104,7 +104,7 @@ func NewCustomStoreVMWithSingletons(ctx context.Context, store adt.Store, t requ
 }
 
 // Creates n account actors in the VM with the given balance
-func CreateAccounts(ctx context.Context, t require.TestingT, vm *VM, n int, balance abi.TokenAmount, seed int64) []address.Address {
+func CreateAccounts(ctx context.Context, t testing.TB, vm *VM, n int, balance abi.TokenAmount, seed int64) []address.Address {
 	var initState initactor.State
 	err := vm.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)

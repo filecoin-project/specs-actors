@@ -3,7 +3,9 @@ package agent_test
 import (
 	"context"
 	"fmt"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -25,29 +27,38 @@ func TestCreate100Miners(t *testing.T) {
 	initialBalance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
 	minerCount := 100
 
-	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{
-		AccountCount:           minerCount,
-		AccountInitialBalance:  initialBalance,
-		Seed:                   42,
-		CreateMinerProbability: 1.0,
-	})
+	rnd := rand.New(rand.NewSource(42))
+
+	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		accounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:   2.5,
+			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance: initialBalance,
+		},
+		1.0, // create miner probibility of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
 
 	for i := 0; i < minerCount; i++ {
 		require.NoError(t, sim.Tick())
 	}
 
-	assert.Equal(t, minerCount, len(sim.Agents))
+	// add 1 agent for miner generator
+	assert.Equal(t, minerCount+1, len(sim.Agents))
 
 	for _, a := range sim.Agents {
 		miner, ok := a.(*agent.MinerAgent)
-		require.True(t, ok)
+		if ok {
+			actor, found, err := sim.GetVM().GetActor(miner.IDAddress)
+			require.NoError(t, err)
+			require.True(t, found)
 
-		actor, found, err := sim.GetVM().GetActor(miner.IDAddress)
-		require.NoError(t, err)
-		require.True(t, found)
-
-		// demonstrate actor is created and has correct balance
-		assert.Equal(t, initialBalance, actor.Balance)
+			// demonstrate actor is created and has correct balance
+			assert.Equal(t, initialBalance, actor.Balance)
+		}
 	}
 }
 
@@ -57,12 +68,19 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 	minerCount := 10
 
-	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{
-		AccountCount:           minerCount,
-		AccountInitialBalance:  initialBalance,
-		Seed:                   42,
-		CreateMinerProbability: 1.0,
-	})
+	rnd := rand.New(rand.NewSource(42))
+	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		accounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:   2.5,
+			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance: initialBalance,
+		},
+		1.0, // create miner probibility of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
 
 	var pwrSt power.State
 	for i := 0; i < 20000; i++ {
@@ -94,13 +112,21 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	minerCount := 10
 	cumulativeStats := make(vm_test.StatsByCall)
 
+	// configure simulation
 	store, storeMetrics := metricsADTStore(ctx)
-	sim := agent.NewSim(ctx, t, store, agent.SimConfig{
-		AccountCount:           minerCount,
-		AccountInitialBalance:  initialBalance,
-		Seed:                   42,
-		CreateMinerProbability: 1.0,
-	})
+	rnd := rand.New(rand.NewSource(42))
+	sim := agent.NewSim(ctx, t, store, agent.SimConfig{Seed: rnd.Int63()})
+	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		accounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:   2.5,
+			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance: initialBalance,
+		},
+		1.0, // create miner probibility of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
 	sim.GetVM().SetStatsSource(storeMetrics)
 
 	var pwrSt power.State
