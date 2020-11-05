@@ -2,12 +2,11 @@ package agent
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"math"
 	big2 "math/big"
 	"math/rand"
 	"strings"
+	"testing"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -15,10 +14,11 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
@@ -58,7 +58,7 @@ type SimConfig struct {
 	CreateMinerProbability float32
 }
 
-func NewSim(ctx context.Context, t require.TestingT, store adt.Store, config SimConfig) *Sim {
+func NewSim(ctx context.Context, t testing.TB, store adt.Store, config SimConfig) *Sim {
 	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
 	return &Sim{
 		Config: config,
