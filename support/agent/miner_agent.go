@@ -45,7 +45,7 @@ func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, crea
 	}
 }
 
-func (mg *MinerGenerator) Tick(v SimState) ([]message, error) {
+func (mg *MinerGenerator) Tick(_ SimState) ([]message, error) {
 	// add at most 1 miner per epoch.
 	var msgs []message
 	if mg.minersCreated < len(mg.accounts) && mg.rnd.Float32() < mg.createMinerProbability {
@@ -96,7 +96,7 @@ type MinerAgent struct {
 	// which sector belongs to which deadline/partition
 	deadlines [miner.WPoStPeriodDeadlines][]bitfield.BitField
 	// offset used to maintain precommit rate (as a fraction of an epoch).
-	nextPrecommit float64
+	nextPreCommit float64
 	// tracks which sector number to use next
 	nextSectorNumber abi.SectorNumber
 	// random numnber generator provided by sim
@@ -115,7 +115,7 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		RobustAddress: robustAddress,
 
 		operationSchedule: &opQueue{},
-		nextPrecommit:     1.0 + precommitDelay(config.PrecommitRate, rnd), // next tick + random delay
+		nextPreCommit:     1.0 + precommitDelay(config.PrecommitRate, rnd), // next tick + random delay
 		rnd:               rnd,                                             // rng for this miner isolated from original source
 	}
 }
@@ -123,25 +123,25 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	var messages []message
 
-	// Start precommits.
-	// Precommits are triggered with a Poisson distribution at the precommit rate.
-	// This is done by choosing delays and adding precommits until the total delay is greater
+	// Start PreCommits.
+	// PreCommits are triggered with a Poisson distribution at the PreCommit rate.
+	// This is done by choosing delays and adding PreCommits until the total delay is greater
 	// than one epoch. The next epoch, we decrement the delay and start from there. This
-	// permits multiple precommits per epoch while also allowing multiple epochs to pass between
-	// precommits.
-	// For now always assume we have enough funds for the precommit deposit.
-	ma.nextPrecommit -= 1.0
-	for ma.nextPrecommit < 1.0 {
+	// permits multiple PreCommits per epoch while also allowing multiple epochs to pass between
+	// PreCommits.
+	// For now always assume we have enough funds for the PreCommit deposit.
+	ma.nextPreCommit -= 1.0
+	for ma.nextPreCommit < 1.0 {
 		// go ahead and choose when we're going to activate this sector
 		sectorActivation := ma.sectorActivation(v.GetEpoch())
 		sectorNumber := ma.nextSectorNumber
 
-		messages = append(messages, ma.createPrecommit(v.GetEpoch(), sectorNumber, sectorActivation))
+		messages = append(messages, ma.createPreCommit(v.GetEpoch(), sectorNumber))
 
-		// assume precommit succeeds and schedule prove commit
+		// assume PreCommit succeeds and schedule prove commit
 		ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
 
-		ma.nextPrecommit += precommitDelay(ma.Config.PrecommitRate, ma.rnd)
+		ma.nextPreCommit += precommitDelay(ma.Config.PrecommitRate, ma.rnd)
 		ma.nextSectorNumber++
 	}
 
@@ -167,7 +167,7 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	return messages, nil
 }
 
-// proove sectors in deadline
+// prove sectors in deadline
 func (ma *MinerAgent) proveDeadline(v SimState, dlIdx uint64) (message, error) {
 	var partitions []miner.PoStPartition
 	for pIdx, bf := range ma.deadlines[dlIdx] {
@@ -276,8 +276,8 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 	}
 }
 
-// create precommit message and activation trigger
-func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber abi.SectorNumber, sectorActivation abi.ChainEpoch) message {
+// create PreCommit message and activation trigger
+func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch, sectorNumber abi.SectorNumber) message {
 	params := miner.PreCommitSectorParams{
 		SealProof:     ma.Config.ProofType,
 		SectorNumber:  sectorNumber,
