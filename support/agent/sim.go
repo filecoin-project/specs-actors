@@ -73,7 +73,7 @@ func (s *Sim) Tick() error {
 	var blockMessages []message
 
 	// compute power table before state transition to create block rewards at the end
-	powerTable, err := ComputePowerTable(s.v, s.Agents)
+	powerTable, err := computePowerTable(s.v, s.Agents)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (s *Sim) Tick() error {
 	// interleaving them with the rest of the messages).
 	for _, miner := range powerTable.minerPower {
 		if powerTable.totalQAPower.GreaterThan(big.Zero()) {
-			wins := s.WinCount(miner.qaPower, powerTable.totalQAPower)
+			wins := s.winCount(miner.qaPower, powerTable.totalQAPower)
 			err := s.rewardMiner(miner.addr, wins)
 			if err != nil {
 				return err
@@ -138,7 +138,7 @@ func (s *Sim) Tick() error {
 
 //////////////////////////////////////////////////
 //
-//  SimState Methods
+//  SimState Methods and other accessors
 //
 //////////////////////////////////////////////////
 
@@ -162,15 +162,19 @@ func (s *Sim) Rnd() int64 {
 	return s.rnd.Int63()
 }
 
+func (s *Sim) GetVM() *vm.VM {
+	return s.v
+}
+
+func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
+	return s.statsByMethod
+}
+
 //////////////////////////////////////////////////
 //
 //  Misc Methods
 //
 //////////////////////////////////////////////////
-
-func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
-	return s.statsByMethod
-}
 
 func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	if wins < 1 {
@@ -190,7 +194,7 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	return nil
 }
 
-func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
+func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	pt := powerTable{}
 
 	var rwst reward.State
@@ -224,7 +228,7 @@ func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 // This is the Filecoin algorithm for winning a ticket within a block with the tickets replaced
 // with random numbers. It lets miners win according to a Poisson distribution with rate
 // proportional to the miner's fraction of network power.
-func (s *Sim) WinCount(minerPower abi.StoragePower, totalPower abi.StoragePower) uint64 {
+func (s *Sim) winCount(minerPower abi.StoragePower, totalPower abi.StoragePower) uint64 {
 	E := big2.NewRat(5, 1)
 	lambdaR := new(big2.Rat)
 	lambdaR.SetFrac(minerPower.Int, totalPower.Int)
@@ -253,10 +257,6 @@ func fact(k float64) float64 {
 		fact *= i
 	}
 	return fact
-}
-
-func (s *Sim) GetVM() *vm.VM {
-	return s.v
 }
 
 //////////////////////////////////////////////
