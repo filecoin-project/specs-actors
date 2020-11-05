@@ -26,6 +26,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 )
 
 // A mock runtime for unit testing of actors in isolation.
@@ -487,24 +488,12 @@ func (rt *Runtime) StoreGet(c cid.Cid, o cbor.Unmarshaler) bool {
 
 func (rt *Runtime) StorePut(o cbor.Marshaler) cid.Cid {
 	// requireInCall omitted because it makes using this mock runtime as a store awkward.
-	key, data := rt.marshalState(o)
+	key, data, err := ipld.MarshalCBOR(o)
+	if err != nil {
+		rt.Abortf(exitcode.ErrSerialization, err.Error())
+	}
 	rt.put(key, data)
 	return key
-}
-
-// Marshals an object to bytes for storing in state.
-func (rt *Runtime) marshalState(o cbor.Marshaler) (cid.Cid, []byte) {
-	r := bytes.Buffer{}
-	err := o.MarshalCBOR(&r)
-	if err != nil {
-		rt.Abortf(exitcode.ErrSerialization, err.Error())
-	}
-	data := r.Bytes()
-	key, err := abi.CidBuilder.Sum(data)
-	if err != nil {
-		rt.Abortf(exitcode.ErrSerialization, err.Error())
-	}
-	return key, data
 }
 
 ///// Message implementation /////
@@ -1089,7 +1078,10 @@ func (rt *Runtime) checkStateObjectsUnmodified() {
 	for obj, expectedKey := range rt.stateUsedObjs { // nolint:nomaprange
 		// Recompute the CID of the object and check it's the same as was recorded
 		// when the object was loaded.
-		finalKey, _ := rt.marshalState(obj)
+		finalKey, _, err := ipld.MarshalCBOR(obj)
+		if err != nil {
+			rt.Abortf(exitcode.SysErrorIllegalActor, "error marshalling state object for validation: %v", err)
+		}
 		if finalKey != expectedKey {
 			rt.Abortf(exitcode.SysErrorIllegalActor, "State mutated outside of transaction scope")
 		}
