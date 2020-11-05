@@ -297,9 +297,15 @@ func (ma *MinerAgent) createPrecommit(currentEpoch abi.ChainEpoch, sectorNumber 
 
 // create a random valid sector expiration
 func (ma *MinerAgent) sectorExpiration(currentEpoch abi.ChainEpoch) abi.ChainEpoch {
-	// these are precommit bounds. Prove commit is more lenient but contains this range.
+	// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof
+	// to meet the constraints imposed in PreCommit.
 	minExp := currentEpoch + miner.MaxProveCommitDuration[ma.Config.ProofType] + miner.MinSectorExpiration
+	// Require duration of sector from now does not exceed the maximum sector extension. This constraint
+	// is also imposed by PreCommit, and along with the first constraint define the bounds for a valid
+	// expiration of a new sector.
 	maxExp := currentEpoch + miner.MaxSectorExpirationExtension
+
+	// generate a uniformly distributed expiration in the valid range.
 	return minExp + abi.ChainEpoch(ma.rnd.Int63n(int64(maxExp-minExp)))
 }
 

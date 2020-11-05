@@ -22,11 +22,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
-type StatsSource interface {
-	PutCount() uint64
-	ReadCount() uint64
-}
-
 // VM is a simplified message execution framework for the purposes of testing inter-actor communication.
 // The VM maintains actor state and can be used to simulate message validation for a single block or tipset.
 // The VM does not track gas charges, provide working syscalls, validate message nonces and many other things
@@ -95,6 +90,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
+		statsByMethod:  make(StatsByCall),
 	}
 }
 
@@ -120,6 +116,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
+		statsByMethod:  make(StatsByCall),
 	}, nil
 }
 
@@ -145,6 +142,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		currentEpoch:   epoch,
 		networkVersion: vm.networkVersion,
 		statsSource:    vm.statsSource,
+		statsByMethod:  make(StatsByCall),
 	}, nil
 }
 
@@ -170,6 +168,7 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		currentEpoch:   vm.currentEpoch,
 		networkVersion: nv,
 		statsSource:    vm.statsSource,
+		statsByMethod:  make(StatsByCall),
 	}, nil
 }
 
@@ -342,7 +341,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	ret, exitCode := ctx.invoke()
 
 	// record stats
-	vm.mergeStat(ctx.toActor.Code, imsg.method, ctx.stats)
+	vm.statsByMethod.MergeStats(ctx.toActor.Code, imsg.method, ctx.stats)
 
 	// Roll back all state if the receipt's exit code is not ok.
 	// This is required in addition to rollback within the invocation context since top level messages can fail for
@@ -521,17 +520,6 @@ type abort struct {
 
 func (vm *VM) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {
 	panic(abort{errExitCode, fmt.Sprintf(msg, args...)})
-}
-
-//
-// Stats
-//
-
-func (v *VM) mergeStat(code cid.Cid, methodNum abi.MethodNum, newStats *CallStats) {
-	if v.statsByMethod == nil {
-		v.statsByMethod = make(StatsByCall)
-	}
-	v.statsByMethod.MergeStats(code, methodNum, newStats)
 }
 
 //

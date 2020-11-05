@@ -109,7 +109,10 @@ func (s *Sim) Tick() error {
 		}
 	}
 
-	// apply block rewards
+	// Apply block rewards
+	// Note that this differs from the specification in that it applies all reward messages at the end, whereas
+	// a real implementation would apply a reward messages at the end of each block in the tipset (thereby
+	// interleaving them with the rest of the messages).
 	for _, miner := range powerTable.minerPower {
 		if powerTable.totalQAPower.GreaterThan(big.Zero()) {
 			wins := s.WinCount(miner.qaPower, powerTable.totalQAPower)

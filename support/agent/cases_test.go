@@ -22,10 +22,10 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
-func TestCreate100Miners(t *testing.T) {
+func TestCreate20Miners(t *testing.T) {
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
-	minerCount := 100
+	minerCount := 20
 
 	rnd := rand.New(rand.NewSource(42))
 
@@ -137,7 +137,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
 			fmt.Printf("Power at %d: raw: %v  qa: %v  cmtRaw: %v  cmtQa: %v  cnsMnrs: %d  puts: %d  gets: %d\n",
 				sim.GetVM().GetEpoch(), pwrSt.TotalRawBytePower, pwrSt.TotalQualityAdjPower, pwrSt.TotalBytesCommitted,
-				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, storeMetrics.Puts, storeMetrics.Reads)
+				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, storeMetrics.Writes, storeMetrics.Reads)
 		}
 
 		cumulativeStats.MergeAllStats(sim.GetCallStats())
@@ -153,8 +153,8 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 
 func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent string) { // nolint:unused
 	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  avg gets: %.2f, avg puts: %.2f\n",
-		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Puts,
-		float32(stats.Reads)/float32(stats.Calls), float32(stats.Puts)/float32(stats.Calls))
+		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
+		float32(stats.Reads)/float32(stats.Calls), float32(stats.Writes)/float32(stats.Calls))
 
 	if stats.SubStats == nil {
 		return
