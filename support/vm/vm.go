@@ -38,11 +38,15 @@ type VM struct {
 	actors      *adt.Map // The current (not necessarily committed) root node.
 	actorsDirty bool
 
-	emptyObject cid.Cid
+	emptyObject  cid.Cid
+	callSequence uint64
 
 	logs            []string
 	invocationStack []*Invocation
 	invocations     []*Invocation
+
+	statsSource   StatsSource
+	statsByMethod StatsByCall
 }
 
 // VM types
@@ -86,6 +90,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
+		statsByMethod:  make(StatsByCall),
 	}
 }
 
@@ -111,6 +116,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 		actorsDirty:    false,
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
+		statsByMethod:  make(StatsByCall),
 	}, nil
 }
 
@@ -135,6 +141,8 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		emptyObject:    vm.emptyObject,
 		currentEpoch:   epoch,
 		networkVersion: vm.networkVersion,
+		statsSource:    vm.statsSource,
+		statsByMethod:  make(StatsByCall),
 	}, nil
 }
 
@@ -159,7 +167,13 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		emptyObject:    vm.emptyObject,
 		currentEpoch:   vm.currentEpoch,
 		networkVersion: nv,
+		statsSource:    vm.statsSource,
+		statsByMethod:  make(StatsByCall),
 	}, nil
+}
+
+func (vm *VM) SetStatsSource(s StatsSource) {
+	vm.statsSource = s
 }
 
 func (vm *VM) rollback(root cid.Cid) error {
@@ -274,12 +288,12 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
 
 	// load actor from global state
-	var ok bool
-	if from, ok = vm.NormalizeAddress(from); !ok {
+	fromID, ok := vm.NormalizeAddress(from)
+	if !ok {
 		return nil, exitcode.SysErrSenderInvalid
 	}
 
-	fromActor, found, err := vm.GetActor(from)
+	fromActor, found, err := vm.GetActor(fromID)
 	if err != nil {
 		panic(err)
 	}
@@ -303,12 +317,17 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// 3. process the msg
 
 	topLevel := topLevelContext{
+		originatorStableAddress: from,
+		// this should be nonce, but we only care that it creates a unique stable address
+		originatorCallSeq:    vm.callSequence,
 		newActorAddressCount: 0,
+		statsSource:          vm.statsSource,
 	}
+	vm.callSequence++
 
 	// build internal msg
 	imsg := InternalMessage{
-		from:   from,
+		from:   fromID,
 		to:     to,
 		value:  value,
 		method: method,
@@ -320,6 +339,9 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 
 	// 3. invoke
 	ret, exitCode := ctx.invoke()
+
+	// record stats
+	vm.statsByMethod.MergeStats(ctx.toActor.Code, imsg.method, ctx.stats)
 
 	// Roll back all state if the receipt's exit code is not ok.
 	// This is required in addition to rollback within the invocation context since top level messages can fail for
@@ -381,6 +403,11 @@ func (vm *VM) Store() adt.Store {
 // Get the chain epoch for this vm
 func (vm *VM) GetEpoch() abi.ChainEpoch {
 	return vm.currentEpoch
+}
+
+// Get call stats
+func (vm *VM) GetCallStats() map[MethodKey]*CallStats {
+	return vm.statsByMethod
 }
 
 // transfer debits money from one account and credits it to another.
@@ -480,6 +507,10 @@ func (vm *VM) LastInvocation() *Invocation {
 
 func (vm *VM) Log(level rt.LogLevel, msg string, args ...interface{}) {
 	vm.logs = append(vm.logs, fmt.Sprintf(msg, args...))
+}
+
+func (vm *VM) GetLogs() []string {
+	return vm.logs
 }
 
 type abort struct {

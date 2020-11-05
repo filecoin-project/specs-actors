@@ -8,17 +8,17 @@ import (
 	"reflect"
 	"runtime/debug"
 
-	"github.com/filecoin-project/go-state-types/cbor"
-
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/ipfs/go-cid"
+	"github.com/minio/blake2b-simd"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -42,6 +42,7 @@ type invocationContext struct {
 	isCallerValidated bool
 	allowSideEffects  bool
 	callerValidated   bool
+	stats             *CallStats
 }
 
 // Context for a top-level invocation sequence
@@ -49,6 +50,7 @@ type topLevelContext struct {
 	originatorStableAddress address.Address // Stable (public key) address of the top-level message sender.
 	originatorCallSeq       uint64          // Call sequence number of the top-level message.
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
+	statsSource             StatsSource     // optional source of external statistics that can be used to profile calls
 }
 
 func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
@@ -62,6 +64,7 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 		isCallerValidated: false,
 		allowSideEffects:  true,
 		toActor:           nil,
+		stats:             NewCallStats(topLevel.statsSource),
 	}
 }
 
@@ -316,6 +319,9 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 	newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, fromActor, ic.emptyObject)
 	ret, code := newCtx.invoke()
+
+	ic.stats.MergeSubStat(newCtx.toActor.Code, newMsg.method, newCtx.stats)
+
 	err := ret.Into(out)
 	if err != nil {
 		ic.Abortf(exitcode.ErrSerialization, "failed to serialize send return value into output parameter")
@@ -435,8 +441,8 @@ func (s fakeSyscalls) VerifySignature(_ crypto.Signature, _ address.Address, _ [
 	return nil
 }
 
-func (s fakeSyscalls) HashBlake2b(_ []byte) [32]byte {
-	return [32]byte{}
+func (s fakeSyscalls) HashBlake2b(b []byte) [32]byte {
+	return blake2b.Sum256(b)
 }
 
 func (s fakeSyscalls) ComputeUnsealedSectorCID(_ abi.RegisteredSealProof, _ []abi.PieceInfo) (cid.Cid, error) {
@@ -520,6 +526,8 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	// Install handler for abort, which rolls back all state changes from this and any nested invocations.
 	// This is the only path by which a non-OK exit code may be returned.
 	defer func() {
+		ic.stats.Capture()
+
 		if r := recover(); r != nil {
 			if err := ic.rt.rollback(priorRoot); err != nil {
 				panic(err)
@@ -724,6 +732,9 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*states.Acto
 
 		newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, nil, ic.emptyObject)
 		_, code := newCtx.invoke()
+
+		ic.stats.MergeSubStat(builtin.InitActorCodeID, builtin.MethodsAccount.Constructor, newCtx.stats)
+
 		if code.IsError() {
 			// we failed to construct an account actor..
 			ic.Abortf(code, "failed to construct account actor")
