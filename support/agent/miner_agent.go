@@ -22,38 +22,46 @@ import (
 )
 
 type MinerAgentConfig struct {
-	PrecommitRate   float64                 // average number of precommits per epoch
+	PrecommitRate   float64                 // average number of PreCommits per epoch
 	ProofType       abi.RegisteredSealProof // seal proof type for this miner
 	StartingBalance abi.TokenAmount         // initial actor balance for miner actor
+	FaultRate       float64                 // rate at which committed sectors go faulty (faults per committed sector per epoch)
+	RecoveryRate    float64                 // rate at which faults are recovered (recoveries per fault per epoch)
 }
 
 type MinerGenerator struct {
-	config                 MinerAgentConfig // eventually this should become a set of probabilities to support miner differentiation
-	createMinerProbability float32
-	minersCreated          int
-	accounts               []address.Address
-	rnd                    *rand.Rand
+	config        MinerAgentConfig // eventually this should become a set of probabilities to support miner differentiation
+	minerIterator *RateIterator
+	minersCreated int
+	accounts      []address.Address
+	rnd           *rand.Rand
 }
 
-func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, createMinerProbability float32, rndSeed int64) *MinerGenerator {
+func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, createMinerRate float64, rndSeed int64) *MinerGenerator {
 	rnd := rand.New(rand.NewSource(rndSeed))
 	return &MinerGenerator{
-		config:                 config,
-		createMinerProbability: createMinerProbability,
-		accounts:               accounts,
-		rnd:                    rnd,
+		config:        config,
+		minerIterator: NewRateIterator(createMinerRate, rnd.Int63()),
+		accounts:      accounts,
+		rnd:           rnd,
 	}
 }
 
 func (mg *MinerGenerator) Tick(_ SimState) ([]message, error) {
-	// add at most 1 miner per epoch.
 	var msgs []message
-	if mg.minersCreated < len(mg.accounts) && mg.rnd.Float32() < mg.createMinerProbability {
-		addr := mg.accounts[mg.minersCreated]
-		mg.minersCreated++
-		msgs = append(msgs, mg.createMiner(addr, mg.config))
+	if mg.minersCreated >= len(mg.accounts) {
+		return msgs, nil
 	}
-	return msgs, nil
+
+	err := mg.minerIterator.Tick(func() error {
+		if mg.minersCreated < len(mg.accounts) {
+			addr := mg.accounts[mg.minersCreated]
+			mg.minersCreated++
+			msgs = append(msgs, mg.createMiner(addr, mg.config))
+		}
+		return nil
+	})
+	return msgs, err
 }
 
 func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) message {
@@ -84,6 +92,31 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 	}
 }
 
+/*
+Faults:
+add fault rate to config
+add recovery rate to config
+track live sector count to agent state
+track faulty sector count to agent state
+track expiring sectors to agent state
+
+
+each tick, use recovery rate * fault count to pick some number of sectors to go faulty (somehow)
+	add recoveries to appropriate partition
+each tick, use fault rate * live count to pick some number of sectors to go faulty (somehow)
+	if sector is before the fault window, declare it faulty now
+	otherwise add it to partition so it will be skipped it in submit post
+each deadline close, check status of all faults and all recoveries against partition state from previous deadline,
+	update state accordingly
+*/
+
+// tracks state relevant to each partition
+type partition struct {
+	sectors     bitfield.BitField // sector numbers of all sectors that have not expired
+	toBeSkipped bitfield.BitField // sector numbers of sectors to be skipped next PoSt
+	faults      bitfield.BitField // sector numbers of sectors believed to be faulty
+}
+
 type MinerAgent struct {
 	Config        MinerAgentConfig // parameters used to define miner prior to creation
 	Owner         address.Address
@@ -91,10 +124,17 @@ type MinerAgent struct {
 	IDAddress     address.Address
 	RobustAddress address.Address
 
+	// total number of committed sectors (including sectors pending proof validation) that are not faulty and have not expired
+	committedSectors uint64
+	// total number of sectors expected to be faulty
+	faultySectors uint64
+	// total number of sectors expected to have expired
+	expiredSectors uint64
+
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
 	// which sector belongs to which deadline/partition
-	deadlines [miner.WPoStPeriodDeadlines][]bitfield.BitField
+	deadlines [miner.WPoStPeriodDeadlines][]partition
 	// offset used to maintain precommit rate (as a fraction of an epoch).
 	nextPreCommit float64
 	// tracks which sector number to use next
@@ -170,8 +210,8 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 // prove sectors in deadline
 func (ma *MinerAgent) proveDeadline(v SimState, dlIdx uint64) (message, error) {
 	var partitions []miner.PoStPartition
-	for pIdx, bf := range ma.deadlines[dlIdx] {
-		if empty, err := bf.IsEmpty(); err != nil {
+	for pIdx, part := range ma.deadlines[dlIdx] {
+		if empty, err := part.sectors.IsEmpty(); err != nil {
 			return message{}, err
 		} else if !empty {
 			partitions = append(partitions, miner.PoStPartition{
@@ -201,6 +241,7 @@ func (ma *MinerAgent) proveDeadline(v SimState, dlIdx uint64) (message, error) {
 	if err := ma.scheduleNextProof(v, dlIdx); err != nil {
 		return message{}, err
 	}
+	ma.committedSectors++
 
 	return message{
 		From:   ma.Worker,
@@ -233,9 +274,13 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) 
 
 	// pIdx should be sequential, but add empty partitions just in case
 	for pIdx >= uint64(len(ma.deadlines[dlIdx])) {
-		ma.deadlines[dlIdx] = append(ma.deadlines[dlIdx], bitfield.New())
+		ma.deadlines[dlIdx] = append(ma.deadlines[dlIdx], partition{
+			sectors:     bitfield.New(),
+			toBeSkipped: bitfield.New(),
+			faults:      bitfield.New(),
+		})
 	}
-	ma.deadlines[dlIdx][pIdx].Set(uint64(sectorNumber))
+	ma.deadlines[dlIdx][pIdx].sectors.Set(uint64(sectorNumber))
 	return nil
 }
 

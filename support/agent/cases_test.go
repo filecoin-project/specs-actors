@@ -38,11 +38,12 @@ func TestCreate20Miners(t *testing.T) {
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
-		1.0, // create miner probibility of 1 means a new miner is created every tick
+		1.0, // create miner probability of 1 means a new miner is created every tick
 		rnd.Int63(),
 	))
 
-	for i := 0; i < minerCount; i++ {
+	// give it twice the number of ticks to account for variation in the rate
+	for i := 0; i < 2*minerCount; i++ {
 		require.NoError(t, sim.Tick())
 	}
 
