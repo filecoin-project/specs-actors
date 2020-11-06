@@ -76,6 +76,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 		accounts,
 		agent.MinerAgentConfig{
 			PrecommitRate:   2.5,
+			FaultRate:       0.01,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
@@ -100,9 +101,13 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 			require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 
 			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
-			fmt.Printf("Power at %d: raw: %v  qa: %v  cmtRaw: %v  cmtQa: %v  cnsMnrs: %d avgWins: %.3f\n",
-				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalQualityAdjPower, pwrSt.TotalBytesCommitted,
-				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch))
+
+			// assume each sector is 32Gb
+			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
+
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  cnsMnrs: %d avgWins: %.3f\n",
+				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
+				pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch))
 		}
 	}
 }

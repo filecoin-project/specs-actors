@@ -16,12 +16,17 @@ type RateIterator struct {
 
 func NewRateIterator(rate float64, seed int64) *RateIterator {
 	rnd := rand.New(rand.NewSource(seed))
+	next := 1.0
+	if rate > 0.0 {
+		next -= math.Log(1.0-rnd.Float64()) / rate
+	}
+
 	return &RateIterator{
 		rnd:  rnd,
 		rate: rate,
 
 		// choose first event in next tick
-		nextOccurrence: 1.0 - math.Log(1.0-rnd.Float64())/rate,
+		nextOccurrence: next,
 	}
 }
 
@@ -29,6 +34,11 @@ func NewRateIterator(rate float64, seed int64) *RateIterator {
 // The function will be called `rate` times on average, but may be called zero or many times in any Tick.
 //
 func (ri *RateIterator) Tick(f func() error) error {
+	// wait until we have a positive rate before doing anything
+	if ri.rate <= 0.0 {
+		return nil
+	}
+
 	// next tick becomes this tick
 	ri.nextOccurrence -= 1.0
 
@@ -48,6 +58,9 @@ func (ri *RateIterator) Tick(f func() error) error {
 
 // convenience method for when rate depends on changing variables
 func (ri *RateIterator) TickWithRate(rate float64, f func() error) error {
+	if rate > 0.0 && ri.rate <= 0.0 {
+		ri.nextOccurrence -= math.Log(1.0-ri.rnd.Float64()) / rate
+	}
 	ri.rate = rate
 	return ri.Tick(f)
 }
@@ -76,6 +89,20 @@ func WinCount(minerPower abi.StoragePower, totalPower abi.StoragePower, random f
 		rhs -= poissonPMF(lambda, winCount)
 	}
 	return winCount
+}
+
+//////////////////////////////////////////
+//
+//  Misc
+//
+//////////////////////////////////////////
+
+// this panics if list is empty.
+func PopRandom(list []uint64, rnd *rand.Rand) (uint64, []uint64) {
+	idx := rnd.Int63n(int64(len(list)))
+	result := list[idx]
+	list[idx] = list[len(list)-1]
+	return result, list[:len(list)-1]
 }
 
 func poissonPMF(lambda float64, k uint64) float64 {
