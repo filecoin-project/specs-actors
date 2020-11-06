@@ -64,7 +64,7 @@ func TestCreate20Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	t.Skip("this is slow")
+	//t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
 	minerCount := 10
@@ -87,7 +87,8 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	for i := 0; i < 20000; i++ {
 		require.NoError(t, sim.Tick())
 
-		if sim.GetVM().GetEpoch()%100 == 0 {
+		epoch := sim.GetVM().GetEpoch()
+		if epoch%100 == 0 {
 			stateTree, err := sim.GetVM().GetStateTree()
 			require.NoError(t, err)
 
@@ -99,9 +100,9 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 			require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 
 			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
-			fmt.Printf("Power at %d: raw: %v  qa: %v  cmtRaw: %v  cmtQa: %v  cnsMnrs: %d\n",
-				sim.GetVM().GetEpoch(), pwrSt.TotalRawBytePower, pwrSt.TotalQualityAdjPower, pwrSt.TotalBytesCommitted,
-				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount)
+			fmt.Printf("Power at %d: raw: %v  qa: %v  cmtRaw: %v  cmtQa: %v  cnsMnrs: %d avgWins: %.3f\n",
+				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalQualityAdjPower, pwrSt.TotalBytesCommitted,
+				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch))
 		}
 	}
 }

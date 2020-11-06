@@ -135,8 +135,8 @@ type MinerAgent struct {
 	operationSchedule *opQueue
 	// which sector belongs to which deadline/partition
 	deadlines [miner.WPoStPeriodDeadlines][]partition
-	// offset used to maintain precommit rate (as a fraction of an epoch).
-	nextPreCommit float64
+	// rate iterator to time PreCommit events according to rate
+	preCommitEvents *RateIterator
 	// tracks which sector number to use next
 	nextSectorNumber abi.SectorNumber
 	// random numnber generator provided by sim
@@ -155,23 +155,18 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		RobustAddress: robustAddress,
 
 		operationSchedule: &opQueue{},
-		nextPreCommit:     1.0 + precommitDelay(config.PrecommitRate, rnd), // next tick + random delay
-		rnd:               rnd,                                             // rng for this miner isolated from original source
+		preCommitEvents:   NewRateIterator(config.PrecommitRate, rnd.Int63()),
+		rnd:               rnd, // rng for this miner isolated from original source
 	}
 }
 
 func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	var messages []message
 
-	// Start PreCommits.
-	// PreCommits are triggered with a Poisson distribution at the PreCommit rate.
-	// This is done by choosing delays and adding PreCommits until the total delay is greater
-	// than one epoch. The next epoch, we decrement the delay and start from there. This
-	// permits multiple PreCommits per epoch while also allowing multiple epochs to pass between
-	// PreCommits.
-	// For now always assume we have enough funds for the PreCommit deposit.
-	ma.nextPreCommit -= 1.0
-	for ma.nextPreCommit < 1.0 {
+	// Start PreCommits. PreCommits are triggered with a Poisson distribution at the PreCommit rate.
+	// This permits multiple PreCommits per epoch while also allowing multiple epochs to pass
+	// between PreCommits. For now always assume we have enough funds for the PreCommit deposit.
+	if err := ma.preCommitEvents.Tick(func() error {
 		// go ahead and choose when we're going to activate this sector
 		sectorActivation := ma.sectorActivation(v.GetEpoch())
 		sectorNumber := ma.nextSectorNumber
@@ -181,8 +176,10 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 		// assume PreCommit succeeds and schedule prove commit
 		ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
 
-		ma.nextPreCommit += precommitDelay(ma.Config.PrecommitRate, ma.rnd)
 		ma.nextSectorNumber++
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	// act on scheduled operations
