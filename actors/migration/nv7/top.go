@@ -58,8 +58,8 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	}
 
 	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
-		if !actorIn.Code.Equals(builtin.StorageMinerActorCodeID) { // skip non-miners
-			return nil
+		if !actorIn.Code.Equals(builtin.StorageMinerActorCodeID) { // non miners are written with no change
+			return actorsOut.SetActor(addr, actorIn)
 		}
 		minerResult, err := MinerMigrator{}.MigrateState(ctx, store, actorIn.Head, MigrationInfo{
 			address:    addr,

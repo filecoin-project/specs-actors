@@ -10,6 +10,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	power "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv4"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 )
 
@@ -29,7 +30,7 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		return nil, err
 	}
 
-	claimsSummary, err := m.ComputeClaimsStats(ctx, store, inState.Claims)
+	outClaimsRoot, claimsSummary, err := m.MigrateAndComputeClaimsStats(ctx, store, inState.Claims)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 		MinerAboveMinPowerCount:   claimsSummary.claimsWithSufficientPowerCount,
 		CronEventQueue:            inState.CronEventQueue,
 		FirstCronEpoch:            inState.FirstCronEpoch,
-		Claims:                    inState.Claims,
+		Claims:                    outClaimsRoot,
 		ProofValidationBatch:      inState.ProofValidationBatch,
 	}
 
@@ -59,11 +60,13 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 	}, err
 }
 
-func (a PowerMigrator) ComputeClaimsStats(ctx context.Context, store cbor.IpldStore, claimsRoot cid.Cid) (*claimsSummary, error) {
+func (a PowerMigrator) MigrateAndComputeClaimsStats(ctx context.Context, store cbor.IpldStore, claimsRoot cid.Cid) (cid.Cid, *claimsSummary, error) {
 	claims, err := adt.AsMap(adt.WrapStore(ctx, store), claimsRoot)
 	if err != nil {
-		return nil, err
+		return cid.Undef, nil, err
 	}
+
+	outClaims := adt.MakeEmptyMap(adt.WrapStore(ctx, store))
 
 	summary := &claimsSummary{
 		committedRawBytes:              abi.NewStoragePower(0),
@@ -87,11 +90,22 @@ func (a PowerMigrator) ComputeClaimsStats(ctx context.Context, store cbor.IpldSt
 			summary.rawPower = big.Add(summary.rawPower, claim.RawBytePower)
 			summary.qaPower = big.Add(summary.qaPower, claim.QualityAdjPower)
 		}
-		return nil
+		sealProofType := claim.SealProofType
+		if sealProofType == abi.RegisteredSealProof_StackedDrg32GiBV1 {
+			sealProofType = abi.RegisteredSealProof_StackedDrg32GiBV1_1
+		} else if sealProofType == abi.RegisteredSealProof_StackedDrg64GiBV1 {
+			sealProofType = abi.RegisteredSealProof_StackedDrg32GiBV1_1
+		}
+		outClaim := power.Claim{
+			SealProofType:   sealProofType,
+			RawBytePower:    claim.RawBytePower,
+			QualityAdjPower: claim.QualityAdjPower,
+		}
+		return outClaims.Put(nv4.StringKey(key), &outClaim)
 	})
 	if err != nil {
-		return nil, err
+		return cid.Undef, nil, err
 	}
-
-	return summary, nil
+	outClaimsRoot, err := outClaims.Root()
+	return outClaimsRoot, summary, err
 }
