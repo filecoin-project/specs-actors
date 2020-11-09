@@ -15,7 +15,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of multisig state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
 
 	// assert invariants involving signers
@@ -35,39 +35,36 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	}
 
 	// test pending transactions
-	transactions, err := adt.AsMap(store, st.PendingTxns)
-	if err != nil {
-		return nil, acc, err
-	}
-
 	maxTxnID := TxnID(-1)
 	numPending := uint64(0)
-	var txn Transaction
-	err = transactions.ForEach(&txn, func(txnIDStr string) error {
-		txnID, err := ParseTxnIDKey(txnIDStr)
-		if err != nil {
-			return err
-		}
-		if txnID > maxTxnID {
-			maxTxnID = txnID
-		}
+	if transactions, err := adt.AsMap(store, st.PendingTxns); err != nil {
+		acc.Addf("error loading transactions: %v", err)
+	} else {
+		var txn Transaction
+		err = transactions.ForEach(&txn, func(txnIDStr string) error {
+			txnID, err := ParseTxnIDKey(txnIDStr)
+			if err != nil {
+				return err
+			}
+			if txnID > maxTxnID {
+				maxTxnID = txnID
+			}
 
-		seenApprovals := make(map[address.Address]struct{})
-		for _, approval := range txn.Approved {
-			_, found := signers[approval]
-			acc.Require(found, "approval %v for transaction %d is not in signers list", approval, txnID)
+			seenApprovals := make(map[address.Address]struct{})
+			for _, approval := range txn.Approved {
+				_, found := signers[approval]
+				acc.Require(found, "approval %v for transaction %d is not in signers list", approval, txnID)
 
-			_, seen := seenApprovals[approval]
-			acc.Require(!seen, "duplicate approval %v for transaction %d", approval, txnID)
+				_, seen := seenApprovals[approval]
+				acc.Require(!seen, "duplicate approval %v for transaction %d", approval, txnID)
 
-			seenApprovals[approval] = struct{}{}
-		}
+				seenApprovals[approval] = struct{}{}
+			}
 
-		numPending++
-		return nil
-	})
-	if err != nil {
-		return nil, acc, err
+			numPending++
+			return nil
+		})
+		acc.RequireNoError(err, "error iterating transactions")
 	}
 
 	acc.Require(st.NextTxnID > maxTxnID, "next transaction id %d is not greater than pending ids", st.NextTxnID)
@@ -75,7 +72,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		PendingTxnCount:       numPending,
 		NumApprovalsThreshold: st.NumApprovalsThreshold,
 		SignerCount:           len(st.Signers),
-	}, acc, nil
+	}, acc
 }
 
 func ParseTxnIDKey(key string) (TxnID, error) {

@@ -87,6 +87,11 @@ func (b *RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) *Runtime
 	return b
 }
 
+func (b *RuntimeBuilder) WithNetworkVersion(version network.Version) *RuntimeBuilder {
+	b.rt.networkVersion = version
+	return b
+}
+
 func (b *RuntimeBuilder) WithActorType(addr addr.Address, code cid.Cid) *RuntimeBuilder {
 	b.rt.actorCodeCIDs[addr] = code
 	return b

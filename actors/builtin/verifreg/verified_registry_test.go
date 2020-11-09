@@ -806,8 +806,7 @@ func (h *verifRegActorTestHarness) state(rt *mock.Runtime) *verifreg.State {
 
 func (h *verifRegActorTestHarness) checkState(rt *mock.Runtime) {
 	st := h.state(rt)
-	_, msgs, err := verifreg.CheckStateInvariants(st, rt.AdtStore())
-	assert.NoError(h.t, err)
+	_, msgs := verifreg.CheckStateInvariants(st, rt.AdtStore())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

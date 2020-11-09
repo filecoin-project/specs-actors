@@ -2,9 +2,10 @@ package test_test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"strings"
 	"testing"
+
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -27,7 +28,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
 	params := power.CreateMinerParams{
@@ -248,6 +249,9 @@ func TestCommitPoStFlow(t *testing.T) {
 		networkStats := vm.GetNetworkStats(t, tv)
 		assert.Equal(t, big.NewInt(int64(sectorSize)), networkStats.TotalBytesCommitted)
 		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
+		// Trigger cron to keep reward accounting correct
+		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		stateTree, err := tv.GetStateTree()
 		require.NoError(t, err)

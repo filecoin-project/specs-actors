@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -25,7 +26,7 @@ type StateSummary struct {
 }
 
 // Checks internal invariants of power state.
-func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator, error) {
+func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
 
 	// basic invariants around recorded power
@@ -43,35 +44,26 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(st.TotalQualityAdjPower.LessThanEqual(st.TotalQABytesCommitted),
 		"total qua power %v is greater than qa power committed %v", st.TotalQualityAdjPower, st.TotalQABytesCommitted)
 
-	crons, err := CheckCronInvariants(st, store, acc)
-	if err != nil {
-		return nil, acc, err
-	}
-
-	claims, err := CheckClaimInvariants(st, store, acc)
-	if err != nil {
-		return nil, acc, err
-	}
-
-	proofs, err := CheckProofValidationInvariants(st, store, claims, acc)
-	if err != nil {
-		return nil, acc, err
-	}
+	crons := CheckCronInvariants(st, store, acc)
+	claims := CheckClaimInvariants(st, store, acc)
+	proofs := CheckProofValidationInvariants(st, store, claims, acc)
 
 	return &StateSummary{
 		Crons:  crons,
 		Claims: claims,
 		Proofs: proofs,
-	}, acc, nil
+	}, acc
 }
 
-func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) (CronEventsByAddress, error) {
+func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) CronEventsByAddress {
+	byAddress := make(CronEventsByAddress)
 	queue, err := adt.AsMultimap(store, st.CronEventQueue)
 	if err != nil {
-		return nil, err
+		acc.Addf("error loading cron event queue: %v", err)
+		// Bail here.
+		return byAddress
 	}
 
-	byAddress := make(CronEventsByAddress)
 	err = queue.ForAll(func(ekey string, arr *adt.Array) error {
 		epoch, err := abi.ParseIntKey(ekey)
 		acc.Require(err == nil, "non-int key in cron array")
@@ -92,15 +84,17 @@ func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumul
 			return nil
 		})
 	})
-	acc.Require(err == nil, "error attempting to read through power actor cron tasks: %v", err)
-
-	return byAddress, nil
+	acc.RequireNoError(err, "error iterating cron tasks")
+	return byAddress
 }
 
-func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) (ClaimsByAddress, error) {
+func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumulator) ClaimsByAddress {
+	byAddress := make(ClaimsByAddress)
 	claims, err := adt.AsMap(store, st.Claims)
 	if err != nil {
-		return nil, err
+		acc.Addf("error loading power claims: %v", err)
+		// Bail here
+		return byAddress
 	}
 
 	committedRawPower := abi.NewStoragePower(0)
@@ -108,7 +102,6 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 	rawPower := abi.NewStoragePower(0)
 	qaPower := abi.NewStoragePower(0)
 	claimsWithSufficientPowerCount := int64(0)
-	byAddress := make(ClaimsByAddress)
 	var claim Claim
 	err = claims.ForEach(&claim, func(key string) error {
 		addr, err := address.NewFromBytes([]byte(key))
@@ -132,9 +125,7 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
+	acc.RequireNoError(err, "error iterating power claims")
 
 	acc.Require(committedRawPower.Equals(st.TotalBytesCommitted),
 		"sum of raw power in claims %v does not match recorded bytes committed %v",
@@ -152,48 +143,45 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 	acc.Require(st.TotalQualityAdjPower.Equals(qaPower),
 		"recorded qa power %v does not match qa power in claims %v", st.TotalQualityAdjPower, qaPower)
 
-	return byAddress, nil
+	return byAddress
 }
 
-func CheckProofValidationInvariants(st *State, store adt.Store, claims ClaimsByAddress, acc *builtin.MessageAccumulator) (ProofsByAddress, error) {
+func CheckProofValidationInvariants(st *State, store adt.Store, claims ClaimsByAddress, acc *builtin.MessageAccumulator) ProofsByAddress {
 	if st.ProofValidationBatch == nil {
-		return nil, nil
-	}
-
-	queue, err := adt.AsMultimap(store, *st.ProofValidationBatch)
-	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	proofs := make(ProofsByAddress)
-	err = queue.ForAll(func(key string, arr *adt.Array) error {
-		addr, err := address.NewFromBytes([]byte(key))
-		if err != nil {
-			return err
-		}
+	if queue, err := adt.AsMultimap(store, *st.ProofValidationBatch); err != nil {
+		acc.Addf("error loading proof validation queue: %v", err)
+	} else {
+		err = queue.ForAll(func(key string, arr *adt.Array) error {
+			addr, err := address.NewFromBytes([]byte(key))
+			if err != nil {
+				return err
+			}
 
-		claim, found := claims[addr]
-		acc.Require(found, "miner %v has proofs awaiting validation but no claim", addr)
-		if !found {
-			return nil
-		}
+			claim, found := claims[addr]
+			acc.Require(found, "miner %v has proofs awaiting validation but no claim", addr)
+			if !found {
+				return nil
+			}
 
-		var info proof.SealVerifyInfo
-		err = arr.ForEach(&info, func(i int64) error {
-			acc.Require(claim.SealProofType == info.SealProof, "miner submitted proof with proof type %d different from claim %d",
-				info.SealProof, claim.SealProofType)
-			proofs[addr] = append(proofs[addr], info)
+			var info proof.SealVerifyInfo
+			err = arr.ForEach(&info, func(i int64) error {
+				acc.Require(claim.SealProofType == info.SealProof, "miner submitted proof with proof type %d different from claim %d",
+					info.SealProof, claim.SealProofType)
+				proofs[addr] = append(proofs[addr], info)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			acc.Require(len(proofs[addr]) <= MaxMinerProveCommitsPerEpoch,
+				"miner %v has submitted too many proofs (%d) for batch verification", addr, len(proofs[addr]))
 			return nil
 		})
-		if err != nil {
-			return err
-		}
-		acc.Require(len(proofs[addr]) <= MaxMinerProveCommitsPerEpoch,
-			"miner %v has submitted too many proofs (%d) for batch verification", addr, len(proofs[addr]))
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		acc.RequireNoError(err, "error iterating proof validation queue")
 	}
-	return proofs, nil
+	return proofs
 }

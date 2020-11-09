@@ -226,8 +226,7 @@ func (h *initHarness) state(rt *mock.Runtime) *init_.State {
 
 func (h *initHarness) checkState(rt *mock.Runtime) {
 	st := h.state(rt)
-	_, msgs, err := init_.CheckStateInvariants(st, rt.AdtStore())
-	assert.NoError(h.t, err)
+	_, msgs := init_.CheckStateInvariants(st, rt.AdtStore())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

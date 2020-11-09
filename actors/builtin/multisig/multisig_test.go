@@ -1202,7 +1202,7 @@ func TestAddSigner(t *testing.T) {
 			} else {
 				actor.addSigner(rt, tc.addSigner, tc.increase)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 				actor.checkState(rt)
@@ -1385,7 +1385,7 @@ func TestRemoveSigner(t *testing.T) {
 			} else {
 				actor.removeSigner(rt, tc.removeSigner, tc.decrease)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expectSigners, st.Signers)
 				assert.Equal(t, tc.expectApprovals, st.NumApprovalsThreshold)
 				actor.checkState(rt)
@@ -1572,7 +1572,7 @@ func TestSwapSigners(t *testing.T) {
 			} else {
 				actor.swapSigners(rt, tc.from, tc.to)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.expect, st.Signers)
 				actor.checkState(rt)
 			}
@@ -1701,7 +1701,7 @@ func TestChangeThreshold(t *testing.T) {
 			} else {
 				actor.changeNumApprovalsThreshold(rt, tc.setThreshold)
 				var st multisig.State
-				rt.StateReadonly(&st)
+				rt.GetState(&st)
 				assert.Equal(t, tc.setThreshold, st.NumApprovalsThreshold)
 				actor.checkState(rt)
 			}
@@ -1750,7 +1750,6 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("retroactive vesting", func(t *testing.T) {
 		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1802,7 +1801,6 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("prospective vesting", func(t *testing.T) {
 		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1854,7 +1852,6 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("can't alter vesting", func(t *testing.T) {
 		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig
 		rt.SetEpoch(100)
@@ -1888,7 +1885,6 @@ func TestLockBalance(t *testing.T) {
 
 	t.Run("can't alter vesting from construction", func(t *testing.T) {
 		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version2)
 
 		// Create empty multisig with vesting
 		startEpoch := abi.ChainEpoch(100)
@@ -1900,6 +1896,30 @@ func TestLockBalance(t *testing.T) {
 			actor.lockBalance(rt, startEpoch-1, abi.ChainEpoch(unlockDuration), big.Zero())
 		})
 		rt.Reset()
+	})
+	
+	t.Run("checks preconditions", func(t *testing.T) {
+		rt := builder.Build(t)
+
+		actor.constructAndVerify(rt, 1, 0, 0, anne)
+		vestStart := abi.ChainEpoch(0)
+		lockAmount := abi.NewTokenAmount(100_000)
+		vestDuration := abi.ChainEpoch(1000)
+		rt.SetCaller(receiver, builtin.MultisigActorCodeID)
+
+		// Disallow negative duration (though negative start epoch is allowed).
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.lockBalance(rt, vestStart, abi.ChainEpoch(-1), lockAmount)
+		})
+
+		// After version 7, disallow negative amount.
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.lockBalance(rt, vestStart, vestDuration, abi.NewTokenAmount(-1))
+		})
+
+		// Before version 7, allow negative amount.
+		rt.SetNetworkVersion(network.Version6)
+		actor.lockBalance(rt, vestStart, vestDuration, abi.NewTokenAmount(-1))
 	})
 }
 
@@ -2076,8 +2096,7 @@ func (h *msActorHarness) checkState(rt *mock.Runtime) {
 }
 
 func assertStateInvariants(t testing.TB, rt *mock.Runtime, st *multisig.State) {
-	_, msgs, err := multisig.CheckStateInvariants(st, rt.AdtStore())
-	assert.NoError(t, err)
+	_, msgs := multisig.CheckStateInvariants(st, rt.AdtStore())
 	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

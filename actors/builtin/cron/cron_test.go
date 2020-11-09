@@ -124,7 +124,6 @@ func (h *cronHarness) epochTickAndVerify(rt *mock.Runtime) {
 func (h *cronHarness) checkState(rt *mock.Runtime) {
 	var st cron.State
 	rt.GetState(&st)
-	_, msgs, err := cron.CheckStateInvariants(&st, rt.AdtStore())
-	assert.NoError(h.t, err)
+	_, msgs := cron.CheckStateInvariants(&st, rt.AdtStore())
 	assert.True(h.t, msgs.IsEmpty())
 }

@@ -31,7 +31,7 @@ func TestTerminateSectors(t *testing.T) {
 	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &power.CreateMinerParams{
@@ -196,8 +196,8 @@ func TestTerminateSectors(t *testing.T) {
 
 	}
 
-	// advance and run cron to complete processing of termination
-	v, err = v.WithEpoch(v.GetEpoch() + 1000)
+	// advance a proving period and run cron to complete processing of termination
+	v, err = v.WithEpoch(v.GetEpoch() + 2880)
 	require.NoError(t, err)
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 

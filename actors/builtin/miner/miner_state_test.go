@@ -622,9 +622,9 @@ func TestAddPreCommitExpiry(t *testing.T) {
 }
 
 func TestSectorAssignment(t *testing.T) {
-	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1)
+	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
 	require.NoError(t, err)
-	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1.SectorSize()
+	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1_1.SectorSize()
 	require.NoError(t, err)
 
 	openDeadlines := miner.WPoStPeriodDeadlines - 2
@@ -910,7 +910,7 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
 
-	testSealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1
+	testSealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1_1
 
 	sectorSize, err := testSealProofType.SectorSize()
 	require.NoError(t, err)
@@ -972,7 +972,7 @@ const (
 func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
 	return &miner.SectorOnChainInfo{
 		SectorNumber:          sectorNo,
-		SealProof:             abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProof:             abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		SealedCID:             sealed,
 		DealIDs:               nil,
 		Activation:            activation,
@@ -990,7 +990,7 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 // returns a unique SectorPreCommitInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.SectorPreCommitInfo {
 	return &miner.SectorPreCommitInfo{
-		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1,
+		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		SectorNumber:  sectorNo,
 		SealedCID:     sealed,
 		SealRandEpoch: sectorSealRandEpochValue,

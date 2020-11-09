@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/migration"
+	"github.com/filecoin-project/specs-actors/v2/actors/migration/nv4"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 
@@ -30,12 +30,14 @@ import (
 
 	exported2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/exported"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	reward2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
 func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	ctx := context.Background()
 	v := vm0.NewVMWithSingletons(ctx, t)
+	v = vmWithActorBalance(t, v, builtin.RewardActorAddr, reward2.StorageMiningAllocationCheck)
 	addrs := vm0.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(100_000), vm0.FIL), 93837778)
 	worker, unverifiedClient := addrs[0], addrs[1]
 
@@ -46,7 +48,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	minerBalance := big.Mul(big.NewInt(10_000), vm0.FIL)
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner0.SealedCIDPrefix)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1 // Old seal proof type to match v0 expectations.
 
 	// create miner
 	params := power.CreateMinerParams{
@@ -309,7 +311,7 @@ func TestMigrationCorrectsCCThenFaultIssue(t *testing.T) {
 	// migrate miner
 	//
 
-	nextRoot, err := migration.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), migration.Config{MaxWorkers: 1}) // v.Store() is not threadsafe
+	nextRoot, err := nv4.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv4.Config{MaxWorkers: 1}) // v.Store() is not threadsafe
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]runtime.VMActor{}
@@ -452,4 +454,28 @@ func publishDeal(t *testing.T, v *vm0.VM, provider, dealClient, minerID addr.Add
 	}.Matches(t, v.LastInvocation())
 
 	return ret.(*market.PublishStorageDealsReturn)
+}
+
+func vmWithActorBalance(t *testing.T, v *vm0.VM, addr addr.Address, newBalance abi.TokenAmount) *vm0.VM {
+	rewardActor, found, err := v.GetActor(builtin.RewardActorAddr)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	// update reward balance
+	rewardActor.Balance = newBalance
+
+	// load actors map
+	oldRoot := v.StateRoot()
+	actors, err := states.LoadTree(v.Store(), oldRoot)
+	require.NoError(t, err)
+
+	// rewrite reward actor and get new root
+	require.NoError(t, actors.SetActor(builtin.RewardActorAddr, rewardActor))
+	newRoot, err := actors.Flush()
+	require.NoError(t, err)
+
+	// get new vm with this root
+	newV, err := v.WithRoot(newRoot)
+	require.NoError(t, err)
+	return newV
 }
