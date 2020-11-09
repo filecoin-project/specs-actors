@@ -17,7 +17,6 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -171,7 +170,7 @@ func (a Actor) Propose(rt runtime.Runtime, params *ProposeParams) *ProposeReturn
 	var st State
 	var txn *Transaction
 	rt.StateTransaction(&st, func() {
-		if !isSigner(proposer, st.Signers) {
+		if !st.IsSigner(proposer) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", proposer)
 		}
 
@@ -228,14 +227,13 @@ type ApproveReturn = multisig0.ApproveReturn
 
 func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
-	callerAddr := rt.Caller()
+	approver := rt.Caller()
 
 	var st State
 	var txn *Transaction
 	rt.StateTransaction(&st, func() {
-		callerIsSigner := isSigner(callerAddr, st.Signers)
-		if !callerIsSigner {
-			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
+		if !st.IsSigner(approver) {
+			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", approver)
 		}
 
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
@@ -265,7 +263,7 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 
 	var st State
 	rt.StateTransaction(&st, func() {
-		callerIsSigner := isSigner(callerAddr, st.Signers)
+		callerIsSigner := st.IsSigner(callerAddr)
 		if !callerIsSigner {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
@@ -316,8 +314,7 @@ func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *abi.Empty
 			rt.Abortf(exitcode.ErrForbidden, "cannot add more than %d signers", SignersMax)
 		}
 
-		isSigner := isSigner(resolvedNewSigner, st.Signers)
-		if isSigner {
+		if st.IsSigner(resolvedNewSigner) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is already a signer", resolvedNewSigner)
 		}
 
@@ -344,8 +341,7 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi
 	store := adt.AsStore(rt)
 	var st State
 	rt.StateTransaction(&st, func() {
-		isSigner := isSigner(resolvedOldSigner, st.Signers)
-		if !isSigner {
+		if !st.IsSigner(resolvedOldSigner) {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", resolvedOldSigner)
 		}
 
@@ -403,13 +399,11 @@ func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.Emp
 	store := adt.AsStore(rt)
 	var st State
 	rt.StateTransaction(&st, func() {
-		fromIsSigner := isSigner(fromResolved, st.Signers)
-		if !fromIsSigner {
+		if !st.IsSigner(fromResolved) {
 			rt.Abortf(exitcode.ErrForbidden, "from addr %s is not a signer", fromResolved)
 		}
 
-		toIsSigner := isSigner(toResolved, st.Signers)
-		if toIsSigner {
+		if st.IsSigner(toResolved) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "%s already a signer", toResolved)
 		}
 
@@ -584,18 +578,6 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 	// since it just copies the bytes.
 
 	return applied, out, code
-}
-
-func isSigner(address addr.Address, signers []addr.Address) bool {
-	AssertMsg(address.Protocol() == addr.ID, "address %v passed to isSigner must be a resolved address", address)
-	// signer addresses have already been resolved
-	for _, signer := range signers {
-		if signer == address {
-			return true
-		}
-	}
-
-	return false
 }
 
 // Computes a digest of a proposed transaction. This digest is used to confirm identity of the transaction

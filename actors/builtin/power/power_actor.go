@@ -5,14 +5,15 @@ import (
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
-	rtt "github.com/filecoin-project/go-state-types/rt"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
@@ -252,6 +253,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *abi.
 	rt.StateTransaction(&st, func() {
 		validateMinerHasClaim(rt, st, rt.Caller())
 		st.addPledgeTotal(*pledgeDelta)
+		builtin.RequireState(rt, st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()), "negative total pledge collateral %v", st.TotalPledgeCollateral)
 	})
 	return nil
 }

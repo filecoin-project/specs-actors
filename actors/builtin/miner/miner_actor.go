@@ -137,8 +137,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	offset, err := assignProvingPeriodOffset(rt.Receiver(), currEpoch, rt.HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
 	periodStart := currentProvingPeriodStart(currEpoch, offset)
+	builtin.RequireState(rt, periodStart <= currEpoch, "computed proving period start %d after current epoch %d", periodStart, currEpoch)
 	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
-	Assert(deadlineIndex < WPoStPeriodDeadlines)
+	builtin.RequireState(rt, deadlineIndex < WPoStPeriodDeadlines, "computed proving deadline index %d invalid", deadlineIndex)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
@@ -1269,8 +1270,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		scheduleEarlyTerminationWork(rt)
 	}
 
-	requestUpdatePower(rt, powerDelta)
+	rt.StateReadonly(&st)
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
+	requestUpdatePower(rt, powerDelta)
 	return &TerminateSectorsReturn{Done: !more}
 }
 
@@ -1601,6 +1605,9 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 	burnFunds(rt, toBurn)
+	rt.StateReadonly(&st)
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	return nil
 }
@@ -1731,8 +1738,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	})
 
 	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
-	Assert(amountWithdrawn.GreaterThanEqual(big.Zero()))
-	Assert(amountWithdrawn.LessThanEqual(availableBalance))
+	builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
+	builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
 		code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
@@ -1799,6 +1806,10 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.E
 		}
 	}
 
+	var st State
+	rt.StateReadonly(&st)
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	return nil
 }
 
@@ -2126,7 +2137,7 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
-	AssertNoError(err) // Runtime always provides ID-addresses
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %v", rt.Receiver())
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
@@ -2180,7 +2191,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
-	AssertNoError(err) // Runtime always provides ID-addresses
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %v", rt.Receiver())
 
 	buf := new(bytes.Buffer)
 	receiver := rt.Receiver()
@@ -2270,8 +2281,6 @@ func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
 	}
-	Assert(resolved.Protocol() == addr.ID)
-
 	ownerCode, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
@@ -2289,8 +2298,6 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
 	}
-	Assert(resolved.Protocol() == addr.ID)
-
 	workerCode, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
@@ -2362,14 +2369,12 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 	}
 
 	periodStart := currEpoch - periodProgress
-	Assert(periodStart <= currEpoch)
 	return periodStart
 }
 
 // Computes the deadline index for the current epoch for a given period start.
 // currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
 func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
-	Assert(currEpoch >= periodStart)
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 

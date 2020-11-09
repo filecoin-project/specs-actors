@@ -16,7 +16,6 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	. "github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -725,22 +724,18 @@ func (st *State) SaveVestingFunds(store adt.Store, funds *VestingFunds) error {
 //
 
 func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
-	newTotal := big.Add(st.PreCommitDeposits, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative pre-commit deposit %s after adding %s to prior %s",
-		newTotal, amount, st.PreCommitDeposits)
-	st.PreCommitDeposits = newTotal
+	st.PreCommitDeposits = big.Add(st.PreCommitDeposits, amount)
 }
 
 func (st *State) AddInitialPledge(amount abi.TokenAmount) {
-	newTotal := big.Add(st.InitialPledge, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge requirement %s after adding %s to prior %s",
-		newTotal, amount, st.InitialPledge)
-	st.InitialPledge = newTotal
+	st.InitialPledge = big.Add(st.InitialPledge, amount)
 }
 
 // AddLockedFunds first vests and unlocks the vested funds AND then locks the given funds in the vesting table.
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) (vested abi.TokenAmount, err error) {
-	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
+	if vestingSum.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative amount to lock %s", vestingSum)
+	}
 
 	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
@@ -750,7 +745,9 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	// unlock vested funds first
 	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative locked funds %v after unlocking %v", st.LockedFunds, amountUnlocked)
+	}
 
 	// add locked funds now
 	vestingFunds.addLockedFunds(currEpoch, vestingSum, st.ProvingPeriodStart, spec)
@@ -790,7 +787,9 @@ func (st *State) RepayPartialDebtInPriorityOrder(store adt.Store, currEpoch abi.
 	}
 
 	// We should never unlock more than the debt we need to repay
-	Assert(fromVesting.LessThanEqual(st.FeeDebt))
+	if fromVesting.GreaterThan(st.FeeDebt) {
+		return big.Zero(), big.Zero(), xerrors.Errorf("unlocked more vesting funds %v than required for debt %v", fromVesting, st.FeeDebt)
+	}
 	st.FeeDebt = big.Sub(st.FeeDebt, fromVesting)
 
 	fromBalance = big.Min(unlockedBalance, st.FeeDebt)
@@ -834,7 +833,9 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	amountUnlocked := vestingFunds.unlockUnvestedFunds(currEpoch, target)
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative locked funds %v after unlocking %v", st.LockedFunds, amountUnlocked)
+	}
 
 	if err := st.SaveVestingFunds(store, vestingFunds); err != nil {
 		return big.Zero(), xerrors.Errorf("failed to save vesting funds: %w", err)
