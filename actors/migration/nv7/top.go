@@ -48,6 +48,38 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 	if err != nil {
 		return cid.Undef, err
 	}
+	stateRootOut, err := adt.MakeEmptyMap(adtStore).Root()
+	if err != nil {
+		return cid.Undef, err
+	}
+	actorsOut, err := states.LoadTree(adtStore, stateRootOut)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	err = actorsIn.ForEach(func(addr address.Address, actorIn *states.Actor) error {
+		if !actorIn.Code.Equals(builtin.StorageMinerActorCodeID) { // skip non-miners
+			return nil
+		}
+		minerResult, err := MinerMigrator{}.MigrateState(ctx, store, actorIn.Head, MigrationInfo{
+			address:    addr,
+			balance:    actorIn.Balance,
+			priorEpoch: priorEpoch,
+		})
+		if err != nil {
+			return err
+		}
+		minerActorOut := states.Actor{
+			Code:       builtin.StorageMinerActorCodeID,
+			Head:       minerResult.NewHead,
+			CallSeqNum: actorIn.CallSeqNum,
+			Balance:    actorIn.Balance,
+		}
+		return actorsOut.SetActor(addr, &minerActorOut)
+	})
+	if err != nil {
+		return cid.Undef, err
+	}
 
 	// Migrate Power actor
 	powerActorIn, found, err := actorsIn.GetActor(builtin.StoragePowerActorAddr)
@@ -71,10 +103,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		CallSeqNum: powerActorIn.CallSeqNum,
 		Balance:    big.Add(powerActorIn.Balance, powerResult.Transfer),
 	}
-	err = actorsIn.SetActor(builtin.StoragePowerActorAddr, &powerActorOut)
+	err = actorsOut.SetActor(builtin.StoragePowerActorAddr, &powerActorOut)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	return actorsIn.Flush()
+	return actorsOut.Flush()
 }
