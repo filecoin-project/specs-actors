@@ -723,12 +723,22 @@ func (st *State) SaveVestingFunds(store adt.Store, funds *VestingFunds) error {
 // Funds and vesting
 //
 
-func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
-	st.PreCommitDeposits = big.Add(st.PreCommitDeposits, amount)
+func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) error {
+	newTotal := big.Add(st.PreCommitDeposits, amount)
+	if newTotal.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative pre-commit deposit %v after adding %v to prior %v", newTotal, amount, st.PreCommitDeposits)
+	}
+	st.PreCommitDeposits = newTotal
+	return nil
 }
 
-func (st *State) AddInitialPledge(amount abi.TokenAmount) {
-	st.InitialPledge = big.Add(st.InitialPledge, amount)
+func (st *State) AddInitialPledge(amount abi.TokenAmount) error {
+	newTotal := big.Add(st.InitialPledge, amount)
+	if newTotal.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative initial pledge %v after adding %v to prior %v", newTotal, amount, st.InitialPledge)
+	}
+	st.InitialPledge = newTotal
+	return nil
 }
 
 // AddLockedFunds first vests and unlocks the vested funds AND then locks the given funds in the vesting table.
@@ -1124,7 +1134,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
 		// when the early termination is processed.
 		pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
-		st.AddInitialPledge(expired.OnTimePledge.Neg())
+		if err = st.AddInitialPledge(expired.OnTimePledge.Neg()); err != nil {
+			return nil, xerrors.Errorf("failed to reduce %v initial pledge for expiring sectors: %w", expired.OnTimePledge, err)
+		}
 
 		// Record reduction in power of the amount of expiring active power.
 		// Faulty power has already been lost, so the amount expiring can be excluded from the delta.

@@ -655,7 +655,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
 
-		st.AddPreCommitDeposit(depositReq)
+		err = st.AddPreCommitDeposit(depositReq)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositReq)
 
 		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:               SectorPreCommitInfo(*params),
@@ -922,7 +923,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(depositToUnlock.Neg())
+		err = st.AddPreCommitDeposit(depositToUnlock.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositToUnlock.Neg())
+
 
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
@@ -930,7 +933,8 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, unlockedBalance)
 		}
 
-		st.AddInitialPledge(totalPledge)
+		err = st.AddInitialPledge(totalPledge)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalPledge)
 		err = st.CheckBalanceInvariants(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	})
@@ -1877,7 +1881,8 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 
 		// Remove pledge requirement.
-		st.AddInitialPledge(totalInitialPledge.Neg())
+		err = st.AddInitialPledge(totalInitialPledge.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalInitialPledge.Neg())
 		pledgeDelta = big.Sub(pledgeDelta, totalInitialPledge)
 
 		// Use unlocked pledge to pay down outstanding fee debt
@@ -2137,7 +2142,7 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %v", rt.Receiver())
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided bad receiver address %v", rt.Receiver())
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
