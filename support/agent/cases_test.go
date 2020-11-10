@@ -3,12 +3,11 @@ package agent_test
 import (
 	"context"
 	"fmt"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"math/rand"
 	"strings"
 	"testing"
 
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/agent"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
@@ -64,9 +64,9 @@ func TestCreate20Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	t.Skip("this is slow")
+	//t.Skip("this is slow")
 	ctx := context.Background()
-	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
+	initialBalance := big.Mul(big.NewInt(1e9), big.NewInt(1e18))
 	minerCount := 1
 
 	rnd := rand.New(rand.NewSource(42))
@@ -75,9 +75,9 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   2.0,
-			FaultRate:       0.001,
-			RecoveryRate:    0.001,
+			PrecommitRate:   0.1,
+			FaultRate:       0.0001,
+			RecoveryRate:    0.0001,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
@@ -86,7 +86,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	))
 
 	var pwrSt power.State
-	for i := 0; i < 20_000; i++ {
+	for i := 0; i < 100_000; i++ {
 		require.NoError(t, sim.Tick())
 
 		epoch := sim.GetVM().GetEpoch()
@@ -114,7 +114,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 }
 
 func TestCommitAndCheckReadWriteStats(t *testing.T) {
-	t.Skip("this is slow")
+	//t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
 	minerCount := 1
