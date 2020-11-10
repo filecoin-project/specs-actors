@@ -104,8 +104,6 @@ type MinerAgent struct {
 	liveSectors []uint64
 	// total number of sectors expected to be faulty
 	faultySectors []uint64
-	// total number of sectors expected to have expired
-	expiredSectors []uint64
 
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
