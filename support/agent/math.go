@@ -58,9 +58,16 @@ func (ri *RateIterator) Tick(f func() error) error {
 
 // convenience method for when rate depends on changing variables
 func (ri *RateIterator) TickWithRate(rate float64, f func() error) error {
-	if rate > 0.0 && ri.rate <= 0.0 {
-		ri.nextOccurrence -= math.Log(1.0-ri.rnd.Float64()) / rate
+	if rate <= 0.0 {
+		ri.rate = rate
+		return nil
 	}
+
+	// recompute next occurrence if rate has changed
+	if ri.rate != rate {
+		ri.nextOccurrence = 1.0 - math.Log(1.0-ri.rnd.Float64())/rate
+	}
+
 	ri.rate = rate
 	return ri.Tick(f)
 }

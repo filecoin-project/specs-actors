@@ -3,6 +3,7 @@ package agent
 import (
 	"container/heap"
 	"crypto/sha256"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/pkg/errors"
 	"math/rand"
 
@@ -91,31 +92,6 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 	}
 }
 
-/*
-Faults:
-add fault rate to config
-add recovery rate to config
-track live sector count to agent state
-track faulty sector count to agent state
-track expiring sectors to agent state
-
-
-each tick, use recovery rate * fault count to pick some number of sectors to go faulty (somehow)
-	add recoveries to appropriate partition
-each tick, use fault rate * live count to pick some number of sectors to go faulty (somehow)
-	if sector is before the fault window, declare it faulty now
-	otherwise add it to partition so it will be skipped it in submit post
-each deadline close, check status of all faults and all recoveries against partition state from previous deadline,
-	update state accordingly
-*/
-
-// tracks state relevant to each partition
-type partition struct {
-	sectors     bitfield.BitField // sector numbers of all sectors that have not expired
-	toBeSkipped bitfield.BitField // sector numbers of sectors to be skipped next PoSt
-	faults      bitfield.BitField // sector numbers of sectors believed to be faulty
-}
-
 type MinerAgent struct {
 	Config        MinerAgentConfig // parameters used to define miner prior to creation
 	Owner         address.Address
@@ -135,10 +111,12 @@ type MinerAgent struct {
 	operationSchedule *opQueue
 	// which sector belongs to which deadline/partition
 	deadlines [miner.WPoStPeriodDeadlines][]partition
-	// rate iterator to time PreCommit events according to rate
+	// iterator to time PreCommit events according to rate
 	preCommitEvents *RateIterator
-	// rate iterator to time faults events according to rate
+	// iterator to time faults events according to rate
 	faultEvents *RateIterator
+	// iterator to time recoveries according to rate
+	recoveryEvents *RateIterator
 	// tracks which sector number to use next
 	nextSectorNumber abi.SectorNumber
 	// random numnber generator provided by sim
@@ -159,9 +137,11 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		operationSchedule: &opQueue{},
 		preCommitEvents:   NewRateIterator(config.PrecommitRate, rnd.Int63()),
 
-		// fault rate is the configured fault rate times the number of sectors or zero.
+		// fault rate is the configured fault rate times the number of live sectors or zero.
 		faultEvents: NewRateIterator(0.0, rnd.Int63()),
-		rnd:         rnd, // rng for this miner isolated from original source
+		// recovery rate is the configured recovery rate times the number of faults or zero.
+		recoveryEvents: NewRateIterator(0.0, rnd.Int63()),
+		rnd:            rnd, // rng for this miner isolated from original source
 	}
 }
 
@@ -187,7 +167,20 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 			return err
 		}
 		messages = append(messages, msgs...)
-		//fmt.Printf("FAULT %d %d %v\n", ma.liveSectors, v.GetEpoch(), ma.IDAddress)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	// Recover sectors.
+	// Rate must be multiplied by the number of live sectors
+	recoveryRate := ma.Config.RecoveryRate * float64(len(ma.faultySectors))
+	if err := ma.recoveryEvents.TickWithRate(recoveryRate, func() error {
+		msgs, err := ma.createRecovery(v)
+		if err != nil {
+			return err
+		}
+		messages = append(messages, msgs...)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -204,7 +197,13 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 				return nil, err
 			}
 		case proveDeadlineAction:
-			msgs, err := ma.proveDeadline(v, o.dlIdx)
+			msgs, err := ma.submitPoStForDeadline(v, o.dlIdx)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, msgs...)
+		case recoverSectorAction:
+			msgs, err := ma.delayedRecoveryMessage(o.dlIdx, o.pIdx, o.sectorNumber)
 			if err != nil {
 				return nil, err
 			}
@@ -261,7 +260,8 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 }
 
 // Fault a sector.
-// This chooses a sector from live sectors and then either
+// This chooses a sector from live sectors and then either declares the recovery
+// or adds it as a fault
 func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	// opt out if no live sectors
 	if len(ma.liveSectors) == 0 {
@@ -273,23 +273,15 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	faultNumber, ma.liveSectors = PopRandom(ma.liveSectors, ma.rnd)
 	ma.faultySectors = append(ma.faultySectors, faultNumber)
 
-	var st miner.State
-	err := v.GetState(ma.IDAddress, &st)
+	faultDlInfo, pIdx, err := ma.dlInfoForSector(v, faultNumber)
 	if err != nil {
 		return nil, err
 	}
 
-	dlIdx, pIdx, err := st.FindSector(v.Store(), abi.SectorNumber(faultNumber))
-	if err != nil {
-		return nil, err
-	}
-
-	dlInfo := st.DeadlineInfo(v.GetEpoch())
-	faultDlInfo := miner.NewDeadlineInfo(dlInfo.PeriodStart, dlIdx, v.GetEpoch()).NextNotElapsed()
-
-	parts := ma.deadlines[dlIdx]
+	parts := ma.deadlines[faultDlInfo.Index]
 	if pIdx >= uint64(len(parts)) {
-		return nil, errors.Errorf("sector %d in deadline %d has unregistered partition %d", faultNumber, dlIdx, pIdx)
+		return nil, errors.Errorf("sector %d in deadline %d has unregistered partition %d",
+			faultNumber, faultDlInfo.Index, pIdx)
 	}
 	parts[pIdx].faults.Set(faultNumber)
 
@@ -302,7 +294,7 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	// for now, just send a message per fault rather than trying to batch them
 	faultParams := miner.DeclareFaultsParams{
 		Faults: []miner.FaultDeclaration{{
-			Deadline:  dlIdx,
+			Deadline:  faultDlInfo.Index,
 			Partition: pIdx,
 			Sectors:   bitfield.NewFromSet([]uint64{faultNumber}),
 		}},
@@ -317,8 +309,51 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	}}, nil
 }
 
+// Recover a sector.
+// This chooses a sector from faulty sectors and then either declare the recovery or schedule one for later
+func (ma *MinerAgent) createRecovery(v SimState) ([]message, error) {
+	// opt out if no faulty sectors
+	if len(ma.faultySectors) == 0 {
+		return nil, nil
+	}
+
+	// choose a faulty sector to recover
+	var recoveryNumber uint64
+	recoveryNumber, ma.faultySectors = PopRandom(ma.faultySectors, ma.rnd)
+
+	recoveryDlInfo, pIdx, err := ma.dlInfoForSector(v, recoveryNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	parts := ma.deadlines[recoveryDlInfo.Index]
+	if pIdx >= uint64(len(parts)) {
+		return nil, errors.Errorf("recovered sector %d in deadline %d has unregistered partition %d",
+			recoveryNumber, recoveryDlInfo.Index, pIdx)
+	}
+	if set, err := parts[pIdx].faults.IsSet(recoveryNumber); err != nil {
+		return nil, errors.Errorf("could not check if %d in deadline %d partition %d is faulty",
+			recoveryNumber, recoveryDlInfo.Index, pIdx)
+	} else if !set {
+		return nil, errors.Errorf("recovery %d in deadline %d partition %d was not a fault",
+			recoveryNumber, recoveryDlInfo.Index, pIdx)
+	}
+
+	// If it's too late, schedule recovery rather than declaring it
+	if recoveryDlInfo.FaultCutoffPassed() {
+		ma.operationSchedule.ScheduleOp(recoveryDlInfo.Close, recoverSectorAction{
+			dlIdx:        recoveryDlInfo.Index,
+			pIdx:         pIdx,
+			sectorNumber: abi.SectorNumber(recoveryNumber),
+		})
+		return nil, nil
+	}
+
+	return ma.recoveryMessage(recoveryDlInfo.Index, pIdx, abi.SectorNumber(recoveryNumber))
+}
+
 // prove sectors in deadline
-func (ma *MinerAgent) proveDeadline(v SimState, dlIdx uint64) ([]message, error) {
+func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message, error) {
 	var partitions []miner.PoStPartition
 	for pIdx, part := range ma.deadlines[dlIdx] {
 		if live, err := bitfield.SubtractBitField(part.sectors, part.faults); err != nil {
@@ -418,9 +453,63 @@ func (ma *MinerAgent) scheduleNextProof(v SimState, dlIdx uint64) error {
 		deadlineStart += miner.WPoStProvingPeriod
 	}
 	deadlineClose := deadlineStart + miner.WPoStChallengeWindow
-	prooveAt := deadlineStart + abi.ChainEpoch(ma.rnd.Int63n(int64(deadlineClose-deadlineStart)))
-	ma.operationSchedule.ScheduleOp(prooveAt, proveDeadlineAction{dlIdx: dlIdx})
+	proveAt := deadlineStart + abi.ChainEpoch(ma.rnd.Int63n(int64(deadlineClose-deadlineStart)))
+	ma.operationSchedule.ScheduleOp(proveAt, proveDeadlineAction{dlIdx: dlIdx})
 	return nil
+}
+
+// ensure recovery hasn't expired since it was scheduled
+func (ma *MinerAgent) delayedRecoveryMessage(dlIdx uint64, pIdx uint64, recoveryNumber abi.SectorNumber) ([]message, error) {
+	// TODO: check expirations after prove
+	part := ma.deadlines[dlIdx][pIdx]
+	if expired, err := part.expired.IsSet(uint64(recoveryNumber)); err != nil {
+		return nil, err
+	} else if expired {
+		// just ignore this recovery if expired
+		return nil, nil
+	}
+
+	return ma.recoveryMessage(dlIdx, pIdx, recoveryNumber)
+}
+
+func (ma *MinerAgent) recoveryMessage(dlIdx uint64, pIdx uint64, recoveryNumber abi.SectorNumber) ([]message, error) {
+	// assume this message succeeds
+	ma.liveSectors = append(ma.liveSectors, uint64(recoveryNumber))
+	part := ma.deadlines[dlIdx][pIdx]
+	part.faults.Unset(uint64(recoveryNumber))
+
+	recoverParams := miner.DeclareFaultsRecoveredParams{
+		Recoveries: []miner.RecoveryDeclaration{{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bitfield.NewFromSet([]uint64{uint64(recoveryNumber)}),
+		}},
+	}
+
+	return []message{{
+		From:   ma.Worker,
+		To:     ma.IDAddress,
+		Value:  big.Zero(),
+		Method: builtin.MethodsMiner.DeclareFaultsRecovered,
+		Params: &recoverParams,
+	}}, nil
+}
+
+func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.Info, uint64, error) {
+	var st miner.State
+	err := v.GetState(ma.IDAddress, &st)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dlIdx, pIdx, err := st.FindSector(v.Store(), abi.SectorNumber(sectorNumber))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dlInfo := st.DeadlineInfo(v.GetEpoch())
+	sectorDLInfo := miner.NewDeadlineInfo(dlInfo.PeriodStart, dlIdx, v.GetEpoch()).NextNotElapsed()
+	return sectorDLInfo, pIdx, nil
 }
 
 // create a random valid sector expiration
@@ -463,6 +552,20 @@ func sectorSealCID(rnd *rand.Rand) cid.Cid {
 	return cid.NewCidV1(miner.SealedCIDPrefix.Codec, hash)
 }
 
+/////////////////////////////////////////////
+//
+//  Internal data structures
+//
+/////////////////////////////////////////////
+
+// tracks state relevant to each partition
+type partition struct {
+	sectors     bitfield.BitField // sector numbers of all sectors that have not expired
+	toBeSkipped bitfield.BitField // sector numbers of sectors to be skipped next PoSt
+	faults      bitfield.BitField // sector numbers of sectors believed to be faulty
+	expired     bitfield.BitField // sector number of sectors believed to have expired
+}
+
 type minerOp struct {
 	epoch  abi.ChainEpoch
 	action interface{}
@@ -476,9 +579,21 @@ type registerSectorAction struct {
 	sectorNumber abi.SectorNumber
 }
 
+type recoverSectorAction struct {
+	dlIdx        uint64
+	pIdx         uint64
+	sectorNumber abi.SectorNumber
+}
+
 type proveDeadlineAction struct {
 	dlIdx uint64
 }
+
+/////////////////////////////////////////////
+//
+//  opQueue priority queue for scheduling
+//
+/////////////////////////////////////////////
 
 type opQueue struct {
 	ops []minerOp

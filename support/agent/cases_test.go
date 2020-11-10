@@ -64,10 +64,10 @@ func TestCreate20Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	//t.Skip("this is slow")
+	t.Skip("this is slow")
 	ctx := context.Background()
-	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
-	minerCount := 10
+	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
+	minerCount := 1
 
 	rnd := rand.New(rand.NewSource(42))
 	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
@@ -75,17 +75,18 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   2.5,
-			FaultRate:       0.01,
+			PrecommitRate:   2.0,
+			FaultRate:       0.001,
+			RecoveryRate:    0.001,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
-		1.0, // create miner probibility of 1 means a new miner is created every tick
+		1.0, // create miner probability of 1 means a new miner is created every tick
 		rnd.Int63(),
 	))
 
 	var pwrSt power.State
-	for i := 0; i < 20000; i++ {
+	for i := 0; i < 20_000; i++ {
 		require.NoError(t, sim.Tick())
 
 		epoch := sim.GetVM().GetEpoch()
@@ -105,9 +106,9 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 			// assume each sector is 32Gb
 			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
 
-			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  cnsMnrs: %d avgWins: %.3f\n",
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  cnsMnrs: %d avgWins: %.3f  msgs: %d\n",
 				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
-				pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch))
+				pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch), sim.MessageCount)
 		}
 	}
 }
@@ -115,8 +116,8 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	t.Skip("this is slow")
 	ctx := context.Background()
-	initialBalance := big.Mul(big.NewInt(1000000), big.NewInt(1e18))
-	minerCount := 10
+	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
+	minerCount := 1
 	cumulativeStats := make(vm_test.StatsByCall)
 
 	// configure simulation
@@ -127,7 +128,9 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   2.5,
+			PrecommitRate:   2.0,
+			FaultRate:       0.001,
+			RecoveryRate:    0.001,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
@@ -137,7 +140,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	sim.GetVM().SetStatsSource(storeMetrics)
 
 	var pwrSt power.State
-	for i := 0; i < 20000; i++ {
+	for i := 0; i < 20_000; i++ {
 		require.NoError(t, sim.Tick())
 
 		if sim.GetVM().GetEpoch()%100 == 0 {

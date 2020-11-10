@@ -36,6 +36,7 @@ type Sim struct {
 	v             *vm.VM
 	rnd           *rand.Rand
 	WinCount      uint64
+	MessageCount  uint64
 	statsByMethod map[vm.MethodKey]*vm.CallStats
 }
 
@@ -108,6 +109,7 @@ func (s *Sim) Tick() error {
 			}
 		}
 	}
+	s.MessageCount += uint64(len(blockMessages))
 
 	// Apply block rewards
 	// Note that this differs from the specification in that it applies all reward messages at the end, whereas
