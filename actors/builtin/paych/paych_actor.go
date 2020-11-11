@@ -8,12 +8,13 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	paych0 "github.com/filecoin-project/specs-actors/actors/builtin/paych"
+	paych2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
+
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 const (
@@ -45,7 +46,7 @@ var _ runtime.VMActor = Actor{}
 //	From addr.Address // Payer
 //	To   addr.Address // Payee
 //}
-type ConstructorParams = paych0.ConstructorParams
+type ConstructorParams = paych2.ConstructorParams
 
 // Constructor creates a payment channel actor. See State for meaning of params.
 func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
@@ -91,12 +92,11 @@ func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Add
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
 
-// Changed since v0:
-// - Proof []byte removed (unused)
-type UpdateChannelStateParams struct {
-	Sv     SignedVoucher
-	Secret []byte
-}
+// type UpdateChannelStateParams struct {
+// 	Sv     SignedVoucher
+// 	Secret []byte
+// }
+type UpdateChannelStateParams = paych2.UpdateChannelStateParams
 
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
@@ -127,7 +127,7 @@ type UpdateChannelStateParams struct {
 //	// Sender's signature over the voucher
 //	Signature *crypto.Signature
 //}
-type SignedVoucher = paych0.SignedVoucher
+type SignedVoucher = paych2.SignedVoucher
 
 // Modular Verification method
 //type ModVerifyParams struct {
@@ -138,14 +138,14 @@ type SignedVoucher = paych0.SignedVoucher
 //	// Pre-serialized method parameters.
 //	Params []byte
 //}
-type ModVerifyParams = paych0.ModVerifyParams
+type ModVerifyParams = paych2.ModVerifyParams
 
 // Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
 //type Merge struct {
 //	Lane  uint64
 //	Nonce uint64
 //}
-type Merge = paych0.Merge
+type Merge = paych2.Merge
 
 func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *abi.EmptyValue {
 	var st State

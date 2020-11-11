@@ -11,7 +11,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	adt2 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 // An adt.Map key that just preserves the underlying string.

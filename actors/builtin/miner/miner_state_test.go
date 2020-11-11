@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/support/ipld"
-	tutils "github.com/filecoin-project/specs-actors/v2/support/testing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
+	tutils "github.com/filecoin-project/specs-actors/v3/support/testing"
 )
 
 func TestPrecommittedSectorsStore(t *testing.T) {

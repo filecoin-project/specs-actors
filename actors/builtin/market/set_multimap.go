@@ -10,7 +10,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type SetMultimap struct {

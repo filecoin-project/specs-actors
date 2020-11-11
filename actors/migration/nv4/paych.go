@@ -10,7 +10,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
-	paych2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
+	paych2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/paych"
 )
 
 type paychMigrator struct {

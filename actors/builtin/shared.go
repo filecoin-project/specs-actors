@@ -9,9 +9,9 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 
-	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
 )
 
 ///// Code shared by multiple built-in actors. /////
@@ -77,11 +77,11 @@ type MinerAddrs struct {
 }
 
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
-// can instead both alias the v0 version.
+// can instead both alias the v2 version.
 //type ConfirmSectorProofsParams struct {
 //	Sectors []abi.SectorNumber
 //}
-type ConfirmSectorProofsParams = builtin0.ConfirmSectorProofsParams
+type ConfirmSectorProofsParams = builtin2.ConfirmSectorProofsParams
 
 // ResolveToIDAddr resolves the given address to it's ID address form.
 // If an ID address for the given address dosen't exist yet, it tries to create one by sending a zero balance to the given address.
@@ -107,12 +107,13 @@ func ResolveToIDAddr(rt runtime.Runtime, address addr.Address) (addr.Address, er
 	return idAddr, nil
 }
 
-// Changed since v0:
-// - Wrapping struct, added Penalty
-type ApplyRewardParams struct {
-	Reward  abi.TokenAmount
-	Penalty abi.TokenAmount
-}
+// Note: we could move this alias back to the mutually-importing packages that use it, now that they
+// can instead both alias the v2 version.
+// type ApplyRewardParams struct {
+// 	Reward  abi.TokenAmount
+// 	Penalty abi.TokenAmount
+// }
+type ApplyRewardParams = builtin2.ApplyRewardParams
 
 // Discard is a helper
 type Discard struct{}

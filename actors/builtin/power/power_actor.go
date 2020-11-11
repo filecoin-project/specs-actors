@@ -2,21 +2,22 @@ package power
 
 import (
 	"bytes"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
-	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
 	rtt "github.com/filecoin-project/go-state-types/rt"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	initact "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	initact "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime
@@ -59,16 +60,15 @@ var _ runtime.VMActor = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
-// Changed since v0:
-// - Added ControlAddrs
-type MinerConstructorParams struct {
-	OwnerAddr     addr.Address
-	WorkerAddr    addr.Address
-	ControlAddrs  []addr.Address
-	SealProofType abi.RegisteredSealProof
-	PeerId        abi.PeerID
-	Multiaddrs    []abi.Multiaddrs
-}
+// type MinerConstructorParams struct {
+// 	OwnerAddr     addr.Address
+// 	WorkerAddr    addr.Address
+// 	ControlAddrs  []addr.Address
+// 	SealProofType abi.RegisteredSealProof
+// 	PeerId        abi.PeerID
+// 	Multiaddrs    []abi.Multiaddrs
+// }
+type MinerConstructorParams = power2.MinerConstructorParams
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
@@ -94,13 +94,13 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 //	Peer          abi.PeerID
 //	Multiaddrs    []abi.Multiaddrs
 //}
-type CreateMinerParams = power0.CreateMinerParams
+type CreateMinerParams = power2.CreateMinerParams
 
 //type CreateMinerReturn struct {
 //	IDAddress     addr.Address // The canonical ID-based address for the actor.
 //	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 //}
-type CreateMinerReturn = power0.CreateMinerReturn
+type CreateMinerReturn = power2.CreateMinerReturn
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -158,7 +158,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 //	RawByteDelta         abi.StoragePower
 //	QualityAdjustedDelta abi.StoragePower
 //}
-type UpdateClaimedPowerParams = power0.UpdateClaimedPowerParams
+type UpdateClaimedPowerParams = power2.UpdateClaimedPowerParams
 
 // Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
@@ -183,7 +183,7 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 //	EventEpoch abi.ChainEpoch
 //	Payload    []byte
 //}
-type EnrollCronEventParams = power0.EnrollCronEventParams
+type EnrollCronEventParams = power2.EnrollCronEventParams
 
 func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)

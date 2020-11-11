@@ -18,8 +18,8 @@ import (
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	states0 "github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/states"
 )
 
 var (

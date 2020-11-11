@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/pkg/errors"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -16,10 +19,10 @@ import (
 	mh "github.com/multiformats/go-multihash"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
 )
 
 type MinerAgentConfig struct {

@@ -8,18 +8,20 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/abi"
+
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/support/agent"
-	"github.com/filecoin-project/specs-actors/v2/support/ipld"
-	"github.com/filecoin-project/specs-actors/v2/support/vm"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/states"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/support/agent"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
+	vm_test "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
 
 func TestCreate20Miners(t *testing.T) {

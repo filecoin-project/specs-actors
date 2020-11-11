@@ -8,7 +8,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
-	cron2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/cron"
+	cron2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/cron"
 )
 
 type cronMigrator struct {

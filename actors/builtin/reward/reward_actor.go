@@ -6,13 +6,14 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
-	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	reward2 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	. "github.com/filecoin-project/specs-actors/v3/actors/util"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
 )
 
 // PenaltyMultiplier is the factor miner penaltys are scaled up by
@@ -61,7 +62,7 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 //	GasReward abi.TokenAmount // gas reward from all gas fees in a block, >= 0
 //	WinCount  int64           // number of reward units won, > 0
 //}
-type AwardBlockRewardParams = reward0.AwardBlockRewardParams
+type AwardBlockRewardParams = reward2.AwardBlockRewardParams
 
 // Awards a reward to a block producer.
 // This method is called only by the system actor, implicitly, as the last message in the evaluation of a block.
