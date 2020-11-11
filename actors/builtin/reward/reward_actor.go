@@ -6,7 +6,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
-	reward2 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	reward2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 
 	"github.com/ipfs/go-cid"
 
