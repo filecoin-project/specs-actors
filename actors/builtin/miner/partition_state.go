@@ -107,11 +107,12 @@ func (p *Partition) ActivePower() PowerPair {
 
 // AddSectors adds new sectors to the partition.
 // The sectors are "live", neither faulty, recovering, nor terminated.
-// If proven is true, the sectors are assumed to have already been proven.
 // Each new sector's expiration is scheduled shortly after its target expiration epoch.
+// If proven is false, the sectors are added to the partition's unproven set.
+// Returns the total power of the added sectors.
 func (p *Partition) AddSectors(
 	store adt.Store, proven bool, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec,
-) (powerDelta PowerPair, err error) {
+) (PowerPair, error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant)
 	if err != nil {
 		return NewPowerPairZero(), xerrors.Errorf("failed to load sector expirations: %w", err)
@@ -136,14 +137,11 @@ func (p *Partition) AddSectors(
 	}
 	p.LivePower = p.LivePower.Add(power)
 
-	provenPower := power
 	if !proven {
-		p.UnprovenPower = p.UnprovenPower.Add(power)
 		if p.Unproven, err = bitfield.MergeBitFields(p.Unproven, snos); err != nil {
 			return NewPowerPairZero(), xerrors.Errorf("failed to update unproven sectors bitfield: %w", err)
 		}
-		// Only return the power if proven. Otherwise, it'll "go live" on the next window PoSt.
-		provenPower = NewPowerPairZero()
+		p.UnprovenPower = p.UnprovenPower.Add(power)
 	}
 
 	// check invariants
@@ -153,7 +151,7 @@ func (p *Partition) AddSectors(
 
 	// No change to faults, recoveries, or terminations.
 	// No change to faulty or recovering power.
-	return provenPower, nil
+	return power, nil
 }
 
 // marks a set of sectors faulty

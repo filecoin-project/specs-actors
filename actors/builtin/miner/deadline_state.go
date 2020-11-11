@@ -263,17 +263,18 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 // that this deadline isn't currently "open" (i.e., being proved at this point
 // in time).
 // The sectors are assumed to be non-faulty.
+// Returns the power of the added sectors (which is active yet if proven=false).
 func (dl *Deadline) AddSectors(
 	store adt.Store, partitionSize uint64, proven bool, sectors []*SectorOnChainInfo,
 	ssize abi.SectorSize, quant QuantSpec,
-) (activatedPower PowerPair, err error) {
+) (PowerPair, error) {
+	totalPower := NewPowerPairZero()
 	if len(sectors) == 0 {
-		return NewPowerPairZero(), nil
+		return totalPower, nil
 	}
 
 	// First update partitions, consuming the sectors
 	partitionDeadlineUpdates := make(map[abi.ChainEpoch][]uint64)
-	activatedPower = NewPowerPairZero()
 	dl.LiveSectors += uint64(len(sectors))
 	dl.TotalSectors += uint64(len(sectors))
 
@@ -318,11 +319,11 @@ func (dl *Deadline) AddSectors(
 			sectors = sectors[size:]
 
 			// Add sectors to partition.
-			partitionActivatedPower, err := partition.AddSectors(store, proven, partitionNewSectors, ssize, quant)
+			partitionPower, err := partition.AddSectors(store, proven, partitionNewSectors, ssize, quant)
 			if err != nil {
 				return NewPowerPairZero(), err
 			}
-			activatedPower = activatedPower.Add(partitionActivatedPower)
+			totalPower = totalPower.Add(partitionPower)
 
 			// Save partition back.
 			err = partitions.Set(partIdx, partition)
@@ -364,7 +365,7 @@ func (dl *Deadline) AddSectors(
 		}
 	}
 
-	return activatedPower, nil
+	return totalPower, nil
 }
 
 func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {

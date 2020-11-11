@@ -60,9 +60,10 @@ func TestDeadlines(t *testing.T) {
 	// Partition 2: sectors 5, 6, 7, 8
 	// Partition 3: sectors 9
 	addSectors := func(t *testing.T, store adt.Store, dl *miner.Deadline, prove bool) {
+		power := miner.PowerForSectors(sectorSize, sectors)
 		activatedPower, err := dl.AddSectors(store, partitionSize, false, sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		assert.True(t, activatedPower.IsZero())
+		assert.True(t, activatedPower.Equals(power))
 
 		dlState.withUnproven(1, 2, 3, 4, 5, 6, 7, 8, 9).
 			withPartitions(
@@ -80,9 +81,7 @@ func TestDeadlines(t *testing.T) {
 		// Prove everything
 		result, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 0, []miner.PoStPartition{{Index: 0}, {Index: 1}, {Index: 2}})
 		require.NoError(t, err)
-
-		unprovenPower := miner.PowerForSectors(sectorSize, sectors)
-		require.True(t, result.PowerDelta.Equals(unprovenPower))
+		require.True(t, result.PowerDelta.Equals(power))
 
 		faultyPower, recoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 0)
 		require.NoError(t, err)
@@ -504,9 +503,10 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		unprovenPowerDelta, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		require.True(t, unprovenPowerDelta.IsZero())
+		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
 
@@ -574,9 +574,10 @@ func TestDeadlines(t *testing.T) {
 		addThenMarkFaulty(t, store, dl, true)
 
 		// add an inactive sector
-		unprovenPowerDelta, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		require.True(t, unprovenPowerDelta.IsZero())
+		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
 
@@ -657,9 +658,10 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		unprovenPowerDelta, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		require.True(t, unprovenPowerDelta.IsZero())
+		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
 
@@ -710,9 +712,10 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		unprovenPowerDelta, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		require.True(t, unprovenPowerDelta.IsZero())
+		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
 

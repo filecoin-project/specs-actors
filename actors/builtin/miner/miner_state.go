@@ -500,15 +500,11 @@ func (st *State) RescheduleSectorExpirations(
 
 // Assign new sectors to deadlines.
 func (st *State) AssignSectorsToDeadlines(
-	store adt.Store,
-	currentEpoch abi.ChainEpoch,
-	sectors []*SectorOnChainInfo,
-	partitionSize uint64,
-	sectorSize abi.SectorSize,
-) (PowerPair, error) {
+	store adt.Store, currentEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, partitionSize uint64, sectorSize abi.SectorSize,
+) error {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return NewPowerPairZero(), err
+		return err
 	}
 
 	// Sort sectors by number to get better runs in partition bitfields.
@@ -517,21 +513,19 @@ func (st *State) AssignSectorsToDeadlines(
 	})
 
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
-	err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
+	if err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
 		if deadlineIsMutable(st.ProvingPeriodStart, idx, currentEpoch) {
 			deadlineArr[int(idx)] = dl
 		}
 		return nil
-	})
-	if err != nil {
-		return NewPowerPairZero(), err
+	}); err != nil {
+		return err
 	}
 
-	activatedPower := NewPowerPairZero()
 	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
+		return xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}
 
 	for dlIdx, deadlineSectors := range deadlineToSectors {
@@ -542,24 +536,21 @@ func (st *State) AssignSectorsToDeadlines(
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineActivatedPower, err := dl.AddSectors(store, partitionSize, false, deadlineSectors, sectorSize, quant)
-		if err != nil {
-			return NewPowerPairZero(), err
+		// The power returned from AddSectors is ignored because it's not activated (proven) yet.
+		proven := false
+		if _, err := dl.AddSectors(store, partitionSize, proven, deadlineSectors, sectorSize, quant); err != nil {
+			return err
 		}
 
-		activatedPower = activatedPower.Add(deadlineActivatedPower)
-
-		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
-		if err != nil {
-			return NewPowerPairZero(), err
+		if err := deadlines.UpdateDeadline(store, uint64(dlIdx), dl); err != nil {
+			return err
 		}
 	}
 
-	err = st.SaveDeadlines(store, deadlines)
-	if err != nil {
-		return NewPowerPairZero(), err
+	if err := st.SaveDeadlines(store, deadlines); err != nil {
+		return err
 	}
-	return activatedPower, nil
+	return nil
 }
 
 // Pops up to max early terminated sectors from all deadlines.
