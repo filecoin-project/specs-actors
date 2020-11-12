@@ -76,8 +76,8 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 		accounts,
 		agent.MinerAgentConfig{
 			PrecommitRate:   0.1,
-			FaultRate:       0.001,
-			RecoveryRate:    0.00001,
+			FaultRate:       0.00001,
+			RecoveryRate:    0.0001,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
@@ -157,6 +157,79 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 				printCallStats(method, stats, "")
 			}
 			cumulativeStats = make(vm_test.StatsByCall)
+		}
+	}
+}
+
+func TestCreateDeals(t *testing.T) {
+	//t.Skip("this is slow")
+	ctx := context.Background()
+	initialBalance := big.Mul(big.NewInt(1e9), big.NewInt(1e18))
+	minerCount := 3
+	clientCount := 9
+
+	// set up sim
+	rnd := rand.New(rand.NewSource(42))
+	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+
+	// create miners
+	workerAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		workerAccounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:    0.1,
+			FaultRate:        0.0001,
+			RecoveryRate:     0.0001,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  big.Div(initialBalance, big.NewInt(2)),
+			MinMarketBalance: big.NewInt(1e18),
+			MaxMarketBalance: big.NewInt(2e18),
+		},
+		1.0, // create miner probability of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
+
+	clientAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), clientCount, initialBalance, rnd.Int63())
+	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
+		DealRate:         .01,
+		MinPieceSize:     1 << 29,
+		MaxPieceSize:     32 << 30,
+		MinStoragePrice:  big.Zero(),
+		MaxStoragePrice:  abi.NewTokenAmount(200_000_000),
+		MinMarketBalance: big.NewInt(1e18),
+		MaxMarketBalance: big.NewInt(2e18),
+	})
+
+	var pwrSt power.State
+	for i := 0; i < 100_000; i++ {
+		require.NoError(t, sim.Tick())
+
+		epoch := sim.GetVM().GetEpoch()
+		if epoch%100 == 0 {
+			stateTree, err := sim.GetVM().GetStateTree()
+			require.NoError(t, err)
+
+			totalBalance, err := sim.GetVM().GetTotalActorBalance()
+			require.NoError(t, err)
+
+			acc, err := states.CheckStateInvariants(stateTree, totalBalance, sim.GetVM().GetEpoch()-1)
+			require.NoError(t, err)
+			require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
+
+			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
+
+			// assume each sector is 32Gb
+			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
+
+			// compute number of deals
+			deals := 0
+			for _, da := range dealAgents {
+				deals += da.DealCount
+			}
+
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  cnsMnrs: %d avgWins: %.3f  msgs: %d  deals: %d\n",
+				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
+				pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch), sim.MessageCount, deals)
 		}
 	}
 }

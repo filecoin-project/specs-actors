@@ -47,6 +47,8 @@ type VM struct {
 
 	statsSource   StatsSource
 	statsByMethod StatsByCall
+
+	circSupply abi.TokenAmount
 }
 
 // VM types
@@ -91,6 +93,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     big.Mul(big.NewInt(1e9), big.NewInt(1e18)),
 	}
 }
 
@@ -117,6 +120,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     big.Mul(big.NewInt(1e9), big.NewInt(1e18)),
 	}, nil
 }
 
@@ -143,6 +147,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		networkVersion: vm.networkVersion,
 		statsSource:    vm.statsSource,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     vm.circSupply,
 	}, nil
 }
 
@@ -169,6 +174,7 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		networkVersion: nv,
 		statsSource:    vm.statsSource,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     vm.circSupply,
 	}, nil
 }
 
@@ -322,6 +328,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		originatorCallSeq:    vm.callSequence,
 		newActorAddressCount: 0,
 		statsSource:          vm.statsSource,
+		circSupply:           vm.circSupply,
 	}
 	vm.callSequence++
 
@@ -408,6 +415,16 @@ func (vm *VM) GetEpoch() abi.ChainEpoch {
 // Get call stats
 func (vm *VM) GetCallStats() map[MethodKey]*CallStats {
 	return vm.statsByMethod
+}
+
+// Set the FIL circulating supply passed to actors through runtime
+func (vm *VM) SetCirculatingSupply(supply abi.TokenAmount) {
+	vm.circSupply = supply
+}
+
+// Set the FIL circulating supply passed to actors through runtime
+func (vm *VM) GetCirculatingSupply() abi.TokenAmount {
+	return vm.circSupply
 }
 
 // transfer debits money from one account and credits it to another.

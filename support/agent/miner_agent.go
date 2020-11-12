@@ -4,93 +4,32 @@ import (
 	"container/heap"
 	"crypto/sha256"
 	"fmt"
-	"github.com/filecoin-project/go-state-types/dline"
-	"github.com/pkg/errors"
+	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
+	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 )
 
 type MinerAgentConfig struct {
-	PrecommitRate   float64                 // average number of PreCommits per epoch
-	ProofType       abi.RegisteredSealProof // seal proof type for this miner
-	StartingBalance abi.TokenAmount         // initial actor balance for miner actor
-	FaultRate       float64                 // rate at which committed sectors go faulty (faults per committed sector per epoch)
-	RecoveryRate    float64                 // rate at which faults are recovered (recoveries per fault per epoch)
-}
-
-type MinerGenerator struct {
-	config            MinerAgentConfig // eventually this should become a set of probabilities to support miner differentiation
-	createMinerEvents *RateIterator
-	minersCreated     int
-	accounts          []address.Address
-	rnd               *rand.Rand
-}
-
-func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, createMinerRate float64, rndSeed int64) *MinerGenerator {
-	rnd := rand.New(rand.NewSource(rndSeed))
-	return &MinerGenerator{
-		config:            config,
-		createMinerEvents: NewRateIterator(createMinerRate, rnd.Int63()),
-		accounts:          accounts,
-		rnd:               rnd,
-	}
-}
-
-func (mg *MinerGenerator) Tick(_ SimState) ([]message, error) {
-	var msgs []message
-	if mg.minersCreated >= len(mg.accounts) {
-		return msgs, nil
-	}
-
-	err := mg.createMinerEvents.Tick(func() error {
-		if mg.minersCreated < len(mg.accounts) {
-			addr := mg.accounts[mg.minersCreated]
-			mg.minersCreated++
-			msgs = append(msgs, mg.createMiner(addr, mg.config))
-		}
-		return nil
-	})
-	return msgs, err
-}
-
-func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) message {
-	return message{
-		From:   owner,
-		To:     builtin.StoragePowerActorAddr,
-		Value:  mg.config.StartingBalance, // miner gets all account funds
-		Method: builtin.MethodsPower.CreateMiner,
-		Params: &power.CreateMinerParams{
-			Owner:         owner,
-			Worker:        owner,
-			SealProofType: cfg.ProofType,
-		},
-		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
-			createMinerRet, ok := ret.(*power.CreateMinerReturn)
-			if !ok {
-				return errors.Errorf("create miner return has wrong type: %v", ret)
-			}
-
-			params := msg.Params.(*power.CreateMinerParams)
-			if !ok {
-				return errors.Errorf("create miner params has wrong type: %v", msg.Params)
-			}
-
-			s.AddAgent(NewMinerAgent(params.Owner, params.Worker, createMinerRet.IDAddress, createMinerRet.RobustAddress, mg.rnd.Int63(), cfg))
-			return nil
-		},
-	}
+	PrecommitRate    float64                 // average number of PreCommits per epoch
+	ProofType        abi.RegisteredSealProof // seal proof type for this miner
+	StartingBalance  abi.TokenAmount         // initial actor balance for miner actor
+	FaultRate        float64                 // rate at which committed sectors go faulty (faults per committed sector per epoch)
+	RecoveryRate     float64                 // rate at which faults are recovered (recoveries per fault per epoch)
+	MinMarketBalance abi.TokenAmount         // balance below which miner will top up funds in market actor
+	MaxMarketBalance abi.TokenAmount         // balance to which miner will top up funds in market actor
 }
 
 type MinerAgent struct {
@@ -106,6 +45,11 @@ type MinerAgent struct {
 	// total number of sectors expected to be faulty
 	faultySectors []uint64
 
+	// deals made by this agent that need to be published
+	pendingDeals []market.ClientDealProposal
+	// deals made by this agent that need to be published
+	dealsPendingInclusion map[abi.DealID]market.ClientDealProposal
+
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
 	// which sector belongs to which deadline/partition
@@ -118,6 +62,8 @@ type MinerAgent struct {
 	recoveryEvents *RateIterator
 	// tracks which sector number to use next
 	nextSectorNumber abi.SectorNumber
+	// tracks funds expected to be locked for miner deal collateral
+	expectedMarketBalance abi.TokenAmount
 	// random numnber generator provided by sim
 	rnd *rand.Rand
 }
@@ -133,8 +79,9 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		IDAddress:     idAddress,
 		RobustAddress: robustAddress,
 
-		operationSchedule: &opQueue{},
-		preCommitEvents:   NewRateIterator(config.PrecommitRate, rnd.Int63()),
+		operationSchedule:     &opQueue{},
+		preCommitEvents:       NewRateIterator(config.PrecommitRate, rnd.Int63()),
+		expectedMarketBalance: big.Zero(),
 
 		// fault rate is the configured fault rate times the number of live sectors or zero.
 		faultEvents: NewRateIterator(0.0, rnd.Int63()),
@@ -221,8 +168,47 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 		return nil, err
 	}
 
+	// publish pending deals
+	messages = append(messages, ma.publishStorageDeals()...)
+
+	// add market balance if needed
+	messages = append(messages, ma.updateMarketBalance()...)
+
 	return messages, nil
 }
+
+///////////////////////////////////
+//
+//  DealProvider methods
+//
+///////////////////////////////////
+
+var _ DealProvider = (*MinerAgent)(nil)
+
+func (ma *MinerAgent) Address() address.Address {
+	return ma.IDAddress
+}
+
+func (ma *MinerAgent) DealRange(currentEpoch abi.ChainEpoch) (abi.ChainEpoch, abi.ChainEpoch) {
+	// maximum sector start and maximum expiration
+	return currentEpoch + miner.MaxProveCommitDuration[ma.Config.ProofType] + miner.MinSectorExpiration,
+		currentEpoch + miner.MaxSectorExpirationExtension
+}
+
+func (ma *MinerAgent) CreateDeal(proposal market.ClientDealProposal) {
+	ma.expectedMarketBalance = big.Sub(ma.expectedMarketBalance, proposal.Proposal.ProviderCollateral)
+	ma.pendingDeals = append(ma.pendingDeals, proposal)
+}
+
+func (ma *MinerAgent) AvailableCollateral() abi.TokenAmount {
+	return ma.expectedMarketBalance
+}
+
+///////////////////////////////////
+//
+//  Message Generation
+//
+///////////////////////////////////
 
 // create PreCommit message and activation trigger
 func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
@@ -234,6 +220,9 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 	// assume PreCommit succeeds and schedule prove commit
 	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
 
+	// TODO: compute deals that fit wihin sector size and include them in precommit
+
+	// create sector with all deals the miner has made but not yet included
 	params := miner.PreCommitSectorParams{
 		SealProof:     ma.Config.ProofType,
 		SectorNumber:  sectorNumber,
@@ -241,6 +230,7 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 		SealRandEpoch: currentEpoch - 1,
 		Expiration:    ma.sectorExpiration(currentEpoch),
 	}
+	ma.pendingDeals = nil
 
 	return message{
 		From:   ma.Worker,
@@ -414,6 +404,54 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		Params: &params,
 	}}, nil
 }
+
+// create a deal proposal message and notify provider of deal
+func (ma *MinerAgent) publishStorageDeals() []message {
+	if len(ma.pendingDeals) == 0 {
+		return []message{}
+	}
+
+	params := market.PublishStorageDealsParams{
+		Deals: ma.pendingDeals,
+	}
+	ma.pendingDeals = nil
+
+	return []message{{
+		From:   ma.Worker,
+		To:     builtin.StorageMarketActorAddr,
+		Value:  big.Zero(),
+		Method: builtin.MethodsMarket.PublishStorageDeals,
+		Params: &params,
+	}}
+}
+
+func (ma *MinerAgent) updateMarketBalance() []message {
+	if ma.expectedMarketBalance.GreaterThanEqual(ma.Config.MinMarketBalance) {
+		return []message{}
+	}
+
+	balanceToAdd := big.Sub(ma.Config.MaxMarketBalance, ma.expectedMarketBalance)
+
+	return []message{{
+		From:   ma.Worker,
+		To:     builtin.StorageMarketActorAddr,
+		Value:  balanceToAdd,
+		Method: builtin.MethodsMarket.AddBalance,
+		Params: &ma.IDAddress,
+
+		// update in return handler to prevent deals before the miner has balance
+		ReturnHandler: func(_ SimState, _ message, _ cbor.Marshaler) error {
+			ma.expectedMarketBalance = ma.Config.MaxMarketBalance
+			return nil
+		},
+	}}
+}
+
+////////////////////////////////////////////////
+//
+//  Misc methods
+//
+////////////////////////////////////////////////
 
 // looks up sector deadline and partition so we can start adding it to PoSts
 func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) error {
