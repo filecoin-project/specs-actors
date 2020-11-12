@@ -34,9 +34,11 @@ func TestCreate20Miners(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   2.5,
-			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-			StartingBalance: initialBalance,
+			PrecommitRate:    2.5,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  initialBalance,
+			MinMarketBalance: big.Zero(),
+			MaxMarketBalance: big.Zero(),
 		},
 		1.0, // create miner probability of 1 means a new miner is created every tick
 		rnd.Int63(),
@@ -75,11 +77,13 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   0.1,
-			FaultRate:       0.00001,
-			RecoveryRate:    0.0001,
-			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-			StartingBalance: initialBalance,
+			PrecommitRate:    0.1,
+			FaultRate:        0.00001,
+			RecoveryRate:     0.0001,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  initialBalance,
+			MinMarketBalance: big.Zero(),
+			MaxMarketBalance: big.Zero(),
 		},
 		1.0, // create miner probability of 1 means a new miner is created every tick
 		rnd.Int63(),
@@ -128,11 +132,13 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
-			PrecommitRate:   2.0,
-			FaultRate:       0.001,
-			RecoveryRate:    0.001,
-			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-			StartingBalance: initialBalance,
+			PrecommitRate:    2.0,
+			FaultRate:        0.001,
+			RecoveryRate:     0.001,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  initialBalance,
+			MinMarketBalance: big.Zero(),
+			MaxMarketBalance: big.Zero(),
 		},
 		1.0, // create miner probibility of 1 means a new miner is created every tick
 		rnd.Int63(),
@@ -162,7 +168,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 }
 
 func TestCreateDeals(t *testing.T) {
-	//t.Skip("this is slow")
+	t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e9), big.NewInt(1e18))
 	minerCount := 3

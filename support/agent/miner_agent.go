@@ -4,20 +4,20 @@ import (
 	"container/heap"
 	"crypto/sha256"
 	"fmt"
-	"github.com/filecoin-project/go-state-types/cbor"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 )
@@ -48,7 +48,7 @@ type MinerAgent struct {
 	// deals made by this agent that need to be published
 	pendingDeals []market.ClientDealProposal
 	// deals made by this agent that need to be published
-	dealsPendingInclusion map[abi.DealID]market.ClientDealProposal
+	dealsPendingInclusion []pendingDeal
 
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
@@ -220,15 +220,17 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 	// assume PreCommit succeeds and schedule prove commit
 	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
 
-	// TODO: compute deals that fit wihin sector size and include them in precommit
+	expiration := ma.sectorExpiration(currentEpoch)
+	dealIds, expiration := ma.fillSectorWithPendingDeals(expiration)
 
 	// create sector with all deals the miner has made but not yet included
 	params := miner.PreCommitSectorParams{
+		DealIDs:       dealIds,
 		SealProof:     ma.Config.ProofType,
 		SectorNumber:  sectorNumber,
 		SealedCID:     sectorSealCID(ma.rnd),
 		SealRandEpoch: currentEpoch - 1,
-		Expiration:    ma.sectorExpiration(currentEpoch),
+		Expiration:    expiration,
 	}
 	ma.pendingDeals = nil
 
@@ -422,6 +424,22 @@ func (ma *MinerAgent) publishStorageDeals() []message {
 		Value:  big.Zero(),
 		Method: builtin.MethodsMarket.PublishStorageDeals,
 		Params: &params,
+		ReturnHandler: func(_ SimState, _ message, ret cbor.Marshaler) error {
+			// add returned deal ids to be included within sectors
+			publishReturn, ok := ret.(*market.PublishStorageDealsReturn)
+			if !ok {
+				return errors.Errorf("create miner return has wrong type: %v", ret)
+			}
+
+			for idx, dealId := range publishReturn.IDs {
+				ma.dealsPendingInclusion = append(ma.dealsPendingInclusion, pendingDeal{
+					id:   dealId,
+					size: params.Deals[idx].Proposal.PieceSize,
+					ends: params.Deals[idx].Proposal.EndEpoch,
+				})
+			}
+			return nil
+		},
 	}}
 }
 
@@ -516,6 +534,40 @@ func (ma *MinerAgent) scheduleSyncAndNextProof(v SimState, dlIdx uint64) error {
 	ma.operationSchedule.ScheduleOp(proveAt, proveDeadlineAction{dlIdx: dlIdx})
 
 	return nil
+}
+
+// Fill sector with deals
+// This is a naive packing algorithm that adds pieces in order received.
+func (ma *MinerAgent) fillSectorWithPendingDeals(expiration abi.ChainEpoch) ([]abi.DealID, abi.ChainEpoch) {
+	var dealIDs []abi.DealID
+
+	sectorSize, err := ma.Config.ProofType.SectorSize()
+	if err != nil {
+		panic(err)
+	}
+
+	// pieces are aligned so that each starts at the first multiple of its piece size >= the next empty slot.
+	// just stop when we find one that doesn't fit in the sector. Assume pieces can't have zero size
+	loc := uint64(0)
+	for _, piece := range ma.dealsPendingInclusion {
+		size := uint64(piece.size)
+		loc = (loc + size - 1) / size * size
+		if loc+size > uint64(sectorSize) {
+			break
+		}
+
+		dealIDs = append(dealIDs, piece.id)
+		if piece.ends > expiration {
+			expiration = piece.ends
+		}
+
+		loc += size
+	}
+
+	// remove ids we've added from pending
+	ma.dealsPendingInclusion = ma.dealsPendingInclusion[len(dealIDs):]
+
+	return dealIDs, expiration
 }
 
 // ensure recovery hasn't expired since it was scheduled
@@ -754,6 +806,12 @@ type proveDeadlineAction struct {
 
 type syncDeadlineStateAction struct {
 	dlIdx uint64
+}
+
+type pendingDeal struct {
+	id   abi.DealID
+	size abi.PaddedPieceSize
+	ends abi.ChainEpoch
 }
 
 /////////////////////////////////////////////
