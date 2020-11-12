@@ -258,7 +258,7 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *abi.
 
 // GasOnSubmitVerifySeal is amount of gas charged for SubmitPoRepForBulkVerify
 // This number is empirically determined
-const GasOnSubmitVerifySeal = 34721049
+const GasOnSubmitVerifySeal = power0.GasOnSubmitVerifySeal
 
 // GasOnSubmitVerifySealV7 is the amount of gas charged for SubmitPoRepForBulkVerify
 // after v7 corresponding to 4x speedup in porep.
