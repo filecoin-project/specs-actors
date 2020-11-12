@@ -2,6 +2,7 @@ package power
 
 import (
 	"bytes"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -257,12 +258,17 @@ func (a Actor) UpdatePledgeTotal(rt Runtime, pledgeDelta *abi.TokenAmount) *abi.
 
 // GasOnSubmitVerifySeal is amount of gas charged for SubmitPoRepForBulkVerify
 // This number is empirically determined
-const GasOnSubmitVerifySeal = 34721049
+const GasOnSubmitVerifySeal = power0.GasOnSubmitVerifySeal
+
+// GasOnSubmitVerifySealV7 is the amount of gas charged for SubmitPoRepForBulkVerify
+// after v7 corresponding to 4x speedup in porep.
+const GasOnSubmitVerifySealV7 = 8509249
 
 func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyInfo) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	minerAddr := rt.Caller()
+	nv := rt.NetworkVersion()
 
 	var st State
 	rt.StateTransaction(&st, func() {
@@ -290,7 +296,11 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 		mmrc, err := mmap.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proof batch")
 
-		rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
+		if nv < network.Version7 {
+			rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySeal, 0)
+		} else {
+			rt.ChargeGas("OnSubmitVerifySeal", GasOnSubmitVerifySealV7, 0)
+		}
 		st.ProofValidationBatch = &mmrc
 	})
 
