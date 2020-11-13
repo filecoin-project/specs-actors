@@ -64,7 +64,7 @@ func TestCreate20Miners(t *testing.T) {
 }
 
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
-	//t.Skip("this is slow")
+	t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e9), big.NewInt(1e18))
 	minerCount := 1
@@ -76,8 +76,8 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 		accounts,
 		agent.MinerAgentConfig{
 			PrecommitRate:   0.1,
-			FaultRate:       0.0001,
-			RecoveryRate:    0.0001,
+			FaultRate:       0.001,
+			RecoveryRate:    0.00001,
 			ProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance: initialBalance,
 		},
@@ -114,7 +114,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 }
 
 func TestCommitAndCheckReadWriteStats(t *testing.T) {
-	//t.Skip("this is slow")
+	t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
 	minerCount := 1

@@ -18,7 +18,7 @@ func NewRateIterator(rate float64, seed int64) *RateIterator {
 	rnd := rand.New(rand.NewSource(seed))
 	next := 1.0
 	if rate > 0.0 {
-		next -= math.Log(1.0-rnd.Float64()) / rate
+		next += poissonDelay(rnd.Float64(), rate)
 	}
 
 	return &RateIterator{
@@ -51,25 +51,30 @@ func (ri *RateIterator) Tick(f func() error) error {
 
 		// Choose next event
 		// Note the argument to Log is <= 1, so the right side is always negative and nextOccurrence increases
-		ri.nextOccurrence -= math.Log(1.0-ri.rnd.Float64()) / ri.rate
+		ri.nextOccurrence += poissonDelay(ri.rnd.Float64(), ri.rate)
 	}
 	return nil
 }
 
-// convenience method for when rate depends on changing variables
+// TickWithRate permits a variable rate.
+// If the rate has changed, it will compute a new next occurrence before running tick.
+// This prevents having to wait a long time to recognize a change from a very slow rate to a higher one.
 func (ri *RateIterator) TickWithRate(rate float64, f func() error) error {
-	if rate <= 0.0 {
-		ri.rate = rate
-		return nil
-	}
+	ri.rate = rate
 
 	// recompute next occurrence if rate has changed
-	if ri.rate != rate {
-		ri.nextOccurrence = 1.0 - math.Log(1.0-ri.rnd.Float64())/rate
+	if ri.rate != rate && rate > 0.0 {
+		ri.nextOccurrence = 1.0 + poissonDelay(ri.rnd.Float64(), rate)
 	}
 
-	ri.rate = rate
 	return ri.Tick(f)
+}
+
+// Compute a poisson distributed delay that produces (on average) a given rate.
+// The uniformRnd is a real number uniformly distributed in [0, 1).
+// The rate is the average number of events expected per epoch and may be greater or less than 1 but not zero.
+func poissonDelay(uniformRnd float64, rate float64) float64 {
+	return -math.Log(1.0-uniformRnd) / rate
 }
 
 ///////////////////////////////////////
