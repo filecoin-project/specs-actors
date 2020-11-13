@@ -3,6 +3,7 @@ package agent
 import (
 	"container/heap"
 	"crypto/sha256"
+	"fmt"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/pkg/errors"
 	"math/rand"
@@ -143,14 +144,50 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 	}
 }
 
-func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
+func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 	var messages []message
+
+	// act on scheduled operations
+	for _, op := range ma.operationSchedule.PopOpsUntil(s.GetEpoch()) {
+		switch o := op.action.(type) {
+		case proveCommitAction:
+			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber))
+		case registerSectorAction:
+			err := ma.registerSector(s, o.sectorNumber)
+			if err != nil {
+				return nil, err
+			}
+		case proveDeadlineAction:
+			msgs, err := ma.submitPoStForDeadline(s, o.dlIdx)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, msgs...)
+		case recoverSectorAction:
+			msgs, err := ma.delayedRecoveryMessage(o.dlIdx, o.pIdx, o.sectorNumber)
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, msgs...)
+		case syncDeadlineStateAction:
+			if err := ma.syncMinerState(s, o.dlIdx); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// Start PreCommits. PreCommits are triggered with a Poisson distribution at the PreCommit rate.
 	// This permits multiple PreCommits per epoch while also allowing multiple epochs to pass
 	// between PreCommits. For now always assume we have enough funds for the PreCommit deposit.
 	if err := ma.preCommitEvents.Tick(func() error {
-		messages = append(messages, ma.createPreCommit(v.GetEpoch()))
+		// can't create precommit if in fee debt
+		if st, err := ma.getState(s); err != nil {
+			return err
+		} else if st.FeeDebt.GreaterThan(big.Zero()) {
+			return nil
+		}
+
+		messages = append(messages, ma.createPreCommit(s.GetEpoch()))
 		return nil
 	}); err != nil {
 		return nil, err
@@ -160,7 +197,7 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	// Rate must be multiplied by the number of live sectors
 	faultRate := ma.Config.FaultRate * float64(len(ma.liveSectors))
 	if err := ma.faultEvents.TickWithRate(faultRate, func() error {
-		msgs, err := ma.createFault(v)
+		msgs, err := ma.createFault(s)
 		if err != nil {
 			return err
 		}
@@ -174,7 +211,7 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 	// Rate must be multiplied by the number of live sectors
 	recoveryRate := ma.Config.RecoveryRate * float64(len(ma.faultySectors))
 	if err := ma.recoveryEvents.TickWithRate(recoveryRate, func() error {
-		msgs, err := ma.createRecovery(v)
+		msgs, err := ma.createRecovery(s)
 		if err != nil {
 			return err
 		}
@@ -182,31 +219,6 @@ func (ma *MinerAgent) Tick(v SimState) ([]message, error) {
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-
-	// act on scheduled operations
-	for _, op := range ma.operationSchedule.PopOpsUntil(v.GetEpoch()) {
-		switch o := op.action.(type) {
-		case proveCommitAction:
-			messages = append(messages, ma.createProveCommit(v.GetEpoch(), o.sectorNumber))
-		case registerSectorAction:
-			err := ma.registerSector(v, o.sectorNumber)
-			if err != nil {
-				return nil, err
-			}
-		case proveDeadlineAction:
-			msgs, err := ma.submitPoStForDeadline(v, o.dlIdx)
-			if err != nil {
-				return nil, err
-			}
-			messages = append(messages, msgs...)
-		case recoverSectorAction:
-			msgs, err := ma.delayedRecoveryMessage(o.dlIdx, o.pIdx, o.sectorNumber)
-			if err != nil {
-				return nil, err
-			}
-			messages = append(messages, msgs...)
-		}
 	}
 
 	return messages, nil
@@ -389,8 +401,8 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		ChainCommitRand:  []byte("not really random"),
 	}
 
-	// schedule next PoSt
-	if err := ma.scheduleNextProof(v, dlIdx); err != nil {
+	// schedule post-deadline state synchronization and next PoSt
+	if err := ma.scheduleSyncAndNextProof(v, dlIdx); err != nil {
 		return nil, err
 	}
 
@@ -411,13 +423,21 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) 
 		return err
 	}
 
+	// first check for sector
+	if found, err := st.HasSectorNo(v.Store(), sectorNumber); err != nil {
+		return err
+	} else if !found {
+		fmt.Printf("failed to register sector %d, did proof verification fail?\n", sectorNumber)
+		return nil
+	}
+
 	dlIdx, pIdx, err := st.FindSector(v.Store(), sectorNumber)
 	if err != nil {
 		return err
 	}
 
 	if len(ma.deadlines[dlIdx]) == 0 {
-		err := ma.scheduleNextProof(v, dlIdx)
+		err := ma.scheduleSyncAndNextProof(v, dlIdx)
 		if err != nil {
 			return err
 		}
@@ -438,7 +458,7 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) 
 }
 
 // schedule a proof within the deadline's bounds
-func (ma *MinerAgent) scheduleNextProof(v SimState, dlIdx uint64) error {
+func (ma *MinerAgent) scheduleSyncAndNextProof(v SimState, dlIdx uint64) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -451,14 +471,17 @@ func (ma *MinerAgent) scheduleNextProof(v SimState, dlIdx uint64) error {
 		deadlineStart += miner.WPoStProvingPeriod
 	}
 	deadlineClose := deadlineStart + miner.WPoStChallengeWindow
+
+	ma.operationSchedule.ScheduleOp(deadlineClose, syncDeadlineStateAction{dlIdx: dlIdx})
+
 	proveAt := deadlineStart + abi.ChainEpoch(ma.rnd.Int63n(int64(deadlineClose-deadlineStart)))
 	ma.operationSchedule.ScheduleOp(proveAt, proveDeadlineAction{dlIdx: dlIdx})
+
 	return nil
 }
 
 // ensure recovery hasn't expired since it was scheduled
 func (ma *MinerAgent) delayedRecoveryMessage(dlIdx uint64, pIdx uint64, recoveryNumber abi.SectorNumber) ([]message, error) {
-	// TODO: check expirations after prove
 	part := ma.deadlines[dlIdx][pIdx]
 	if expired, err := part.expired.IsSet(uint64(recoveryNumber)); err != nil {
 		return nil, err
@@ -491,6 +514,89 @@ func (ma *MinerAgent) recoveryMessage(dlIdx uint64, pIdx uint64, recoveryNumber 
 		Method: builtin.MethodsMiner.DeclareFaultsRecovered,
 		Params: &recoverParams,
 	}}, nil
+}
+
+// This function updates all sectors in deadline that have newly expired
+func (ma *MinerAgent) syncMinerState(s SimState, dlIdx uint64) error {
+	st, err := ma.getState(s)
+	if err != nil {
+		return err
+
+	}
+
+	dl, err := ma.loadDeadlineState(s, st, dlIdx)
+	if err != nil {
+		return err
+	}
+
+	// update sector state for all partitions in deadline
+	var allNewExpired []bitfield.BitField
+	for pIdx, part := range ma.deadlines[dlIdx] {
+		partState, err := dl.LoadPartition(s.Store(), uint64(pIdx))
+		if err != nil {
+			return err
+		}
+		newExpired, err := bitfield.IntersectBitField(part.sectors, partState.Terminated)
+		if err != nil {
+			return err
+		}
+
+		if empty, err := newExpired.IsEmpty(); err != nil {
+			return err
+		} else if !empty {
+			err := part.expireSectors(newExpired)
+			if err != nil {
+				return err
+			}
+			allNewExpired = append(allNewExpired, newExpired)
+		}
+	}
+
+	// remove newly expired sectors from miner agent state to prevent choosing them in the future.
+	toRemoveBF, err := bitfield.MultiMerge(allNewExpired...)
+	if err != nil {
+		return err
+	}
+
+	toRemove, err := toRemoveBF.AllMap(uint64(ma.nextSectorNumber))
+	if err != nil {
+		return err
+	}
+
+	if len(toRemove) > 0 {
+		ma.liveSectors = filterSlice(ma.liveSectors, toRemove)
+		ma.faultySectors = filterSlice(ma.faultySectors, toRemove)
+	}
+	return nil
+}
+
+func filterSlice(ns []uint64, toRemove map[uint64]bool) []uint64 {
+	var nextLive []uint64
+	for _, sn := range ns {
+		_, expired := toRemove[sn]
+		if !expired {
+			nextLive = append(nextLive, sn)
+		}
+	}
+	return nextLive
+}
+
+func (ma *MinerAgent) loadDeadlineState(s SimState, st miner.State, dlIdx uint64) (*miner.Deadline, error) {
+	dls, err := st.LoadDeadlines(s.Store())
+	if err != nil {
+		return nil, err
+	}
+
+	return dls.LoadDeadline(s.Store(), dlIdx)
+}
+
+func (ma *MinerAgent) getState(s SimState) (miner.State, error) {
+	var st miner.State
+	err := s.GetState(ma.IDAddress, &st)
+	if err != nil {
+		return miner.State{}, err
+	}
+	return st, err
 }
 
 func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.Info, uint64, error) {
@@ -564,6 +670,31 @@ type partition struct {
 	expired     bitfield.BitField // sector number of sectors believed to have expired
 }
 
+func (part *partition) expireSectors(newExpired bitfield.BitField) error {
+	var err error
+	part.sectors, err = bitfield.SubtractBitField(part.sectors, newExpired)
+	if err != nil {
+		return err
+	}
+	part.faults, err = bitfield.SubtractBitField(part.faults, newExpired)
+	if err != nil {
+		return err
+	}
+	part.faults, err = bitfield.SubtractBitField(part.faults, newExpired)
+	if err != nil {
+		return err
+	}
+	part.toBeSkipped, err = bitfield.SubtractBitField(part.toBeSkipped, newExpired)
+	if err != nil {
+		return err
+	}
+	part.expired, err = bitfield.MergeBitFields(part.expired, newExpired)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type minerOp struct {
 	epoch  abi.ChainEpoch
 	action interface{}
@@ -584,6 +715,10 @@ type recoverSectorAction struct {
 }
 
 type proveDeadlineAction struct {
+	dlIdx uint64
+}
+
+type syncDeadlineStateAction struct {
 	dlIdx uint64
 }
 
