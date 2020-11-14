@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/filecoin-project/go-state-types/network"
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/filecoin-project/go-state-types/network"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -864,37 +863,6 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 			UnsealedCID: commD,
 		}
 		actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
-		rt.ExpectGasCharged(power.GasOnSubmitVerifySealV7)
-		st := getState(rt)
-		store := rt.AdtStore()
-		require.NotNil(t, st.ProofValidationBatch)
-		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch)
-		require.NoError(t, err)
-		arr, found, err := mmap.Get(abi.AddrKey(miner))
-		require.NoError(t, err)
-		require.True(t, found)
-		assert.Equal(t, uint64(1), arr.Length())
-		var storedSealInfo proof.SealVerifyInfo
-		found, err = arr.Get(0, &storedSealInfo)
-		require.NoError(t, err)
-		require.True(t, found)
-		assert.Equal(t, commR, storedSealInfo.SealedCID)
-		actor.checkState(rt)
-	})
-
-	t.Run("charges 4x for gas before network version 7", func(t *testing.T) {
-		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version6)
-		actor.constructAndVerify(rt)
-		actor.createMinerBasic(rt, owner, owner, miner)
-		commR := tutil.MakeCID("commR", &mineract.SealedCIDPrefix)
-		commD := tutil.MakeCID("commD", &market.PieceCIDPrefix)
-		sealInfo := &proof.SealVerifyInfo{
-			SealProof:   actor.sealProof,
-			SealedCID:   commR,
-			UnsealedCID: commD,
-		}
-		actor.submitPoRepForBulkVerify(rt, miner, sealInfo)
 		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal)
 		st := getState(rt)
 		store := rt.AdtStore()
@@ -935,7 +903,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		})
 
 		// Gas only charged for successful submissions
-		rt.ExpectGasCharged(power.GasOnSubmitVerifySealV7 * power.MaxMinerProveCommitsPerEpoch)
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch)
 	})
 
 	t.Run("aborts when miner has no claim", func(t *testing.T) {
