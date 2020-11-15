@@ -4,17 +4,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/math"
-)
-
-const (
-	// This number is not exported because it's not suitable for
-	// calculations outside reward calculations. Importantly, there are more
-	// than 365 days in a year so this number cannot be used to calculate
-	// sector lifetimes, etc.
-	daysInYear   = 365
-	epochsInYear = daysInYear * builtin.EpochsInDay
 )
 
 // Baseline function = BaselineInitialValue * (BaselineExponent) ^(t), t in epochs
@@ -34,7 +24,7 @@ var BaselineInitialValue = big.NewInt(2_888_888_880_000_000_000) // Q.0
 // BaselineInitialValue.
 func InitBaselinePower() abi.StoragePower {
 	baselineInitialValue256 := big.Lsh(BaselineInitialValue, 2*math.Precision128) // Q.0 => Q.256
-	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)   // Q.256 / Q.128 => Q.128
+	baselineAtMinusOne := big.Div(baselineInitialValue256, BaselineExponent)      // Q.256 / Q.128 => Q.128
 	return big.Rsh(baselineAtMinusOne, math.Precision128)                         // Q.128 => Q.0
 }
 
@@ -42,7 +32,7 @@ func InitBaselinePower() abi.StoragePower {
 // of the base exponent.
 func BaselinePowerFromPrev(prevEpochBaselinePower abi.StoragePower) abi.StoragePower {
 	thisEpochBaselinePower := big.Mul(prevEpochBaselinePower, BaselineExponent) // Q.0 * Q.128 => Q.128
-	return big.Rsh(thisEpochBaselinePower, math.Precision128)                      // Q.128 => Q.0
+	return big.Rsh(thisEpochBaselinePower, math.Precision128)                   // Q.128 => Q.0
 }
 
 // These numbers are estimates of the onchain constants.  They are good for initializing state in
@@ -61,9 +51,9 @@ func ComputeRTheta(effectiveNetworkTime abi.ChainEpoch, baselinePowerAtEffective
 	var rewardTheta big.Int
 	if effectiveNetworkTime != 0 {
 		rewardTheta = big.NewInt(int64(effectiveNetworkTime)) // Q.0
-		rewardTheta = big.Lsh(rewardTheta, math.Precision128)    // Q.0 => Q.128
+		rewardTheta = big.Lsh(rewardTheta, math.Precision128) // Q.0 => Q.128
 		diff := big.Sub(cumsumBaseline, cumsumRealized)
-		diff = big.Lsh(diff, math.Precision128)                      // Q.0 => Q.128
+		diff = big.Lsh(diff, math.Precision128)                   // Q.0 => Q.128
 		diff = big.Div(diff, baselinePowerAtEffectiveNetworkTime) // Q.128 / Q.0 => Q.128
 		rewardTheta = big.Sub(rewardTheta, diff)                  // Q.128
 	} else {
@@ -91,7 +81,7 @@ func computeReward(epoch abi.ChainEpoch, prevTheta, currTheta, simpleTotal, base
 	epochLam := big.Mul(big.NewInt(int64(epoch)), Lambda) // Q.0 * Q.128 => Q.128
 
 	simpleReward = big.Mul(simpleReward, big.NewFromGo(math.ExpNeg(epochLam.Int))) // Q.128 * Q.128 => Q.256
-	simpleReward = big.Rsh(simpleReward, math.Precision128)                      // Q.256 >> 128 => Q.128
+	simpleReward = big.Rsh(simpleReward, math.Precision128)                        // Q.256 >> 128 => Q.128
 
 	baselineReward := big.Sub(computeBaselineSupply(currTheta, baselineTotal), computeBaselineSupply(prevTheta, baselineTotal)) // Q.128
 
@@ -103,14 +93,14 @@ func computeReward(epoch abi.ChainEpoch, prevTheta, currTheta, simpleTotal, base
 // Computes baseline supply based on theta in Q.128 format.
 // Return is in Q.128 format
 func computeBaselineSupply(theta, baselineTotal big.Int) big.Int {
-	thetaLam := big.Mul(theta, Lambda)           // Q.128 * Q.128 => Q.256
+	thetaLam := big.Mul(theta, Lambda)              // Q.128 * Q.128 => Q.256
 	thetaLam = big.Rsh(thetaLam, math.Precision128) // Q.256 >> 128 => Q.128
 
 	eTL := big.NewFromGo(math.ExpNeg(thetaLam.Int)) // Q.128
 
 	one := big.NewInt(1)
 	one = big.Lsh(one, math.Precision128) // Q.0 => Q.128
-	oneSub := big.Sub(one, eTL)        // Q.128
+	oneSub := big.Sub(one, eTL)           // Q.128
 
 	return big.Mul(baselineTotal, oneSub) // Q.0 * Q.128 => Q.128
 }
