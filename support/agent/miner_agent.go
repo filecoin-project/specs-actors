@@ -208,7 +208,7 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 	}
 
 	// Recover sectors.
-	// Rate must be multiplied by the number of live sectors
+	// Rate must be multiplied by the number of faulty sectors
 	recoveryRate := ma.Config.RecoveryRate * float64(len(ma.faultySectors))
 	if err := ma.recoveryEvents.TickWithRate(recoveryRate, func() error {
 		msgs, err := ma.createRecovery(s)
