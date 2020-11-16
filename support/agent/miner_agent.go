@@ -680,10 +680,6 @@ func (part *partition) expireSectors(newExpired bitfield.BitField) error {
 	if err != nil {
 		return err
 	}
-	part.faults, err = bitfield.SubtractBitField(part.faults, newExpired)
-	if err != nil {
-		return err
-	}
 	part.toBeSkipped, err = bitfield.SubtractBitField(part.toBeSkipped, newExpired)
 	if err != nil {
 		return err
