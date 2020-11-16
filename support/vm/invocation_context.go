@@ -217,7 +217,14 @@ func (ic *invocationContext) CurrEpoch() abi.ChainEpoch {
 }
 
 func (ic *invocationContext) CurrentBalance() abi.TokenAmount {
-	return ic.toActor.Balance
+	// load balance
+	act, found, err := ic.rt.GetActor(ic.msg.to)
+	if err != nil {
+		ic.Abortf(exitcode.ErrIllegalState, "could not load to actor %v: %v", ic.msg.to, err)
+	} else if !found {
+		ic.Abortf(exitcode.ErrIllegalState, "could not find to actor %v", ic.msg.to)
+	}
+	return act.Balance
 }
 
 func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) {
@@ -316,7 +323,13 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 		ic.Abortf(exitcode.SysErrorIllegalActor, "Calling Send() is not allowed during side-effect lock")
 	}
 	from := ic.msg.to
-	fromActor := ic.toActor
+	fromActor, found, err := ic.rt.GetActor(from)
+	if err != nil {
+		ic.Abortf(exitcode.ErrIllegalState, "could not retrieve send actor %v for internal send: %v", from, err)
+	} else if !found {
+		ic.Abortf(exitcode.ErrIllegalState, "could not find send actor %v for internal send", from)
+	}
+
 	newMsg := InternalMessage{
 		from:   from,
 		to:     toAddr,
@@ -330,7 +343,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 	ic.stats.MergeSubStat(newCtx.toActor.Code, newMsg.method, newCtx.stats)
 
-	err := ret.Into(out)
+	err = ret.Into(out)
 	if err != nil {
 		ic.Abortf(exitcode.ErrSerialization, "failed to serialize send return value into output parameter")
 	}

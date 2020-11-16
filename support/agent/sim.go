@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"math"
-	big2 "math/big"
 	"math/rand"
 	"strings"
 	"testing"
@@ -32,10 +30,13 @@ import (
 // * Messages will be shuffled to simulate network entropy.
 // * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
-	Config        SimConfig
-	Agents        []Agent
+	Config SimConfig
+	Agents []Agent
+
 	v             *vm.VM
 	rnd           *rand.Rand
+	WinCount      uint64
+	MessageCount  uint64
 	statsByMethod map[vm.MethodKey]*vm.CallStats
 }
 
@@ -73,7 +74,7 @@ func (s *Sim) Tick() error {
 	var blockMessages []message
 
 	// compute power table before state transition to create block rewards at the end
-	powerTable, err := ComputePowerTable(s.v, s.Agents)
+	powerTable, err := computePowerTable(s.v, s.Agents)
 	if err != nil {
 		return err
 	}
@@ -108,6 +109,7 @@ func (s *Sim) Tick() error {
 			}
 		}
 	}
+	s.MessageCount += uint64(len(blockMessages))
 
 	// Apply block rewards
 	// Note that this differs from the specification in that it applies all reward messages at the end, whereas
@@ -115,7 +117,8 @@ func (s *Sim) Tick() error {
 	// interleaving them with the rest of the messages).
 	for _, miner := range powerTable.minerPower {
 		if powerTable.totalQAPower.GreaterThan(big.Zero()) {
-			wins := s.WinCount(miner.qaPower, powerTable.totalQAPower)
+			wins := WinCount(miner.qaPower, powerTable.totalQAPower, s.rnd.Float64())
+			s.WinCount += wins
 			err := s.rewardMiner(miner.addr, wins)
 			if err != nil {
 				return err
@@ -138,7 +141,7 @@ func (s *Sim) Tick() error {
 
 //////////////////////////////////////////////////
 //
-//  SimState Methods
+//  SimState Methods and other accessors
 //
 //////////////////////////////////////////////////
 
@@ -162,15 +165,19 @@ func (s *Sim) Rnd() int64 {
 	return s.rnd.Int63()
 }
 
+func (s *Sim) GetVM() *vm.VM {
+	return s.v
+}
+
+func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
+	return s.statsByMethod
+}
+
 //////////////////////////////////////////////////
 //
 //  Misc Methods
 //
 //////////////////////////////////////////////////
-
-func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
-	return s.statsByMethod
-}
 
 func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	if wins < 1 {
@@ -190,7 +197,7 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	return nil
 }
 
-func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
+func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	pt := powerTable{}
 
 	var rwst reward.State
@@ -219,44 +226,6 @@ func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 		}
 	}
 	return pt, nil
-}
-
-// This is the Filecoin algorithm for winning a ticket within a block with the tickets replaced
-// with random numbers. It lets miners win according to a Poisson distribution with rate
-// proportional to the miner's fraction of network power.
-func (s *Sim) WinCount(minerPower abi.StoragePower, totalPower abi.StoragePower) uint64 {
-	E := big2.NewRat(5, 1)
-	lambdaR := new(big2.Rat)
-	lambdaR.SetFrac(minerPower.Int, totalPower.Int)
-	lambdaR.Mul(lambdaR, E)
-	lambda, _ := lambdaR.Float64()
-
-	h := s.rnd.Float64()
-	rhs := 1 - poissonPMF(lambda, 0)
-
-	winCount := uint64(0)
-	for rhs > h {
-		winCount++
-		rhs -= poissonPMF(lambda, winCount)
-	}
-	return winCount
-}
-
-func poissonPMF(lambda float64, k uint64) float64 {
-	fk := float64(k)
-	return (math.Exp(-lambda) * math.Pow(lambda, fk)) / fact(fk)
-}
-
-func fact(k float64) float64 {
-	fact := 1.0
-	for i := 2.0; i <= k; i += 1.0 {
-		fact *= i
-	}
-	return fact
-}
-
-func (s *Sim) GetVM() *vm.VM {
-	return s.v
 }
 
 //////////////////////////////////////////////
