@@ -8,6 +8,10 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 )
 
+// RateIterator can be used to model poisson process (a process with discreet events occurring at
+// arbitrary times with a specified average rate). It's Tick function must be called at regular
+// intervals with a function that will be called zero or more times to produce the event distribution
+// at the correct rate.
 type RateIterator struct {
 	rnd            *rand.Rand
 	rate           float64
@@ -32,7 +36,6 @@ func NewRateIterator(rate float64, seed int64) *RateIterator {
 
 // simulate random occurrences by calling the given function once for each event that would land in this epoch.
 // The function will be called `rate` times on average, but may be called zero or many times in any Tick.
-//
 func (ri *RateIterator) Tick(f func() error) error {
 	// wait until we have a positive rate before doing anything
 	if ri.rate <= 0.0 {
