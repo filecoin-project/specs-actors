@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
@@ -129,6 +130,11 @@ func (s *Sim) Tick() error {
 	// store last stats
 	s.statsByMethod = s.v.GetCallStats()
 
+	// dump logs if we have them
+	if len(s.v.GetLogs()) > 0 {
+		fmt.Printf("%s\n", strings.Join(s.v.GetLogs(), "\n"))
+	}
+
 	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
 	return err
 }
@@ -157,10 +163,6 @@ func (s *Sim) AddAgent(a Agent) {
 
 func (s *Sim) AddDealProvider(d DealProvider) {
 	s.DealProviders = append(s.DealProviders, d)
-}
-
-func (s *Sim) Rnd() int64 {
-	return s.rnd.Int63()
 }
 
 func (s *Sim) GetVM() *vm.VM {

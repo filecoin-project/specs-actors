@@ -30,6 +30,7 @@ type MinerAgentConfig struct {
 	RecoveryRate     float64                 // rate at which faults are recovered (recoveries per fault per epoch)
 	MinMarketBalance abi.TokenAmount         // balance below which miner will top up funds in market actor
 	MaxMarketBalance abi.TokenAmount         // balance to which miner will top up funds in market actor
+	UpgradeSectors   bool                    // if true, miner will replace sectors without deals with sectors that do
 }
 
 type MinerAgent struct {
@@ -39,11 +40,16 @@ type MinerAgent struct {
 	IDAddress     address.Address
 	RobustAddress address.Address
 
+	// Stats
+	UpgradedSectors uint64
+
 	// These slices are used to track counts and for random selections
-	// total number of committed sectors (including sectors pending proof validation) that are not faulty and have not expired
+	// all committed sectors (including sectors pending proof validation) that are not faulty and have not expired
 	liveSectors []uint64
-	// total number of sectors expected to be faulty
+	// all sectors expected to be faulty
 	faultySectors []uint64
+	// all sectors that contain no deals (committed capacity sectors)
+	ccSectors []uint64
 
 	// deals made by this agent that need to be published
 	pendingDeals []market.ClientDealProposal
@@ -98,9 +104,9 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 	for _, op := range ma.operationSchedule.PopOpsUntil(s.GetEpoch()) {
 		switch o := op.action.(type) {
 		case proveCommitAction:
-			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber))
+			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber, o.committedCapacity))
 		case registerSectorAction:
-			err := ma.registerSector(s, o.sectorNumber)
+			err := ma.registerSector(s, o.sectorNumber, o.committedCapacity)
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +140,11 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 			return nil
 		}
 
-		messages = append(messages, ma.createPreCommit(s.GetEpoch()))
+		msg, err := ma.createPreCommit(s, s.GetEpoch())
+		if err != nil {
+			return err
+		}
+		messages = append(messages, msg)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -211,17 +221,15 @@ func (ma *MinerAgent) AvailableCollateral() abi.TokenAmount {
 ///////////////////////////////////
 
 // create PreCommit message and activation trigger
-func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
+func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (message, error) {
 	// go ahead and choose when we're going to activate this sector
 	sectorActivation := ma.sectorActivation(currentEpoch)
 	sectorNumber := ma.nextSectorNumber
 	ma.nextSectorNumber++
 
-	// assume PreCommit succeeds and schedule prove commit
-	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
-
 	expiration := ma.sectorExpiration(currentEpoch)
 	dealIds, expiration := ma.fillSectorWithPendingDeals(expiration)
+	ma.pendingDeals = nil
 
 	// create sector with all deals the miner has made but not yet included
 	params := miner.PreCommitSectorParams{
@@ -232,7 +240,38 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 		SealRandEpoch: currentEpoch - 1,
 		Expiration:    expiration,
 	}
-	ma.pendingDeals = nil
+
+	// upgrade sector if upgrades are on, this sector has deals, and we have a cc sector
+	if ma.Config.UpgradeSectors && len(dealIds) > 0 && len(ma.ccSectors) > 0 {
+		var upgradeNumber uint64
+		upgradeNumber, ma.ccSectors = PopRandom(ma.ccSectors, ma.rnd)
+
+		// prevent sim from attempting to upgrade to sector with shorter duration
+		sinfo, err := ma.sectorInfo(s, upgradeNumber)
+		if err != nil {
+			return message{}, err
+		}
+		if sinfo.Expiration > expiration {
+			params.Expiration = sinfo.Expiration
+		}
+
+		dlInfo, pIdx, err := ma.dlInfoForSector(s, upgradeNumber)
+		if err != nil {
+			return message{}, err
+		}
+
+		params.ReplaceCapacity = true
+		params.ReplaceSectorNumber = abi.SectorNumber(upgradeNumber)
+		params.ReplaceSectorDeadline = dlInfo.Index
+		params.ReplaceSectorPartition = pIdx
+		ma.UpgradedSectors++
+	}
+
+	// assume PreCommit succeeds and schedule prove commit
+	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{
+		sectorNumber:      sectorNumber,
+		committedCapacity: ma.Config.UpgradeSectors && len(dealIds) == 0,
+	})
 
 	return message{
 		From:   ma.Worker,
@@ -240,17 +279,20 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: &params,
-	}
+	}, nil
 }
 
 // create prove commit message
-func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber) message {
+func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber, committedCapacity bool) message {
 	params := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
 
 	// register an op for next epoch (after batch prove) to schedule a post for the sector
-	ma.operationSchedule.ScheduleOp(epoch+1, registerSectorAction{sectorNumber: sectorNumber})
+	ma.operationSchedule.ScheduleOp(epoch+1, registerSectorAction{
+		sectorNumber:      sectorNumber,
+		committedCapacity: committedCapacity,
+	})
 
 	return message{
 		From:   ma.Worker,
@@ -274,6 +316,9 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	var faultNumber uint64
 	faultNumber, ma.liveSectors = PopRandom(ma.liveSectors, ma.rnd)
 	ma.faultySectors = append(ma.faultySectors, faultNumber)
+
+	// avoid trying to upgrade a faulty sector
+	ma.ccSectors = filterSlice(ma.ccSectors, map[uint64]bool{faultNumber: true})
 
 	faultDlInfo, pIdx, err := ma.dlInfoForSector(v, faultNumber)
 	if err != nil {
@@ -372,6 +417,11 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		}
 	}
 
+	// schedule post-deadline state synchronization and next PoSt
+	if err := ma.scheduleSyncAndNextProof(v, dlIdx); err != nil {
+		return nil, err
+	}
+
 	// submitPoSt only if we have something to prove
 	if len(partitions) == 0 {
 		return nil, nil
@@ -391,11 +441,6 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		}},
 		ChainCommitEpoch: v.GetEpoch() - 1,
 		ChainCommitRand:  []byte("not really random"),
-	}
-
-	// schedule post-deadline state synchronization and next PoSt
-	if err := ma.scheduleSyncAndNextProof(v, dlIdx); err != nil {
-		return nil, err
 	}
 
 	return []message{{
@@ -472,7 +517,7 @@ func (ma *MinerAgent) updateMarketBalance() []message {
 ////////////////////////////////////////////////
 
 // looks up sector deadline and partition so we can start adding it to PoSts
-func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) error {
+func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber, committedCapacity bool) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -500,6 +545,9 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) 
 	}
 
 	ma.liveSectors = append(ma.liveSectors, uint64(sectorNumber))
+	if committedCapacity {
+		ma.ccSectors = append(ma.ccSectors, uint64(sectorNumber))
+	}
 
 	// pIdx should be sequential, but add empty partitions just in case
 	for pIdx >= uint64(len(ma.deadlines[dlIdx])) {
@@ -656,6 +704,7 @@ func (ma *MinerAgent) syncMinerState(s SimState, dlIdx uint64) error {
 	if len(toRemove) > 0 {
 		ma.liveSectors = filterSlice(ma.liveSectors, toRemove)
 		ma.faultySectors = filterSlice(ma.faultySectors, toRemove)
+		ma.ccSectors = filterSlice(ma.ccSectors, toRemove)
 	}
 	return nil
 }
@@ -687,6 +736,20 @@ func (ma *MinerAgent) getState(s SimState) (miner.State, error) {
 		return miner.State{}, err
 	}
 	return st, err
+}
+
+func (ma *MinerAgent) sectorInfo(v SimState, sectorNumber uint64) (*miner.SectorOnChainInfo, error) {
+	var st miner.State
+	err := v.GetState(ma.IDAddress, &st)
+	if err != nil {
+		return nil, err
+	}
+
+	sectors, err := st.LoadSectorInfos(v.Store(), bitfield.NewFromSet([]uint64{uint64(sectorNumber)}))
+	if err != nil {
+		return nil, err
+	}
+	return sectors[0], nil
 }
 
 func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.Info, uint64, error) {
@@ -787,11 +850,13 @@ type minerOp struct {
 }
 
 type proveCommitAction struct {
-	sectorNumber abi.SectorNumber
+	sectorNumber      abi.SectorNumber
+	committedCapacity bool
 }
 
 type registerSectorAction struct {
-	sectorNumber abi.SectorNumber
+	sectorNumber      abi.SectorNumber
+	committedCapacity bool
 }
 
 type recoverSectorAction struct {

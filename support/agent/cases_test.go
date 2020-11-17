@@ -240,6 +240,88 @@ func TestCreateDeals(t *testing.T) {
 	}
 }
 
+func TestCCUpgrades(t *testing.T) {
+	t.Skip("this is slow")
+	ctx := context.Background()
+	initialBalance := big.Mul(big.NewInt(1e10), big.NewInt(1e18))
+	minerCount := 1
+	clientCount := 9
+
+	// set up sim
+	rnd := rand.New(rand.NewSource(42))
+	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+
+	// create miners
+	workerAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		workerAccounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:    0.1,
+			FaultRate:        0.00001,
+			RecoveryRate:     0.0001,
+			UpgradeSectors:   true,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  big.Div(initialBalance, big.NewInt(2)),
+			MinMarketBalance: big.NewInt(1e18),
+			MaxMarketBalance: big.NewInt(2e18),
+		},
+		1.0, // create miner probability of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
+
+	clientAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), clientCount, initialBalance, rnd.Int63())
+	agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
+		DealRate:         .01,
+		MinPieceSize:     1 << 29,
+		MaxPieceSize:     32 << 30,
+		MinStoragePrice:  big.Zero(),
+		MaxStoragePrice:  abi.NewTokenAmount(200_000_000),
+		MinMarketBalance: big.NewInt(1e18),
+		MaxMarketBalance: big.NewInt(2e18),
+	})
+
+	var pwrSt power.State
+	for i := 0; i < 100_000; i++ {
+		require.NoError(t, sim.Tick())
+
+		epoch := sim.GetVM().GetEpoch()
+		if epoch%100 == 0 {
+			stateTree, err := sim.GetVM().GetStateTree()
+			require.NoError(t, err)
+
+			totalBalance, err := sim.GetVM().GetTotalActorBalance()
+			require.NoError(t, err)
+
+			acc, err := states.CheckStateInvariants(stateTree, totalBalance, sim.GetVM().GetEpoch()-1)
+			require.NoError(t, err)
+			require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
+
+			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
+
+			// assume each sector is 32Gb
+			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
+
+			// compute stats
+			deals := 0
+			upgrades := uint64(0)
+			for _, a := range sim.Agents {
+				switch agnt := a.(type) {
+				case *agent.MinerAgent:
+					upgrades += agnt.UpgradedSectors
+				case *agent.DealClientAgent:
+					deals += agnt.DealCount
+				}
+			}
+
+			// compute upgrades
+
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  msgs: %d  deals: %d  upgrades: %d\n",
+				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
+				sim.MessageCount, deals, upgrades)
+		}
+	}
+}
+
 func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent string) { // nolint:unused
 	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  avg gets: %.2f, avg puts: %.2f\n",
 		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
