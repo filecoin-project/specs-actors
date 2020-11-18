@@ -6,7 +6,10 @@ import (
 	"math/rand"
 
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 )
+
+var DisbursedAmount = big.Mul(big.NewInt(41e6), big.NewInt(1e18))
 
 // RateIterator can be used to model poisson process (a process with discreet events occurring at
 // arbitrary times with a specified average rate). It's Tick function must be called at regular
