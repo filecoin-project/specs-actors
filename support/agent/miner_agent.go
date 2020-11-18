@@ -551,7 +551,7 @@ func (ma *MinerAgent) fillSectorWithPendingDeals(expiration abi.ChainEpoch) ([]a
 	loc := uint64(0)
 	for _, piece := range ma.dealsPendingInclusion {
 		size := uint64(piece.size)
-		loc = (loc + size - 1) / size * size
+		loc = ((loc + size - 1) / size) * size // round loc up to the next multiple of size
 		if loc+size > uint64(sectorSize) {
 			break
 		}
