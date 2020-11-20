@@ -16,7 +16,7 @@ import (
 // Branching factor of the HAMT.
 // This value has been empirically chosen, but the optimal value for maps with different mutation profiles
 // may differ, in which case we can expose it for configuration.
-const hamtBitwidth = 5
+const hamtBitwidth = 7
 
 // HamtOptions specifies all the options used to construct filecoin HAMTs.
 var HamtOptions = []hamt.Option{
