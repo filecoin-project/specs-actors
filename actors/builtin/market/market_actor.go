@@ -13,7 +13,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
-	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -276,38 +275,65 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	return &PublishStorageDealsReturn{IDs: newDealIds}
 }
 
-//type VerifyDealsForActivationParams struct {
-//	DealIDs      []abi.DealID
-//	SectorExpiry abi.ChainEpoch
-//	SectorStart  abi.ChainEpoch
-//}
-type VerifyDealsForActivationParams = market0.VerifyDealsForActivationParams
+// Changed since v2:
+// - Array of sectors rather than just one
+// - Removed SectorStart (which is unknown at call time)
+type VerifyDealsForActivationParams struct {
+	Sectors []SectorDeals
+}
 
-// type VerifyDealsForActivationReturn struct {
-//	DealWeight         abi.DealWeight
-//	VerifiedDealWeight abi.DealWeight
-//	DealSpace          uint64
-//}
-type VerifyDealsForActivationReturn = market2.VerifyDealsForActivationReturn
+type SectorDeals struct {
+	SectorExpiry abi.ChainEpoch
+	DealIDs      []abi.DealID
+}
 
-// Verify that a given set of storage deals is valid for a sector currently being PreCommitted
-// and return DealWeight of the set of storage deals given.
-// The weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
-func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActivationParams) *VerifyDealsForActivationReturn {
+// Changed since v2:
+// - Array of sectors weights
+type VerifyDealsForActivationReturn struct {
+	Sectors []SectorWeights
+}
+
+type SectorWeights struct {
+	DealSpace          uint64         // Total space in bytes of submitted deals.
+	DealWeight         abi.DealWeight // Total space*time of submitted deals.
+	VerifiedDealWeight abi.DealWeight // Total space*time of submitted verified deals.
+}
+
+// Computes the weight of deals proposed for inclusion in a number of sectors.
+// Deal weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
+//
+// This method performs some light validation on the way in order to fail early if deals can be
+// determined to be invalid for the proposed sector properties.
+// Full deal validation is deferred to deal activation since it depends on the activation epoch.
+func (a Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActivationParams) *VerifyDealsForActivationReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Caller()
+	currEpoch := rt.CurrEpoch()
 
 	var st State
 	rt.StateReadonly(&st)
 	store := adt.AsStore(rt)
 
-	dealWeight, verifiedWeight, dealSpace, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, params.SectorStart)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
+	proposals, err := AsDealProposalArray(store, st.Proposals)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal proposals")
+
+	weights := make([]SectorWeights, len(params.Sectors))
+	for i, sector := range params.Sectors {
+		// Pass the current epoch as the activation epoch for validation.
+		// The sector activation epoch isn't yet known, but it's still more helpful to fail now if the deal
+		// is so late that a sector activating now couldn't include it.
+		dealWeight, verifiedWeight, dealSpace, err := validateAndComputeDealWeight(proposals, sector.DealIDs, minerAddr, sector.SectorExpiry, currEpoch)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate deal proposals for activation")
+
+		weights[i] = SectorWeights{
+			DealSpace:          dealSpace,
+			DealWeight:         dealWeight,
+			VerifiedDealWeight: verifiedWeight,
+		}
+	}
 
 	return &VerifyDealsForActivationReturn{
-		DealWeight:         dealWeight,
-		VerifiedDealWeight: verifiedWeight,
-		DealSpace:          dealSpace,
+		Sectors: weights,
 	}
 }
 
@@ -639,14 +665,22 @@ func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, propos
 func ValidateDealsForActivation(
 	st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address, sectorExpiry, currEpoch abi.ChainEpoch,
 ) (big.Int, big.Int, uint64, error) {
-
 	proposals, err := AsDealProposalArray(store, st.Proposals)
 	if err != nil {
 		return big.Int{}, big.Int{}, 0, xerrors.Errorf("failed to load dealProposals: %w", err)
 	}
 
-	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
+	return validateAndComputeDealWeight(proposals, dealIDs, minerAddr, sectorExpiry, currEpoch)
+}
 
+////////////////////////////////////////////////////////////////////////////////
+// Checks
+////////////////////////////////////////////////////////////////////////////////
+
+func validateAndComputeDealWeight(proposals *DealArray, dealIDs []abi.DealID, minerAddr addr.Address,
+	sectorExpiry abi.ChainEpoch, sectorActivation abi.ChainEpoch) (big.Int, big.Int, uint64, error) {
+
+	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
 	totalDealSpace := uint64(0)
 	totalDealSpaceTime := big.Zero()
 	totalVerifiedSpaceTime := big.Zero()
@@ -664,7 +698,7 @@ func ValidateDealsForActivation(
 		if !found {
 			return big.Int{}, big.Int{}, 0, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
 		}
-		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, currEpoch); err != nil {
+		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, sectorActivation); err != nil {
 			return big.Int{}, big.Int{}, 0, xerrors.Errorf("cannot activate deal %d: %w", dealID, err)
 		}
 
@@ -680,16 +714,12 @@ func ValidateDealsForActivation(
 	return totalDealSpaceTime, totalVerifiedSpaceTime, totalDealSpace, nil
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Checks
-////////////////////////////////////////////////////////////////////////////////
-
-func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, currEpoch abi.ChainEpoch) error {
+func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, sectorActivation abi.ChainEpoch) error {
 	if proposal.Provider != minerAddr {
 		return exitcode.ErrForbidden.Wrapf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
 	}
-	if currEpoch > proposal.StartEpoch {
-		return exitcode.ErrIllegalArgument.Wrapf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, currEpoch)
+	if sectorActivation > proposal.StartEpoch {
+		return exitcode.ErrIllegalArgument.Wrapf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, sectorActivation)
 	}
 	if proposal.EndEpoch > sectorExpiration {
 		return exitcode.ErrIllegalArgument.Wrapf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)

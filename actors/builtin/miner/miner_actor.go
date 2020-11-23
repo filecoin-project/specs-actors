@@ -570,7 +570,16 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
-	dealWeight := requestDealWeight(rt, params.DealIDs, rt.CurrEpoch(), params.Expiration)
+	dealWeights := requestDealWeights(rt, []market.SectorDeals{
+		{
+			SectorExpiry: params.Expiration,
+			DealIDs:      params.DealIDs,
+		},
+	})
+	if len(dealWeights.Sectors) == 0 {
+		rt.Abortf(exitcode.ErrIllegalState, "deal weight request returned no records")
+	}
+	dealWeight := dealWeights.Sectors[0]
 
 	store := adt.AsStore(rt)
 	var st State
@@ -2236,29 +2245,38 @@ func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dea
 	return cid.Cid(unsealedCID)
 }
 
-func requestDealWeight(rt Runtime, dealIDs []abi.DealID, sectorStart, sectorExpiry abi.ChainEpoch) market.VerifyDealsForActivationReturn {
-	if len(dealIDs) == 0 {
-		return market.VerifyDealsForActivationReturn{
-			DealWeight:         big.Zero(),
-			VerifiedDealWeight: big.Zero(),
+func requestDealWeights(rt Runtime, sectors []market.SectorDeals) *market.VerifyDealsForActivationReturn {
+	// Short-circuit if there are no deals in any of the sectors.
+	dealCount := 0
+	for _, sector := range sectors {
+		dealCount += len(sector.DealIDs)
+	}
+	if dealCount == 0 {
+		emptyResult := &market.VerifyDealsForActivationReturn{
+			Sectors: make([]market.SectorWeights, len(sectors)),
 		}
+		for i := 0; i < len(sectors); i++ {
+			emptyResult.Sectors[i] = market.SectorWeights{
+				DealSpace:          0,
+				DealWeight:         big.Zero(),
+				VerifiedDealWeight: big.Zero(),
+			}
+		}
+		return emptyResult
 	}
 
 	var dealWeights market.VerifyDealsForActivationReturn
-
 	code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.VerifyDealsForActivation,
 		&market.VerifyDealsForActivationParams{
-			DealIDs:      dealIDs,
-			SectorStart:  sectorStart,
-			SectorExpiry: sectorExpiry,
+			Sectors: sectors,
 		},
 		abi.NewTokenAmount(0),
 		&dealWeights,
 	)
 	builtin.RequireSuccess(rt, code, "failed to verify deals and get deal weight")
-	return dealWeights
+	return &dealWeights
 }
 
 // Requests the current epoch target block reward from the reward actor.
