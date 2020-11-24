@@ -8,7 +8,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	verifreg2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
+	verifreg0 "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
@@ -66,7 +66,7 @@ func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *abi.Empty
 //	Address   addr.Address
 //	Allowance DataCap
 //}
-type AddVerifierParams = verifreg2.AddVerifierParams
+type AddVerifierParams = verifreg0.AddVerifierParams
 
 func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.EmptyValue {
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
@@ -133,7 +133,7 @@ func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *a
 //	Address   addr.Address
 //	Allowance DataCap
 //}
-type AddVerifiedClientParams = verifreg2.AddVerifiedClientParams
+type AddVerifiedClientParams = verifreg0.AddVerifiedClientParams
 
 func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientParams) *abi.EmptyValue {
 	// The caller will be verified by checking the verifiers table below.
@@ -211,7 +211,7 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 //	Address  addr.Address     // Address of verified client.
 //	DealSize abi.StoragePower // Number of bytes to use.
 //}
-type UseBytesParams = verifreg2.UseBytesParams
+type UseBytesParams = verifreg0.UseBytesParams
 
 // Called by StorageMarketActor during PublishStorageDeals.
 // Do not allow partially verified deals (DealSize must be greater than equal to allowed cap).
@@ -268,7 +268,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 //	Address  addr.Address
 //	DealSize abi.StoragePower
 //}
-type RestoreBytesParams = verifreg2.RestoreBytesParams
+type RestoreBytesParams = verifreg0.RestoreBytesParams
 
 // Called by HandleInitTimeoutDeals from StorageMarketActor when a VerifiedDeal fails to init.
 // Restore allowable cap for the client, creating new entry if the client has been deleted.

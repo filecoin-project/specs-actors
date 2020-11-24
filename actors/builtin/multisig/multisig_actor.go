@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	multisig0 "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 	multisig2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
 
 	"github.com/ipfs/go-cid"
@@ -20,7 +21,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
-type TxnID = multisig2.TxnID
+type TxnID = multisig0.TxnID
 
 //type Transaction struct {
 //	To     addr.Address
@@ -31,7 +32,7 @@ type TxnID = multisig2.TxnID
 //	// This address at index 0 is the transaction proposer, order of this slice must be preserved.
 //	Approved []addr.Address
 //}
-type Transaction = multisig2.Transaction
+type Transaction = multisig0.Transaction
 
 // Data for a BLAKE2B-256 to be attached to methods referencing proposals via TXIDs.
 // Ensures the existence of a cryptographic reference to the original proposal. Useful
@@ -46,7 +47,7 @@ type Transaction = multisig2.Transaction
 //	Method    abi.MethodNum
 //	Params    []byte
 //}
-type ProposalHashData = multisig2.ProposalHashData
+type ProposalHashData = multisig0.ProposalHashData
 
 type Actor struct{}
 
@@ -144,7 +145,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 //	Method abi.MethodNum
 //	Params []byte
 //}
-type ProposeParams = multisig2.ProposeParams
+type ProposeParams = multisig0.ProposeParams
 
 //type ProposeReturn struct {
 //	// TxnID is the ID of the proposed transaction
@@ -156,7 +157,7 @@ type ProposeParams = multisig2.ProposeParams
 //	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
 //	Ret []byte
 //}
-type ProposeReturn = multisig2.ProposeReturn
+type ProposeReturn = multisig0.ProposeReturn
 
 func (a Actor) Propose(rt runtime.Runtime, params *ProposeParams) *ProposeReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -213,7 +214,7 @@ func (a Actor) Propose(rt runtime.Runtime, params *ProposeParams) *ProposeReturn
 //	// specific proposal.
 //	ProposalHash []byte
 //}
-type TxnIDParams = multisig2.TxnIDParams
+type TxnIDParams = multisig0.TxnIDParams
 
 //type ApproveReturn struct {
 //	// Applied indicates if the transaction was applied as opposed to proposed but not applied due to lack of approvals
@@ -223,7 +224,7 @@ type TxnIDParams = multisig2.TxnIDParams
 //	// Ret is the return vale of the transaction, if Applied is false this field should be ignored.
 //	Ret []byte
 //}
-type ApproveReturn = multisig2.ApproveReturn
+type ApproveReturn = multisig0.ApproveReturn
 
 func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -301,7 +302,7 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 //	Signer   addr.Address
 //	Increase bool
 //}
-type AddSignerParams = multisig2.AddSignerParams
+type AddSignerParams = multisig0.AddSignerParams
 
 func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
@@ -332,7 +333,7 @@ func (a Actor) AddSigner(rt runtime.Runtime, params *AddSignerParams) *abi.Empty
 //	Signer   addr.Address
 //	Decrease bool
 //}
-type RemoveSignerParams = multisig2.RemoveSignerParams
+type RemoveSignerParams = multisig0.RemoveSignerParams
 
 func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
@@ -387,7 +388,7 @@ func (a Actor) RemoveSigner(rt runtime.Runtime, params *RemoveSignerParams) *abi
 //	From addr.Address
 //	To   addr.Address
 //}
-type SwapSignerParams = multisig2.SwapSignerParams
+type SwapSignerParams = multisig0.SwapSignerParams
 
 func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
@@ -431,7 +432,7 @@ func (a Actor) SwapSigner(rt runtime.Runtime, params *SwapSignerParams) *abi.Emp
 //type ChangeNumApprovalsThresholdParams struct {
 //	NewThreshold uint64
 //}
-type ChangeNumApprovalsThresholdParams = multisig2.ChangeNumApprovalsThresholdParams
+type ChangeNumApprovalsThresholdParams = multisig0.ChangeNumApprovalsThresholdParams
 
 func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNumApprovalsThresholdParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.
@@ -453,7 +454,7 @@ func (a Actor) ChangeNumApprovalsThreshold(rt runtime.Runtime, params *ChangeNum
 //	UnlockDuration abi.ChainEpoch
 //	Amount abi.TokenAmount
 //}
-type LockBalanceParams = multisig2.LockBalanceParams
+type LockBalanceParams = multisig0.LockBalanceParams
 
 func (a Actor) LockBalance(rt runtime.Runtime, params *LockBalanceParams) *abi.EmptyValue {
 	// Can only be called by the multisig wallet itself.

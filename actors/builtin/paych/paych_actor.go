@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	paych0 "github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	paych2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
 
 	"github.com/ipfs/go-cid"
@@ -46,7 +47,7 @@ var _ runtime.VMActor = Actor{}
 //	From addr.Address // Payer
 //	To   addr.Address // Payee
 //}
-type ConstructorParams = paych2.ConstructorParams
+type ConstructorParams = paych0.ConstructorParams
 
 // Constructor creates a payment channel actor. See State for meaning of params.
 func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
@@ -127,7 +128,7 @@ type UpdateChannelStateParams = paych2.UpdateChannelStateParams
 //	// Sender's signature over the voucher
 //	Signature *crypto.Signature
 //}
-type SignedVoucher = paych2.SignedVoucher
+type SignedVoucher = paych0.SignedVoucher
 
 // Modular Verification method
 //type ModVerifyParams struct {
@@ -138,14 +139,14 @@ type SignedVoucher = paych2.SignedVoucher
 //	// Pre-serialized method parameters.
 //	Params []byte
 //}
-type ModVerifyParams = paych2.ModVerifyParams
+type ModVerifyParams = paych0.ModVerifyParams
 
 // Specifies which `Lane`s to be merged with what `Nonce` on channelUpdate
 //type Merge struct {
 //	Lane  uint64
 //	Nonce uint64
 //}
-type Merge = paych2.Merge
+type Merge = paych0.Merge
 
 func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelStateParams) *abi.EmptyValue {
 	var st State

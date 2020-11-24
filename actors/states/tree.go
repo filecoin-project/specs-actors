@@ -3,7 +3,7 @@ package states
 import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
-	states2 "github.com/filecoin-project/specs-actors/v2/actors/states"
+	states0 "github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
@@ -18,7 +18,7 @@ import (
 // 	CallSeqNum uint64  // CallSeqNum for the next message to be received by the actor (non-zero for accounts only)
 // 	Balance    big.Int // Token balance of the actor
 // }
-type Actor = states2.Actor
+type Actor = states0.Actor
 
 // A specialization of a map of ID-addresses to actor heads.
 type Tree struct {

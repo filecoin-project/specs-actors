@@ -1,7 +1,7 @@
 package proof
 
 import (
-	proof2 "github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
+	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 )
 
 ///
@@ -21,7 +21,7 @@ import (
 //	SealedCID   cid.Cid `checked:"true"` // CommR
 //	UnsealedCID cid.Cid `checked:"true"` // CommD
 //}
-type SealVerifyInfo = proof2.SealVerifyInfo
+type SealVerifyInfo = proof0.SealVerifyInfo
 
 ///
 /// PoSting
@@ -33,13 +33,13 @@ type SealVerifyInfo = proof2.SealVerifyInfo
 //	SectorNumber abi.SectorNumber
 //	SealedCID    cid.Cid // CommR
 //}
-type SectorInfo = proof2.SectorInfo
+type SectorInfo = proof0.SectorInfo
 
 //type PoStProof struct {
 //	PoStProof  abi.RegisteredPoStProof
 //	ProofBytes []byte
 //}
-type PoStProof = proof2.PoStProof
+type PoStProof = proof0.PoStProof
 
 // Information needed to verify a Winning PoSt attached to a block header.
 // Note: this is not used within the state machine, but by the consensus/election mechanisms.
@@ -49,7 +49,7 @@ type PoStProof = proof2.PoStProof
 //	ChallengedSectors []SectorInfo
 //	Prover            abi.ActorID // used to derive 32-byte prover ID
 //}
-type WinningPoStVerifyInfo = proof2.WinningPoStVerifyInfo
+type WinningPoStVerifyInfo = proof0.WinningPoStVerifyInfo
 
 // Information needed to verify a Window PoSt submitted directly to a miner actor.
 //type WindowPoStVerifyInfo struct {
@@ -58,4 +58,4 @@ type WinningPoStVerifyInfo = proof2.WinningPoStVerifyInfo
 //	ChallengedSectors []SectorInfo
 //	Prover            abi.ActorID // used to derive 32-byte prover ID
 //}
-type WindowPoStVerifyInfo = proof2.WindowPoStVerifyInfo
+type WindowPoStVerifyInfo = proof0.WindowPoStVerifyInfo

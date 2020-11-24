@@ -6,7 +6,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
-	reward2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
+	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
 
 	"github.com/ipfs/go-cid"
 
@@ -62,7 +62,7 @@ func (a Actor) Constructor(rt runtime.Runtime, currRealizedPower *abi.StoragePow
 //	GasReward abi.TokenAmount // gas reward from all gas fees in a block, >= 0
 //	WinCount  int64           // number of reward units won, > 0
 //}
-type AwardBlockRewardParams = reward2.AwardBlockRewardParams
+type AwardBlockRewardParams = reward0.AwardBlockRewardParams
 
 // Awards a reward to a block producer.
 // This method is called only by the system actor, implicitly, as the last message in the evaluation of a block.

@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
@@ -94,13 +95,13 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 //	Peer          abi.PeerID
 //	Multiaddrs    []abi.Multiaddrs
 //}
-type CreateMinerParams = power2.CreateMinerParams
+type CreateMinerParams = power0.CreateMinerParams
 
 //type CreateMinerReturn struct {
 //	IDAddress     addr.Address // The canonical ID-based address for the actor.
 //	RobustAddress addr.Address // A more expensive but re-org-safe address for the newly created actor.
 //}
-type CreateMinerReturn = power2.CreateMinerReturn
+type CreateMinerReturn = power0.CreateMinerReturn
 
 func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerReturn {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -158,7 +159,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 //	RawByteDelta         abi.StoragePower
 //	QualityAdjustedDelta abi.StoragePower
 //}
-type UpdateClaimedPowerParams = power2.UpdateClaimedPowerParams
+type UpdateClaimedPowerParams = power0.UpdateClaimedPowerParams
 
 // Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
@@ -183,7 +184,7 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 //	EventEpoch abi.ChainEpoch
 //	Payload    []byte
 //}
-type EnrollCronEventParams = power2.EnrollCronEventParams
+type EnrollCronEventParams = power0.EnrollCronEventParams
 
 func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)

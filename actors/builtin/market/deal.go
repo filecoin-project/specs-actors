@@ -1,7 +1,7 @@
 package market
 
 import (
-	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
+	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
 )
 
 //var PieceCIDPrefix = cid.Prefix{
@@ -10,7 +10,7 @@ import (
 //	MhType:   mh.SHA2_256_TRUNC254_PADDED,
 //	MhLength: 32,
 //}
-var PieceCIDPrefix = market2.PieceCIDPrefix
+var PieceCIDPrefix = market0.PieceCIDPrefix
 
 // Note: Deal Collateral is only released and returned to clients and miners
 // when the storage deal stops counting towards power. In the current iteration,
@@ -42,11 +42,11 @@ var PieceCIDPrefix = market2.PieceCIDPrefix
 //	ProviderCollateral abi.TokenAmount
 //	ClientCollateral   abi.TokenAmount
 //}
-type DealProposal = market2.DealProposal
+type DealProposal = market0.DealProposal
 
 // ClientDealProposal is a DealProposal signed by a client
 //type ClientDealProposal struct {
 //	Proposal        DealProposal
 //	ClientSignature crypto.Signature
 //}
-type ClientDealProposal = market2.ClientDealProposal
+type ClientDealProposal = market0.ClientDealProposal

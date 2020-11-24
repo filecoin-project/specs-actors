@@ -2,12 +2,12 @@ package builtin
 
 import (
 	"github.com/filecoin-project/go-state-types/abi"
-	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 )
 
 const (
-	MethodSend        = builtin2.MethodSend
-	MethodConstructor = builtin2.MethodConstructor
+	MethodSend        = builtin0.MethodSend
+	MethodConstructor = builtin0.MethodConstructor
 )
 
 var MethodsAccount = struct {
