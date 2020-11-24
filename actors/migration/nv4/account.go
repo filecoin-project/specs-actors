@@ -8,7 +8,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
-	account2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/account"
+	account2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/account"
 )
 
 type accountMigrator struct {

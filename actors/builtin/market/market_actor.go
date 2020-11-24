@@ -13,17 +13,18 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	. "github.com/filecoin-project/specs-actors/v3/actors/util"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type Actor struct{}
@@ -283,13 +284,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 //}
 type VerifyDealsForActivationParams = market0.VerifyDealsForActivationParams
 
-// Changed since v0:
-// - Added DealSpace
-type VerifyDealsForActivationReturn struct {
-	DealWeight         abi.DealWeight
-	VerifiedDealWeight abi.DealWeight
-	DealSpace          uint64
-}
+// type VerifyDealsForActivationReturn struct {
+//	DealWeight         abi.DealWeight
+//	VerifiedDealWeight abi.DealWeight
+//	DealSpace          uint64
+//}
+type VerifyDealsForActivationReturn = market2.VerifyDealsForActivationReturn
 
 // Verify that a given set of storage deals is valid for a sector currently being PreCommitted
 // and return DealWeight of the set of storage deals given.

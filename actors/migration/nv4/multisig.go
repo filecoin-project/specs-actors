@@ -10,7 +10,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
-	multisig2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+	multisig2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/multisig"
 )
 
 type multisigMigrator struct {

@@ -11,12 +11,14 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	multisig0 "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	multisig2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	. "github.com/filecoin-project/specs-actors/v3/actors/util"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type TxnID = multisig0.TxnID
@@ -73,14 +75,13 @@ func (a Actor) State() cbor.Er {
 
 var _ runtime.VMActor = Actor{}
 
-// Changed since v0:
-// - Added StartEpoch
-type ConstructorParams struct {
-	Signers               []addr.Address
-	NumApprovalsThreshold uint64
-	UnlockDuration        abi.ChainEpoch
-	StartEpoch            abi.ChainEpoch
-}
+// type ConstructorParams struct {
+// 	Signers               []addr.Address
+// 	NumApprovalsThreshold uint64
+// 	UnlockDuration        abi.ChainEpoch
+// 	StartEpoch            abi.ChainEpoch
+// }
+type ConstructorParams = multisig2.ConstructorParams
 
 func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.InitActorAddr)
