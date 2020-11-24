@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/filecoin-project/go-state-types/cbor"
-	"github.com/pkg/errors"
-
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"

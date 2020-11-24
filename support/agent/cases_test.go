@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/abi"
-
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
