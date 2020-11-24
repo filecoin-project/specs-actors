@@ -8,6 +8,8 @@ import (
 type StatsSource interface {
 	WriteCount() uint64
 	ReadCount() uint64
+	WriteSize() uint64
+	ReadSize() uint64
 }
 
 type StatsByCall map[MethodKey]*CallStats

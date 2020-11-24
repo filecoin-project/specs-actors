@@ -68,9 +68,11 @@ func NewSyncADTStore(ctx context.Context) adt.Store {
 }
 
 type MetricsStore struct {
-	bs     cbor.IpldBlockstore
-	Writes uint64
-	Reads  uint64
+	bs         cbor.IpldBlockstore
+	Writes     uint64
+	WriteBytes uint64
+	Reads      uint64
+	ReadBytes  uint64
 }
 
 func NewMetricsStore(underlying cbor.IpldBlockstore) *MetricsStore {
@@ -79,11 +81,17 @@ func NewMetricsStore(underlying cbor.IpldBlockstore) *MetricsStore {
 
 func (ms *MetricsStore) Get(c cid.Cid) (block.Block, error) {
 	ms.Reads++
-	return ms.bs.Get(c)
+	blk, err := ms.bs.Get(c)
+	if err != nil {
+		return blk, err
+	}
+	ms.ReadBytes += uint64(len(blk.RawData()))
+	return blk, nil
 }
 
 func (ms *MetricsStore) Put(b block.Block) error {
 	ms.Writes++
+	ms.WriteBytes += uint64(len(b.RawData()))
 	return ms.bs.Put(b)
 }
 
@@ -93,4 +101,12 @@ func (ms *MetricsStore) ReadCount() uint64 {
 
 func (ms *MetricsStore) WriteCount() uint64 {
 	return ms.Writes
+}
+
+func (ms *MetricsStore) ReadSize() uint64 {
+	return ms.ReadBytes
+}
+
+func (ms *MetricsStore) WriteSize() uint64 {
+	return ms.WriteBytes
 }
