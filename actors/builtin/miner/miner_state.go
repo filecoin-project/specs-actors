@@ -16,7 +16,6 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	. "github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -500,15 +499,11 @@ func (st *State) RescheduleSectorExpirations(
 
 // Assign new sectors to deadlines.
 func (st *State) AssignSectorsToDeadlines(
-	store adt.Store,
-	currentEpoch abi.ChainEpoch,
-	sectors []*SectorOnChainInfo,
-	partitionSize uint64,
-	sectorSize abi.SectorSize,
-) (PowerPair, error) {
+	store adt.Store, currentEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, partitionSize uint64, sectorSize abi.SectorSize,
+) error {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
-		return NewPowerPairZero(), err
+		return err
 	}
 
 	// Sort sectors by number to get better runs in partition bitfields.
@@ -517,21 +512,19 @@ func (st *State) AssignSectorsToDeadlines(
 	})
 
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
-	err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
+	if err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
 		if deadlineIsMutable(st.ProvingPeriodStart, idx, currentEpoch) {
 			deadlineArr[int(idx)] = dl
 		}
 		return nil
-	})
-	if err != nil {
-		return NewPowerPairZero(), err
+	}); err != nil {
+		return err
 	}
 
-	activatedPower := NewPowerPairZero()
 	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
 	if err != nil {
-		return NewPowerPairZero(), xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
+		return xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}
 
 	for dlIdx, deadlineSectors := range deadlineToSectors {
@@ -542,24 +535,21 @@ func (st *State) AssignSectorsToDeadlines(
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineActivatedPower, err := dl.AddSectors(store, partitionSize, false, deadlineSectors, sectorSize, quant)
-		if err != nil {
-			return NewPowerPairZero(), err
+		// The power returned from AddSectors is ignored because it's not activated (proven) yet.
+		proven := false
+		if _, err := dl.AddSectors(store, partitionSize, proven, deadlineSectors, sectorSize, quant); err != nil {
+			return err
 		}
 
-		activatedPower = activatedPower.Add(deadlineActivatedPower)
-
-		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
-		if err != nil {
-			return NewPowerPairZero(), err
+		if err := deadlines.UpdateDeadline(store, uint64(dlIdx), dl); err != nil {
+			return err
 		}
 	}
 
-	err = st.SaveDeadlines(store, deadlines)
-	if err != nil {
-		return NewPowerPairZero(), err
+	if err := st.SaveDeadlines(store, deadlines); err != nil {
+		return err
 	}
-	return activatedPower, nil
+	return nil
 }
 
 // Pops up to max early terminated sectors from all deadlines.
@@ -724,23 +714,29 @@ func (st *State) SaveVestingFunds(store adt.Store, funds *VestingFunds) error {
 // Funds and vesting
 //
 
-func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) {
+func (st *State) AddPreCommitDeposit(amount abi.TokenAmount) error {
 	newTotal := big.Add(st.PreCommitDeposits, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative pre-commit deposit %s after adding %s to prior %s",
-		newTotal, amount, st.PreCommitDeposits)
+	if newTotal.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative pre-commit deposit %v after adding %v to prior %v", newTotal, amount, st.PreCommitDeposits)
+	}
 	st.PreCommitDeposits = newTotal
+	return nil
 }
 
-func (st *State) AddInitialPledge(amount abi.TokenAmount) {
+func (st *State) AddInitialPledge(amount abi.TokenAmount) error {
 	newTotal := big.Add(st.InitialPledge, amount)
-	AssertMsg(newTotal.GreaterThanEqual(big.Zero()), "negative initial pledge requirement %s after adding %s to prior %s",
-		newTotal, amount, st.InitialPledge)
+	if newTotal.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative initial pledge %v after adding %v to prior %v", newTotal, amount, st.InitialPledge)
+	}
 	st.InitialPledge = newTotal
+	return nil
 }
 
 // AddLockedFunds first vests and unlocks the vested funds AND then locks the given funds in the vesting table.
 func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vestingSum abi.TokenAmount, spec *VestSpec) (vested abi.TokenAmount, err error) {
-	AssertMsg(vestingSum.GreaterThanEqual(big.Zero()), "negative vesting sum %s", vestingSum)
+	if vestingSum.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative amount to lock %s", vestingSum)
+	}
 
 	vestingFunds, err := st.LoadVestingFunds(store)
 	if err != nil {
@@ -750,7 +746,9 @@ func (st *State) AddLockedFunds(store adt.Store, currEpoch abi.ChainEpoch, vesti
 	// unlock vested funds first
 	amountUnlocked := vestingFunds.unlockVestedFunds(currEpoch)
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative locked funds %v after unlocking %v", st.LockedFunds, amountUnlocked)
+	}
 
 	// add locked funds now
 	vestingFunds.addLockedFunds(currEpoch, vestingSum, st.ProvingPeriodStart, spec)
@@ -790,7 +788,9 @@ func (st *State) RepayPartialDebtInPriorityOrder(store adt.Store, currEpoch abi.
 	}
 
 	// We should never unlock more than the debt we need to repay
-	Assert(fromVesting.LessThanEqual(st.FeeDebt))
+	if fromVesting.GreaterThan(st.FeeDebt) {
+		return big.Zero(), big.Zero(), xerrors.Errorf("unlocked more vesting funds %v than required for debt %v", fromVesting, st.FeeDebt)
+	}
 	st.FeeDebt = big.Sub(st.FeeDebt, fromVesting)
 
 	fromBalance = big.Min(unlockedBalance, st.FeeDebt)
@@ -834,7 +834,9 @@ func (st *State) UnlockUnvestedFunds(store adt.Store, currEpoch abi.ChainEpoch, 
 	amountUnlocked := vestingFunds.unlockUnvestedFunds(currEpoch, target)
 
 	st.LockedFunds = big.Sub(st.LockedFunds, amountUnlocked)
-	Assert(st.LockedFunds.GreaterThanEqual(big.Zero()))
+	if st.LockedFunds.LessThan(big.Zero()) {
+		return big.Zero(), xerrors.Errorf("negative locked funds %v after unlocking %v", st.LockedFunds, amountUnlocked)
+	}
 
 	if err := st.SaveVestingFunds(store, vestingFunds); err != nil {
 		return big.Zero(), xerrors.Errorf("failed to save vesting funds: %w", err)
@@ -1123,7 +1125,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		// Pledge for the sectors expiring early is retained to support the termination fee that will be assessed
 		// when the early termination is processed.
 		pledgeDelta = big.Sub(pledgeDelta, expired.OnTimePledge)
-		st.AddInitialPledge(expired.OnTimePledge.Neg())
+		if err = st.AddInitialPledge(expired.OnTimePledge.Neg()); err != nil {
+			return nil, xerrors.Errorf("failed to reduce %v initial pledge for expiring sectors: %w", expired.OnTimePledge, err)
+		}
 
 		// Record reduction in power of the amount of expiring active power.
 		// Faulty power has already been lost, so the amount expiring can be excluded from the delta.

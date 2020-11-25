@@ -137,8 +137,9 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	offset, err := assignProvingPeriodOffset(rt.Receiver(), currEpoch, rt.HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
 	periodStart := currentProvingPeriodStart(currEpoch, offset)
+	builtin.RequireState(rt, periodStart <= currEpoch, "computed proving period start %d after current epoch %d", periodStart, currEpoch)
 	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
-	Assert(deadlineIndex < WPoStPeriodDeadlines)
+	builtin.RequireState(rt, deadlineIndex < WPoStPeriodDeadlines, "computed proving deadline index %d invalid", deadlineIndex)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
@@ -654,7 +655,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for pre-commit deposit: %v", depositReq)
 		}
 
-		st.AddPreCommitDeposit(depositReq)
+		err = st.AddPreCommitDeposit(depositReq)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositReq)
 
 		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
 			Info:               SectorPreCommitInfo(*params),
@@ -843,7 +845,6 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		rt.Abortf(exitcode.ErrIllegalArgument, "all prove commits failed to validate")
 	}
 
-	var newPower PowerPair
 	totalPledge := big.Zero()
 	depositToUnlock := big.Zero()
 	newSectors := make([]*SectorOnChainInfo, 0)
@@ -909,7 +910,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete precommited sectors")
 
-		newPower, err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
+		err = st.AssignSectorsToDeadlines(store, rt.CurrEpoch(), newSectors, info.WindowPoStPartitionSectors, info.SectorSize)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to assign new sectors to deadlines")
 
 		// Stop unlocking funds as of version 7. It's computationally expensive and unlikely to actually unlock anything.
@@ -921,7 +922,9 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 		}
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
-		st.AddPreCommitDeposit(depositToUnlock.Neg())
+		err = st.AddPreCommitDeposit(depositToUnlock.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositToUnlock.Neg())
+
 
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
@@ -929,15 +932,14 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 			rt.Abortf(exitcode.ErrInsufficientFunds, "insufficient funds for aggregate initial pledge requirement %s, available: %s", totalPledge, unlockedBalance)
 		}
 
-		st.AddInitialPledge(totalPledge)
+		err = st.AddInitialPledge(totalPledge)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalPledge)
 		err = st.CheckBalanceInvariants(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	})
 
-	// Request power and pledge update for activated sector.
-	requestUpdatePower(rt, newPower)
+	// Request pledge update for activated sector.
 	notifyPledgeChanged(rt, big.Sub(totalPledge, newlyVested))
-
 	return nil
 }
 
@@ -1269,8 +1271,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		scheduleEarlyTerminationWork(rt)
 	}
 
-	requestUpdatePower(rt, powerDelta)
+	rt.StateReadonly(&st)
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
+	requestUpdatePower(rt, powerDelta)
 	return &TerminateSectorsReturn{Done: !more}
 }
 
@@ -1501,11 +1506,12 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		sectors, err := st.LoadSectorInfos(store, live)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load moved sectors")
 
-		newPower, err := deadline.AddSectors(store, info.WindowPoStPartitionSectors, true, sectors, info.SectorSize, quant)
+		proven := true
+		addedPower, err := deadline.AddSectors(store, info.WindowPoStPartitionSectors, proven, sectors, info.SectorSize, quant)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add back moved sectors")
 
-		if !removedPower.Equals(newPower) {
-			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, newPower)
+		if !removedPower.Equals(addedPower) {
+			rt.Abortf(exitcode.ErrIllegalState, "power changed when compacting partitions: was %v, is now %v", removedPower, addedPower)
 		}
 		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
@@ -1601,6 +1607,9 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 	burnFunds(rt, toBurn)
+	rt.StateReadonly(&st)
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	return nil
 }
@@ -1731,8 +1740,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 	})
 
 	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
-	Assert(amountWithdrawn.GreaterThanEqual(big.Zero()))
-	Assert(amountWithdrawn.LessThanEqual(availableBalance))
+	builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
+	builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
 		code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
@@ -1799,6 +1808,10 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.E
 		}
 	}
 
+	var st State
+	rt.StateReadonly(&st)
+	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	return nil
 }
 
@@ -1866,7 +1879,8 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 
 		// Remove pledge requirement.
-		st.AddInitialPledge(totalInitialPledge.Neg())
+		err = st.AddInitialPledge(totalInitialPledge.Neg())
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalInitialPledge.Neg())
 		pledgeDelta = big.Sub(pledgeDelta, totalInitialPledge)
 
 		// Use unlocked pledge to pay down outstanding fee debt
@@ -2126,7 +2140,7 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 
 func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
-	AssertNoError(err) // Runtime always provides ID-addresses
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided bad receiver address %v", rt.Receiver())
 
 	// Regenerate challenge randomness, which must match that generated for the proof.
 	var addrBuf bytes.Buffer
@@ -2180,7 +2194,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
 
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
-	AssertNoError(err) // Runtime always provides ID-addresses
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %v", rt.Receiver())
 
 	buf := new(bytes.Buffer)
 	receiver := rt.Receiver()
@@ -2270,8 +2284,6 @@ func resolveControlAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
 	}
-	Assert(resolved.Protocol() == addr.ID)
-
 	ownerCode, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
@@ -2289,8 +2301,6 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", raw)
 	}
-	Assert(resolved.Protocol() == addr.ID)
-
 	workerCode, ok := rt.GetActorCodeCID(resolved)
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no code for address %v", resolved)
@@ -2362,14 +2372,12 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 	}
 
 	periodStart := currEpoch - periodProgress
-	Assert(periodStart <= currEpoch)
 	return periodStart
 }
 
 // Computes the deadline index for the current epoch for a given period start.
 // currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
 func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
-	Assert(currEpoch >= periodStart)
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 

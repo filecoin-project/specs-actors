@@ -7,12 +7,10 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
-
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
 )
 
@@ -110,12 +108,12 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 
 			blockReward = big.Sub(totalReward, params.GasReward)
 			// Since we have already asserted the balance is greater than gas reward blockReward is >= 0
-			AssertMsg(blockReward.GreaterThanEqual(big.Zero()), "programming error, block reward is %v below zero", blockReward)
+			builtin.RequireState(rt, blockReward.GreaterThanEqual(big.Zero()), "programming error, block reward %v below zero", blockReward)
 		}
 		st.TotalStoragePowerReward = big.Add(st.TotalStoragePowerReward, blockReward)
 	})
 
-	AssertMsg(totalReward.LessThanEqual(priorBalance), "reward %v exceeds balance %v", totalReward, priorBalance)
+	builtin.RequireState(rt, totalReward.LessThanEqual(priorBalance), "reward %v exceeds balance %v", totalReward, priorBalance)
 
 	// if this fails, we can assume the miner is responsible and avoid failing here.
 	rewardParams := builtin.ApplyRewardParams{
