@@ -39,7 +39,8 @@ func TestPartitions(t *testing.T) {
 
 		power, err := partition.AddSectors(store, false, sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-		require.True(t, power.IsZero())
+		expectedPower := miner.PowerForSectors(sectorSize, sectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		return store, partition
 	}
@@ -288,13 +289,14 @@ func TestPartitions(t *testing.T) {
 		// Add an unproven sector. We _should_ reschedule the expiration.
 		// This is fine as we don't allow actually _expiring_ sectors
 		// while there are unproven sectors.
-		powerDelta, err := partition.AddSectors(
+		power, err := partition.AddSectors(
 			store, false,
 			[]*miner.SectorOnChainInfo{unprovenSector},
 			sectorSize, quantSpec,
 		)
 		require.NoError(t, err)
-		require.True(t, powerDelta.IsZero()) // no power for unproven sectors.
+		expectedPower := miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{unprovenSector})
+		assert.True(t, expectedPower.Equals(power))
 
 		// reschedule
 		replaced, err := partition.RescheduleExpirations(store, sectorArr, 18, bf(2, 4, 6, 7), sectorSize, quantSpec)
@@ -407,13 +409,14 @@ func TestPartitions(t *testing.T) {
 		sectorArr := sectorsArr(t, store, allSectors)
 
 		// Add an unproven sector.
-		powerDelta, err := partition.AddSectors(
+		power, err := partition.AddSectors(
 			store, false,
 			[]*miner.SectorOnChainInfo{unprovenSector},
 			sectorSize, quantSpec,
 		)
 		require.NoError(t, err)
-		require.True(t, powerDelta.IsZero()) // no power for unproven sectors.
+		expectedPower := miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{unprovenSector})
+		assert.True(t, expectedPower.Equals(power))
 
 		// fault sector 3, 4, 5 and 6
 		faultSet := bf(3, 4, 5, 6)
@@ -584,13 +587,14 @@ func TestPartitions(t *testing.T) {
 		sectorArr := sectorsArr(t, store, allSectors)
 
 		// Add an unproven sector.
-		powerDelta, err := partition.AddSectors(
+		power, err := partition.AddSectors(
 			store, false,
 			[]*miner.SectorOnChainInfo{unprovenSector},
 			sectorSize, quantSpec,
 		)
 		require.NoError(t, err)
-		require.True(t, powerDelta.IsZero()) // no power for unproven sectors.
+		expectedPower := miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{unprovenSector})
+		assert.True(t, expectedPower.Equals(power))
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
@@ -704,8 +708,8 @@ func TestPartitions(t *testing.T) {
 
 		power, err := partition.AddSectors(store, false, manySectors, sectorSize, miner.NoQuantization)
 		require.NoError(t, err)
-
-		assert.True(t, power.IsZero()) // not activated
+		expectedPower := miner.PowerForSectors(sectorSize, manySectors)
+		assert.True(t, expectedPower.Equals(power))
 
 		assertPartitionState(
 			t, store, partition,
@@ -751,7 +755,6 @@ func TestRecordSkippedFaults(t *testing.T) {
 
 		power, err := partition.AddSectors(store, true, sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
-
 		expectedPower := miner.PowerForSectors(sectorSize, sectors)
 		assert.True(t, expectedPower.Equals(power))
 
