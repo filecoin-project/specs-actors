@@ -104,9 +104,9 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 	for _, op := range ma.operationSchedule.PopOpsUntil(s.GetEpoch()) {
 		switch o := op.action.(type) {
 		case proveCommitAction:
-			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber, o.committedCapacity))
+			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber, o.committedCapacity, o.upgrade))
 		case registerSectorAction:
-			err := ma.registerSector(s, o.sectorNumber, o.committedCapacity)
+			err := ma.registerSector(s, o.sectorNumber, o.committedCapacity, o.upgrade)
 			if err != nil {
 				return nil, err
 			}
@@ -242,7 +242,8 @@ func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (
 	}
 
 	// upgrade sector if upgrades are on, this sector has deals, and we have a cc sector
-	if ma.Config.UpgradeSectors && len(dealIds) > 0 && len(ma.ccSectors) > 0 {
+	isUpgrade := ma.Config.UpgradeSectors && len(dealIds) > 0 && len(ma.ccSectors) > 0
+	if isUpgrade {
 		var upgradeNumber uint64
 		upgradeNumber, ma.ccSectors = PopRandom(ma.ccSectors, ma.rnd)
 
@@ -271,6 +272,7 @@ func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (
 	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{
 		sectorNumber:      sectorNumber,
 		committedCapacity: ma.Config.UpgradeSectors && len(dealIds) == 0,
+		upgrade:           isUpgrade,
 	})
 
 	return message{
@@ -283,7 +285,7 @@ func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (
 }
 
 // create prove commit message
-func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber, committedCapacity bool) message {
+func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber, committedCapacity bool, upgrade bool) message {
 	params := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
@@ -292,6 +294,7 @@ func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.S
 	ma.operationSchedule.ScheduleOp(epoch+1, registerSectorAction{
 		sectorNumber:      sectorNumber,
 		committedCapacity: committedCapacity,
+		upgrade:           upgrade,
 	})
 
 	return message{
@@ -517,7 +520,7 @@ func (ma *MinerAgent) updateMarketBalance() []message {
 ////////////////////////////////////////////////
 
 // looks up sector deadline and partition so we can start adding it to PoSts
-func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber, committedCapacity bool) error {
+func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber, committedCapacity bool, upgrade bool) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -542,6 +545,10 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber, 
 		if err != nil {
 			return err
 		}
+	}
+
+	if upgrade {
+		ma.UpgradedSectors++
 	}
 
 	ma.liveSectors = append(ma.liveSectors, uint64(sectorNumber))
@@ -852,11 +859,13 @@ type minerOp struct {
 type proveCommitAction struct {
 	sectorNumber      abi.SectorNumber
 	committedCapacity bool
+	upgrade           bool
 }
 
 type registerSectorAction struct {
 	sectorNumber      abi.SectorNumber
 	committedCapacity bool
+	upgrade           bool
 }
 
 type recoverSectorAction struct {
