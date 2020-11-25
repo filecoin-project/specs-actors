@@ -8,11 +8,11 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
-	rtt "github.com/filecoin-project/go-state-types/rt"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
@@ -413,14 +413,16 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			}
 		}
 
-		// The exit code is explicitly ignored
-		_ = rt.Send(
-			m,
-			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{Sectors: successful},
-			abi.NewTokenAmount(0),
-			&builtin.Discard{},
-		)
+		if len(successful) > 0 {
+			// The exit code is explicitly ignored
+			_ = rt.Send(
+				m,
+				builtin.MethodsMiner.ConfirmSectorProofsValid,
+				&builtin.ConfirmSectorProofsParams{Sectors: successful},
+				abi.NewTokenAmount(0),
+				&builtin.Discard{},
+			)
+		}
 	}
 }
 
