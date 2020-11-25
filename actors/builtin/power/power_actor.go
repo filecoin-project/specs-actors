@@ -415,14 +415,16 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			}
 		}
 
-		// The exit code is explicitly ignored
-		_ = rt.Send(
-			m,
-			builtin.MethodsMiner.ConfirmSectorProofsValid,
-			&builtin.ConfirmSectorProofsParams{Sectors: successful},
-			abi.NewTokenAmount(0),
-			&builtin.Discard{},
-		)
+		if len(successful) > 0 {
+			// The exit code is explicitly ignored
+			_ = rt.Send(
+				m,
+				builtin.MethodsMiner.ConfirmSectorProofsValid,
+				&builtin.ConfirmSectorProofsParams{Sectors: successful},
+				abi.NewTokenAmount(0),
+				&builtin.Discard{},
+			)
+		}
 	}
 }
 
