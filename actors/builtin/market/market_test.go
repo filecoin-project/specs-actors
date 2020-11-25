@@ -2485,7 +2485,6 @@ func TestVerifyDealsForActivation(t *testing.T) {
 	worker := tutil.NewIDAddr(t, 103)
 	client := tutil.NewIDAddr(t, 104)
 	mAddrs := &minerAddrs{owner, worker, provider}
-	sectorStart := abi.ChainEpoch(1)
 	start := abi.ChainEpoch(10)
 	end := start + 200*builtin.EpochsInDay
 	sectorExpiry := end + 200
@@ -2495,9 +2494,12 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
 		d := actor.getDealProposal(rt, dealId)
 
-		resp := actor.verifyDealsForActivation(rt, provider, sectorStart, sectorExpiry, dealId)
-		require.EqualValues(t, big.Zero(), resp.VerifiedDealWeight)
-		require.EqualValues(t, market.DealWeight(d), resp.DealWeight)
+		resp := actor.verifyDealsForActivation(rt, provider, []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{dealId},
+		}})
+		require.EqualValues(t, big.Zero(), resp.Sectors[0].VerifiedDealWeight)
+		require.EqualValues(t, market.DealWeight(d), resp.Sectors[0].DealWeight)
 
 		actor.checkState(rt)
 	})
@@ -2508,9 +2510,12 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		deal.VerifiedDeal = true
 		dealIds := actor.publishDeals(rt, mAddrs, publishDealReq{deal: deal})
 
-		resp := actor.verifyDealsForActivation(rt, provider, sectorStart, sectorExpiry, dealIds...)
-		require.EqualValues(t, market.DealWeight(&deal), resp.VerifiedDealWeight)
-		require.EqualValues(t, big.Zero(), resp.DealWeight)
+		resp := actor.verifyDealsForActivation(rt, provider, []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      dealIds,
+		}})
+		require.EqualValues(t, market.DealWeight(&deal), resp.Sectors[0].VerifiedDealWeight)
+		require.EqualValues(t, big.Zero(), resp.Sectors[0].DealWeight)
 
 		actor.checkState(rt)
 	})
@@ -2530,12 +2535,15 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		dealIds := actor.publishDeals(rt, mAddrs, publishDealReq{deal: vd1}, publishDealReq{deal: vd2},
 			publishDealReq{deal: d1}, publishDealReq{deal: d2})
 
-		resp := actor.verifyDealsForActivation(rt, provider, sectorStart, sectorExpiry, dealIds...)
+		resp := actor.verifyDealsForActivation(rt, provider, []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      dealIds,
+		}})
 
 		verifiedWeight := big.Add(market.DealWeight(&vd1), market.DealWeight(&vd2))
 		nvweight := big.Add(market.DealWeight(&d1), market.DealWeight(&d2))
-		require.EqualValues(t, verifiedWeight, resp.VerifiedDealWeight)
-		require.EqualValues(t, nvweight, resp.DealWeight)
+		require.EqualValues(t, verifiedWeight, resp.Sectors[0].VerifiedDealWeight)
+		require.EqualValues(t, nvweight, resp.Sectors[0].DealWeight)
 
 		actor.checkState(rt)
 	})
@@ -2544,7 +2552,10 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
 
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{dealId},
+		}}}
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.SysErrForbidden, func() {
@@ -2555,7 +2566,10 @@ func TestVerifyDealsForActivation(t *testing.T) {
 
 	t.Run("fail when deal proposal is not found", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{1}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{1},
+		}}}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
@@ -2567,11 +2581,13 @@ func TestVerifyDealsForActivation(t *testing.T) {
 	t.Run("fail when caller is not the provider", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
 
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{dealId},
+		}}}
 		provider2 := tutil.NewIDAddr(t, 205)
 		rt.SetCaller(provider2, builtin.StorageMinerActorCodeID)
-
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			rt.Call(actor.VerifyDealsForActivation, param)
@@ -2579,11 +2595,15 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("fail when sector start epoch is greater than proposal start epoch", func(t *testing.T) {
+	t.Run("fail when current epoch is greater than proposal start epoch", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: start + 1, SectorExpiry: sectorExpiry}
 
+		rt.SetEpoch(start + 1)
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{dealId},
+		}}}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2595,8 +2615,11 @@ func TestVerifyDealsForActivation(t *testing.T) {
 	t.Run("fail when deal end epoch is greater than sector expiration", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId}, SectorStart: start, SectorExpiry: end - 1}
 
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: end - 1,
+			DealIDs:      []abi.DealID{dealId},
+		}}}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -2609,7 +2632,10 @@ func TestVerifyDealsForActivation(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
 
-		param := &market.VerifyDealsForActivationParams{DealIDs: []abi.DealID{dealId, dealId}, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+		param := &market.VerifyDealsForActivationParams{Sectors: []market.SectorDeals{{
+			SectorExpiry: sectorExpiry,
+			DealIDs:      []abi.DealID{dealId, dealId},
+		}}}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "multiple times", func() {
@@ -2635,8 +2661,8 @@ func (h *marketActorTestHarness) constructAndVerify(rt *mock.Runtime) {
 }
 
 func (h *marketActorTestHarness) verifyDealsForActivation(rt *mock.Runtime, provider address.Address,
-	sectorStart, sectorExpiry abi.ChainEpoch, dealIds ...abi.DealID) *market.VerifyDealsForActivationReturn {
-	param := &market.VerifyDealsForActivationParams{DealIDs: dealIds, SectorStart: sectorStart, SectorExpiry: sectorExpiry}
+	sectorDeals []market.SectorDeals) *market.VerifyDealsForActivationReturn {
+	param := &market.VerifyDealsForActivationParams{Sectors: sectorDeals}
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 	rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 

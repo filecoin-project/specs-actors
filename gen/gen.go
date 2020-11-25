@@ -150,13 +150,15 @@ func main() {
 		//market.PublishStorageDealsParams{}, // Aliased from v0
 		//market.PublishStorageDealsReturn{}, // Aliased from v0
 		//market.ActivateDealsParams{}, // Aliased from v0
-		//market.VerifyDealsForActivationParams{}, // Aliased from v0
-		// market.VerifyDealsForActivationReturn{}, // Aliased from v2
+		market.VerifyDealsForActivationParams{},
+		market.VerifyDealsForActivationReturn{},
 		//market.ComputeDataCommitmentParams{}, // Aliased from v0
 		//market.OnMinerSectorsTerminateParams{}, // Aliased from v0
 		// other types
 		//market.DealProposal{}, // Aliased from v0
 		//market.ClientDealProposal{}, // Aliased from v0
+		market.SectorDeals{},
+		market.SectorWeights{},
 		market.DealState{},
 	); err != nil {
 		panic(err)

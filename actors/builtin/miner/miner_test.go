@@ -4954,21 +4954,24 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 	if len(params.DealIDs) > 0 {
 		// If there are any deal IDs, allocate half the weight to non-verified and half to verified.
 		vdParams := market.VerifyDealsForActivationParams{
-			DealIDs:      params.DealIDs,
-			SectorStart:  rt.Epoch(),
-			SectorExpiry: params.Expiration,
+			Sectors: []market.SectorDeals{{
+				SectorExpiry: params.Expiration,
+				DealIDs:      params.DealIDs,
+			}},
 		}
 
+		if conf.dealWeight.Nil() {
+			conf.dealWeight = big.Zero()
+		}
+		if conf.verifiedDealWeight.Nil() {
+			conf.verifiedDealWeight = big.Zero()
+		}
 		vdReturn := market.VerifyDealsForActivationReturn{
-			DealWeight:         conf.dealWeight,
-			VerifiedDealWeight: conf.verifiedDealWeight,
-			DealSpace:          uint64(conf.dealSpace),
-		}
-		if vdReturn.DealWeight.Nil() {
-			vdReturn.DealWeight = big.Zero()
-		}
-		if vdReturn.VerifiedDealWeight.Nil() {
-			vdReturn.VerifiedDealWeight = big.Zero()
+			Sectors: []market.SectorWeights{{
+				DealSpace:          uint64(conf.dealSpace),
+				DealWeight:         conf.dealWeight,
+				VerifiedDealWeight: conf.verifiedDealWeight,
+			}},
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
