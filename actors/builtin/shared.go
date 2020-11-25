@@ -37,6 +37,16 @@ func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
 	return err
 }
 
+// Aborts with an ErrIllegalState if predicate is not true.
+// This method is intended for use like an assertion.
+// Don't use this shorthand for states which are logically possible, as it will hide (non-)coverage of
+// the Abort call from code coverage metrics.
+func RequireState(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
+	if !predicate {
+		rt.Abortf(exitcode.ErrIllegalState, msg, args...)
+	}
+}
+
 // Aborts with an ErrIllegalArgument if predicate is not true.
 func RequireParam(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
 	if !predicate {

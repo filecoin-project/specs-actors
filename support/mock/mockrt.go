@@ -1002,34 +1002,6 @@ func (rt *Runtime) ExpectAbortContainsMessage(expected exitcode.ExitCode, substr
 	f()
 }
 
-func (rt *Runtime) ExpectAssertionFailure(expected string, f func()) {
-	rt.t.Helper()
-	prevState := rt.state
-
-	defer func() {
-		r := recover()
-		if r == nil {
-			rt.failTest("expected panic with message %v but call succeeded", expected)
-			return
-		}
-		a, ok := r.(abort)
-		if ok {
-			rt.failTest("expected panic with message %v but got abort %v", expected, a)
-			return
-		}
-		p, ok := r.(string)
-		if !ok {
-			panic(r)
-		}
-		if p != expected {
-			rt.failTest("expected panic with message \"%v\" but got message \"%v\"", expected, p)
-		}
-		// Roll back state change.
-		rt.state = prevState
-	}()
-	f()
-}
-
 func (rt *Runtime) ExpectLogsContain(substr string) {
 	for _, msg := range rt.logs {
 		if strings.Contains(msg, substr) {

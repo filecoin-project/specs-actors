@@ -12,11 +12,7 @@ import (
 )
 
 type State struct {
-	// Signers may be either public-key or actor ID-addresses. The ID address is canonical, but doesn't exist
-	// for a public key that has not yet received a message on chain.
-	// If any signer address is a public-key address, it will be resolved to an ID address and persisted
-	// in this state when the address is used.
-	Signers               []address.Address
+	Signers               []address.Address // Signers must be canonical ID-addresses.
 	NumApprovalsThreshold uint64
 	NextTxnID             TxnID
 
@@ -26,6 +22,16 @@ type State struct {
 	UnlockDuration abi.ChainEpoch
 
 	PendingTxns cid.Cid // HAMT[TxnID]Transaction
+}
+
+// Tests whether an address is in the list of signers.
+func (st *State) IsSigner(address address.Address) bool {
+	for _, signer := range st.Signers {
+		if signer == address {
+			return true
+		}
+	}
+	return false
 }
 
 func (st *State) SetLocked(startEpoch abi.ChainEpoch, unlockDuration abi.ChainEpoch, lockedAmount abi.TokenAmount) {

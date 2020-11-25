@@ -8,7 +8,6 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	autil "github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -47,15 +46,12 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	var actorID cbg.CborInt
-	found, err := m.Get(abi.AddrKey(address), &actorID)
-	if err != nil {
+	if found, err := m.Get(abi.AddrKey(address), &actorID); err != nil {
 		return addr.Undef, false, xerrors.Errorf("failed to get from address map: %w", err)
-	}
-	if found {
+	} else if found {
 		// Reconstruct address from the ActorID.
-		idAddr, err2 := addr.NewIDAddress(uint64(actorID))
-		autil.Assert(err2 == nil)
-		return idAddr, true, nil
+		idAddr, err := addr.NewIDAddress(uint64(actorID))
+		return idAddr, true, err
 	} else {
 		return addr.Undef, false, nil
 	}
@@ -82,6 +78,5 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	s.AddressMap = amr
 
 	idAddr, err := addr.NewIDAddress(uint64(actorID))
-	autil.Assert(err == nil)
-	return idAddr, nil
+	return idAddr, err
 }

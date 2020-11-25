@@ -1349,7 +1349,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		provider2 := tutil.NewIDAddr(t, 501)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider2, builtin.StorageMinerActorCodeID)
-		rt.ExpectAssertionFailure("caller is not the provider of the deal", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalState, "caller t0501 is not the provider t0102 of deal 0", func() {
 			rt.Call(actor.OnMinerSectorsTerminate, params)
 		})
 
@@ -1441,7 +1441,7 @@ func TestCronTick(t *testing.T) {
 		// set current epoch of the deal to the end epoch so it's picked up for "processing" in the next cron tick.
 		rt.SetEpoch(endEpoch)
 
-		rt.ExpectAssertionFailure("assertion failed", func() {
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			actor.cronTick(rt)
 		})
 	})
