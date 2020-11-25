@@ -67,30 +67,46 @@ func NewSyncADTStore(ctx context.Context) adt.Store {
 	return adt.WrapStore(ctx, cbor.NewCborStore(NewSyncBlockStoreInMemory()))
 }
 
-type MetricsStore struct {
-	bs     cbor.IpldBlockstore
-	Writes uint64
-	Reads  uint64
+type MetricsBlockStore struct {
+	bs         cbor.IpldBlockstore
+	Writes     uint64
+	WriteBytes uint64
+	Reads      uint64
+	ReadBytes  uint64
 }
 
-func NewMetricsStore(underlying cbor.IpldBlockstore) *MetricsStore {
-	return &MetricsStore{bs: underlying}
+func NewMetricsBlockStore(underlying cbor.IpldBlockstore) *MetricsBlockStore {
+	return &MetricsBlockStore{bs: underlying}
 }
 
-func (ms *MetricsStore) Get(c cid.Cid) (block.Block, error) {
+func (ms *MetricsBlockStore) Get(c cid.Cid) (block.Block, error) {
 	ms.Reads++
-	return ms.bs.Get(c)
+	blk, err := ms.bs.Get(c)
+	if err != nil {
+		return blk, err
+	}
+	ms.ReadBytes += uint64(len(blk.RawData()))
+	return blk, nil
 }
 
-func (ms *MetricsStore) Put(b block.Block) error {
+func (ms *MetricsBlockStore) Put(b block.Block) error {
 	ms.Writes++
+	ms.WriteBytes += uint64(len(b.RawData()))
 	return ms.bs.Put(b)
 }
 
-func (ms *MetricsStore) ReadCount() uint64 {
+func (ms *MetricsBlockStore) ReadCount() uint64 {
 	return ms.Reads
 }
 
-func (ms *MetricsStore) WriteCount() uint64 {
+func (ms *MetricsBlockStore) WriteCount() uint64 {
 	return ms.Writes
+}
+
+func (ms *MetricsBlockStore) ReadSize() uint64 {
+	return ms.ReadBytes
+}
+
+func (ms *MetricsBlockStore) WriteSize() uint64 {
+	return ms.WriteBytes
 }

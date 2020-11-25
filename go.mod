@@ -10,6 +10,7 @@ require (
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0
 	github.com/filecoin-project/go-state-types v0.0.0-20201102161440-c8033295a1fc
 	github.com/filecoin-project/specs-actors v0.9.13
+	github.com/filecoin-project/specs-actors/v3 v3.0.0-20210108154629-546638a38406 // indirect
 	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-ipld-cbor v0.0.4

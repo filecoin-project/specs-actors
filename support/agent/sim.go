@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
@@ -38,19 +40,31 @@ type Sim struct {
 	WinCount      uint64
 	MessageCount  uint64
 
-	v             *vm.VM
-	rnd           *rand.Rand
-	statsByMethod map[vm.MethodKey]*vm.CallStats
+	v               *vm.VM
+	rnd             *rand.Rand
+	statsByMethod   map[vm.MethodKey]*vm.CallStats
+	blkStore        ipldcbor.IpldBlockstore
+	blkStoreFactory func() ipldcbor.IpldBlockstore
+	ctx             context.Context
+	t               testing.TB
 }
 
-func NewSim(ctx context.Context, t testing.TB, bs ipldcbor.IpldBlockstore, config SimConfig) *Sim {
-	v := vm.NewVMWithSingletons(ctx, t, bs)
+func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor.IpldBlockstore, config SimConfig) *Sim {
+	blkStore := blockstoreFactory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
+	v.SetStatsSource(metrics)
+
 	return &Sim{
-		Config:        config,
-		Agents:        []Agent{},
-		DealProviders: []DealProvider{},
-		v:             v,
-		rnd:           rand.New(rand.NewSource(config.Seed)),
+		Config:          config,
+		Agents:          []Agent{},
+		DealProviders:   []DealProvider{},
+		v:               v,
+		rnd:             rand.New(rand.NewSource(config.Seed)),
+		blkStore:        blkStore,
+		blkStoreFactory: blockstoreFactory,
+		ctx:             ctx,
+		t:               t,
 	}
 }
 
@@ -130,7 +144,33 @@ func (s *Sim) Tick() error {
 	// store last stats
 	s.statsByMethod = s.v.GetCallStats()
 
-	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
+	// dump logs if we have them
+	if len(s.v.GetLogs()) > 0 {
+		fmt.Printf("%s\n", strings.Join(s.v.GetLogs(), "\n"))
+	}
+
+	// create next vm
+	nextEpoch := s.v.GetEpoch() + 1
+	if s.Config.CheckpointEpochs > 0 && uint64(nextEpoch)%s.Config.CheckpointEpochs == 0 {
+		nextStore := ipld.NewBlockStoreInMemory()
+		blks, size, err := BlockstoreCopy(s.blkStore, nextStore, s.v.StateRoot())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("CHECKPOINT: state blocks: %d, state data size %d\n", blks, size)
+
+		s.blkStore = nextStore
+		metrics := ipld.NewMetricsBlockStore(nextStore)
+		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapStore(s.ctx, ipldcbor.NewCborStore(metrics)), s.v.StateRoot(), nextEpoch)
+		if err != nil {
+			return err
+		}
+		s.v.SetStatsSource(metrics)
+
+	} else {
+		s.v, err = s.v.WithEpoch(nextEpoch)
+	}
+
 	return err
 }
 
@@ -158,10 +198,6 @@ func (s *Sim) AddAgent(a Agent) {
 
 func (s *Sim) AddDealProvider(d DealProvider) {
 	s.DealProviders = append(s.DealProviders, d)
-}
-
-func (s *Sim) Rnd() int64 {
-	return s.rnd.Int63()
 }
 
 func (s *Sim) GetVM() *vm.VM {
@@ -297,6 +333,7 @@ type SimConfig struct {
 	AccountInitialBalance  abi.TokenAmount
 	Seed                   int64
 	CreateMinerProbability float32
+	CheckpointEpochs       uint64
 }
 
 type returnHandler func(v SimState, msg message, ret cbor.Marshaler) error
