@@ -12,10 +12,9 @@ import (
 	errors "github.com/pkg/errors"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
 )
 
 // genesis power in bytes = 750,000 GiB
@@ -200,9 +199,15 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 		st.TotalRawBytePower = big.Add(st.TotalRawBytePower, power)
 	}
 
-	AssertMsg(newClaim.RawBytePower.GreaterThanEqual(big.Zero()), "negative claimed raw byte power: %v", newClaim.RawBytePower)
-	AssertMsg(newClaim.QualityAdjPower.GreaterThanEqual(big.Zero()), "negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
-	AssertMsg(st.MinerAboveMinPowerCount >= 0, "negative number of miners larger than min: %v", st.MinerAboveMinPowerCount)
+	if newClaim.RawBytePower.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative claimed raw byte power: %v", newClaim.RawBytePower)
+	}
+	if newClaim.QualityAdjPower.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative claimed quality adjusted power: %v", newClaim.QualityAdjPower)
+	}
+	if st.MinerAboveMinPowerCount < 0 {
+		return xerrors.Errorf("negative number of miners larger than min: %v", st.MinerAboveMinPowerCount)
+	}
 	return setClaim(claims, miner, &newClaim)
 }
 
@@ -251,7 +256,6 @@ func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 
 func (st *State) addPledgeTotal(amount abi.TokenAmount) {
 	st.TotalPledgeCollateral = big.Add(st.TotalPledgeCollateral, amount)
-	AssertMsg(st.TotalPledgeCollateral.GreaterThanEqual(big.Zero()), "pledged amount cannot be negative")
 }
 
 func (st *State) appendCronEvent(events *adt.Multimap, epoch abi.ChainEpoch, event *CronEvent) error {
@@ -283,13 +287,15 @@ func loadCronEvents(mmap *adt.Multimap, epoch abi.ChainEpoch) ([]CronEvent, erro
 }
 
 func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
-	Assert(claim.RawBytePower.GreaterThanEqual(big.Zero()))
-	Assert(claim.QualityAdjPower.GreaterThanEqual(big.Zero()))
-
+	if claim.RawBytePower.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative claim raw power %v", claim.RawBytePower)
+	}
+	if claim.QualityAdjPower.LessThan(big.Zero()) {
+		return xerrors.Errorf("negative claim quality-adjusted power %v", claim.QualityAdjPower)
+	}
 	if err := claims.Put(abi.AddrKey(a), claim); err != nil {
 		return xerrors.Errorf("failed to put claim with address %s power %v: %w", a, claim, err)
 	}
-
 	return nil
 }
 

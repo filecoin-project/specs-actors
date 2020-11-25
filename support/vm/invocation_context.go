@@ -20,14 +20,14 @@ import (
 	"github.com/minio/blake2b-simd"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v2/actors/states"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/support/ipld"
-	"github.com/filecoin-project/specs-actors/v2/support/testing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v3/actors/states"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
+	"github.com/filecoin-project/specs-actors/v3/support/testing"
 )
 
 var EmptyObjectCid cid.Cid
@@ -54,6 +54,7 @@ type topLevelContext struct {
 	originatorCallSeq       uint64          // Call sequence number of the top-level message.
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
 	statsSource             StatsSource     // optional source of external statistics that can be used to profile calls
+	circSupply              abi.TokenAmount // default or externally specified circulating FIL supply
 }
 
 func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
@@ -217,7 +218,14 @@ func (ic *invocationContext) CurrEpoch() abi.ChainEpoch {
 }
 
 func (ic *invocationContext) CurrentBalance() abi.TokenAmount {
-	return ic.toActor.Balance
+	// load balance
+	act, found, err := ic.rt.GetActor(ic.msg.to)
+	if err != nil {
+		ic.Abortf(exitcode.ErrIllegalState, "could not load to actor %v: %v", ic.msg.to, err)
+	} else if !found {
+		ic.Abortf(exitcode.ErrIllegalState, "could not find to actor %v", ic.msg.to)
+	}
+	return act.Balance
 }
 
 func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) {
@@ -316,7 +324,13 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 		ic.Abortf(exitcode.SysErrorIllegalActor, "Calling Send() is not allowed during side-effect lock")
 	}
 	from := ic.msg.to
-	fromActor := ic.toActor
+	fromActor, found, err := ic.rt.GetActor(from)
+	if err != nil {
+		ic.Abortf(exitcode.ErrIllegalState, "could not retrieve send actor %v for internal send: %v", from, err)
+	} else if !found {
+		ic.Abortf(exitcode.ErrIllegalState, "could not find send actor %v for internal send", from)
+	}
+
 	newMsg := InternalMessage{
 		from:   from,
 		to:     toAddr,
@@ -330,7 +344,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 	ic.stats.MergeSubStat(newCtx.toActor.Code, newMsg.method, newCtx.stats)
 
-	err := ret.Into(out)
+	err = ret.Into(out)
 	if err != nil {
 		ic.Abortf(exitcode.ErrSerialization, "failed to serialize send return value into output parameter")
 	}
@@ -339,7 +353,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 // CreateActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
-	act, ok := ic.rt.actorImpls[codeID]
+	act, ok := ic.rt.ActorImpls[codeID]
 	if !ok {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only create built-in actors.")
 	}
@@ -395,7 +409,7 @@ func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
 }
 
 func (ic *invocationContext) TotalFilCircSupply() abi.TokenAmount {
-	return big.Mul(big.NewInt(1e9), big.NewInt(1e18))
+	return ic.topLevel.circSupply
 }
 
 func (ic *invocationContext) Context() context.Context {

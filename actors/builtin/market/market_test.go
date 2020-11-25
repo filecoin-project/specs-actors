@@ -17,15 +17,15 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v2/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/v2/support/testing"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1349,7 +1349,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		provider2 := tutil.NewIDAddr(t, 501)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.SetCaller(provider2, builtin.StorageMinerActorCodeID)
-		rt.ExpectAssertionFailure("caller is not the provider of the deal", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalState, "caller t0501 is not the provider t0102 of deal 0", func() {
 			rt.Call(actor.OnMinerSectorsTerminate, params)
 		})
 
@@ -1441,7 +1441,7 @@ func TestCronTick(t *testing.T) {
 		// set current epoch of the deal to the end epoch so it's picked up for "processing" in the next cron tick.
 		rt.SetEpoch(endEpoch)
 
-		rt.ExpectAssertionFailure("assertion failed", func() {
+		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			actor.cronTick(rt)
 		})
 	})

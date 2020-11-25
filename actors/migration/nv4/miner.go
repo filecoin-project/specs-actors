@@ -11,8 +11,8 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
-	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	miner2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
+	adt2 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type minerMigrator struct {

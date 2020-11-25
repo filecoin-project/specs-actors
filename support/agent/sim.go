@@ -2,8 +2,7 @@ package agent
 
 import (
 	"context"
-	"math"
-	big2 "math/big"
+	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
@@ -13,13 +12,16 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	cbor2 "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
+	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
 
 // Sim is a simulation framework to exercise actor code in a network-like environment.
@@ -34,47 +36,52 @@ import (
 type Sim struct {
 	Config        SimConfig
 	Agents        []Agent
+	DealProviders []DealProvider
+	WinCount      uint64
+	MessageCount  uint64
+
 	v             *vm.VM
 	rnd           *rand.Rand
 	statsByMethod map[vm.MethodKey]*vm.CallStats
+	blkStore      cbor2.IpldBlockstore
+	ctx           context.Context
+	t             testing.TB
 }
 
-type SimState interface {
-	GetEpoch() abi.ChainEpoch
-	GetState(addr address.Address, out cbor.Unmarshaler) error
-	Store() adt.Store
-	AddAgent(a Agent)
-	Rnd() int64
-}
-
-type Agent interface {
-	Tick(v SimState) ([]message, error)
-}
-
-type SimConfig struct {
-	AccountCount           int
-	AccountInitialBalance  abi.TokenAmount
-	Seed                   int64
-	CreateMinerProbability float32
-}
-
-func NewSim(ctx context.Context, t testing.TB, store adt.Store, config SimConfig) *Sim {
-	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
+func NewSim(ctx context.Context, t testing.TB, config SimConfig) *Sim {
+	bs := ipld.NewBlockStoreInMemory()
+	metrics := ipld.NewMetricsStore(bs)
+	v := vm.NewCustomStoreVMWithSingletons(ctx, adt.WrapStore(ctx, cbor2.NewCborStore(metrics)), t)
+	v.SetStatsSource(metrics)
 	return &Sim{
-		Config: config,
-		Agents: []Agent{},
-		v:      v,
-		rnd:    rand.New(rand.NewSource(config.Seed)),
+		Config:        config,
+		Agents:        []Agent{},
+		DealProviders: []DealProvider{},
+		v:             v,
+		rnd:           rand.New(rand.NewSource(config.Seed)),
+		blkStore:      bs,
+		ctx:           ctx,
+		t:             t,
 	}
 }
+
+//////////////////////////////////////////
+//
+//  Sim execution
+//
+//////////////////////////////////////////
 
 func (s *Sim) Tick() error {
 	var err error
 	var blockMessages []message
 
 	// compute power table before state transition to create block rewards at the end
-	powerTable, err := ComputePowerTable(s.v, s.Agents)
+	powerTable, err := computePowerTable(s.v, s.Agents)
 	if err != nil {
+		return err
+	}
+
+	if err := computeCircSupply(s.v); err != nil {
 		return err
 	}
 
@@ -108,6 +115,7 @@ func (s *Sim) Tick() error {
 			}
 		}
 	}
+	s.MessageCount += uint64(len(blockMessages))
 
 	// Apply block rewards
 	// Note that this differs from the specification in that it applies all reward messages at the end, whereas
@@ -115,7 +123,8 @@ func (s *Sim) Tick() error {
 	// interleaving them with the rest of the messages).
 	for _, miner := range powerTable.minerPower {
 		if powerTable.totalQAPower.GreaterThan(big.Zero()) {
-			wins := s.WinCount(miner.qaPower, powerTable.totalQAPower)
+			wins := WinCount(miner.qaPower, powerTable.totalQAPower, s.rnd.Float64())
+			s.WinCount += wins
 			err := s.rewardMiner(miner.addr, wins)
 			if err != nil {
 				return err
@@ -132,13 +141,39 @@ func (s *Sim) Tick() error {
 	// store last stats
 	s.statsByMethod = s.v.GetCallStats()
 
-	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
+	// dump logs if we have them
+	if len(s.v.GetLogs()) > 0 {
+		fmt.Printf("%s\n", strings.Join(s.v.GetLogs(), "\n"))
+	}
+
+	// create next vm
+	nextEpoch := s.v.GetEpoch() + 1
+	if s.Config.CheckpointEpochs > 0 && uint64(nextEpoch)%s.Config.CheckpointEpochs == 0 {
+		nextStore := ipld.NewBlockStoreInMemory()
+		blks, size, err := BlockstoreCopy(s.blkStore, nextStore, s.v.StateRoot())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("CHECKPOINT: state blocks: %d, state data size %d\n", blks, size)
+
+		s.blkStore = nextStore
+		metrics := ipld.NewMetricsStore(nextStore)
+		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapStore(s.ctx, cbor2.NewCborStore(metrics)), s.v.StateRoot(), nextEpoch)
+		if err != nil {
+			return err
+		}
+		s.v.SetStatsSource(metrics)
+
+	} else {
+		s.v, err = s.v.WithEpoch(nextEpoch)
+	}
+
 	return err
 }
 
 //////////////////////////////////////////////////
 //
-//  SimState Methods
+//  SimState Methods and other accessors
 //
 //////////////////////////////////////////////////
 
@@ -158,8 +193,27 @@ func (s *Sim) AddAgent(a Agent) {
 	s.Agents = append(s.Agents, a)
 }
 
-func (s *Sim) Rnd() int64 {
-	return s.rnd.Int63()
+func (s *Sim) AddDealProvider(d DealProvider) {
+	s.DealProviders = append(s.DealProviders, d)
+}
+
+func (s *Sim) GetVM() *vm.VM {
+	return s.v
+}
+
+func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
+	return s.statsByMethod
+}
+
+func (s *Sim) ChooseDealProvider() DealProvider {
+	if len(s.DealProviders) == 0 {
+		return nil
+	}
+	return s.DealProviders[s.rnd.Int63n(int64(len(s.DealProviders)))]
+}
+
+func (s *Sim) NetworkCirculatingSupply() abi.TokenAmount {
+	return s.v.GetCirculatingSupply()
 }
 
 //////////////////////////////////////////////////
@@ -167,10 +221,6 @@ func (s *Sim) Rnd() int64 {
 //  Misc Methods
 //
 //////////////////////////////////////////////////
-
-func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
-	return s.statsByMethod
-}
 
 func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	if wins < 1 {
@@ -190,7 +240,7 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	return nil
 }
 
-func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
+func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	pt := powerTable{}
 
 	var rwst reward.State
@@ -221,42 +271,28 @@ func ComputePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	return pt, nil
 }
 
-// This is the Filecoin algorithm for winning a ticket within a block with the tickets replaced
-// with random numbers. It lets miners win according to a Poisson distribution with rate
-// proportional to the miner's fraction of network power.
-func (s *Sim) WinCount(minerPower abi.StoragePower, totalPower abi.StoragePower) uint64 {
-	E := big2.NewRat(5, 1)
-	lambdaR := new(big2.Rat)
-	lambdaR.SetFrac(minerPower.Int, totalPower.Int)
-	lambdaR.Mul(lambdaR, E)
-	lambda, _ := lambdaR.Float64()
-
-	h := s.rnd.Float64()
-	rhs := 1 - poissonPMF(lambda, 0)
-
-	winCount := uint64(0)
-	for rhs > h {
-		winCount++
-		rhs -= poissonPMF(lambda, winCount)
+func computeCircSupply(v *vm.VM) error {
+	// disbursed + reward.State.TotalStoragePowerReward - burnt.Balance - power.State.TotalPledgeCollateral
+	var rewardSt reward.State
+	if err := v.GetState(builtin.RewardActorAddr, &rewardSt); err != nil {
+		return err
 	}
-	return winCount
-}
 
-func poissonPMF(lambda float64, k uint64) float64 {
-	fk := float64(k)
-	return (math.Exp(-lambda) * math.Pow(lambda, fk)) / fact(fk)
-}
-
-func fact(k float64) float64 {
-	fact := 1.0
-	for i := 2.0; i <= k; i += 1.0 {
-		fact *= i
+	var powerSt power.State
+	if err := v.GetState(builtin.StoragePowerActorAddr, &powerSt); err != nil {
+		return err
 	}
-	return fact
-}
 
-func (s *Sim) GetVM() *vm.VM {
-	return s.v
+	burnt, found, err := v.GetActor(builtin.BurntFundsActorAddr)
+	if err != nil {
+		return err
+	} else if !found {
+		return errors.Errorf("burnt actor not found at %v", builtin.BurntFundsActorAddr)
+	}
+
+	v.SetCirculatingSupply(big.Sum(DisbursedAmount, rewardSt.TotalStoragePowerReward,
+		powerSt.TotalPledgeCollateral.Neg(), burnt.Balance.Neg()))
+	return nil
 }
 
 //////////////////////////////////////////////
@@ -264,6 +300,38 @@ func (s *Sim) GetVM() *vm.VM {
 //  Internal Types
 //
 //////////////////////////////////////////////
+
+type SimState interface {
+	GetEpoch() abi.ChainEpoch
+	GetState(addr address.Address, out cbor.Unmarshaler) error
+	Store() adt.Store
+	AddAgent(a Agent)
+	AddDealProvider(d DealProvider)
+	NetworkCirculatingSupply() abi.TokenAmount
+
+	// randomly select an agent capable of making deals.
+	// Returns nil if no providers exist.
+	ChooseDealProvider() DealProvider
+}
+
+type Agent interface {
+	Tick(v SimState) ([]message, error)
+}
+
+type DealProvider interface {
+	Address() address.Address
+	DealRange(currentEpoch abi.ChainEpoch) (start abi.ChainEpoch, end abi.ChainEpoch)
+	CreateDeal(proposal market.ClientDealProposal)
+	AvailableCollateral() abi.TokenAmount
+}
+
+type SimConfig struct {
+	AccountCount           int
+	AccountInitialBalance  abi.TokenAmount
+	Seed                   int64
+	CreateMinerProbability float32
+	CheckpointEpochs       uint64
+}
 
 type returnHandler func(v SimState, msg message, ret cbor.Marshaler) error
 

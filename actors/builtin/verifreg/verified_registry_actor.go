@@ -10,10 +10,9 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	verifreg0 "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	. "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type Actor struct{}
@@ -237,7 +236,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 		if !found {
 			rt.Abortf(exitcode.ErrNotFound, "no such verified client %v", client)
 		}
-		Assert(vcCap.GreaterThanEqual(big.Zero()))
+		builtin.RequireState(rt, vcCap.GreaterThanEqual(big.Zero()), "negative cap for client %v: %v", client, vcCap)
 
 		if params.DealSize.GreaterThan(vcCap) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "DealSize %d exceeds allowable cap: %d for VerifiedClient %v", params.DealSize, vcCap, client)

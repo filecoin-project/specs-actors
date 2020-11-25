@@ -13,10 +13,10 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
-	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/multisig"
+	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
 
 func TestV5MultisigDeleteSigner1Of2(t *testing.T) {

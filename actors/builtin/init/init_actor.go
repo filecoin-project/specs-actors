@@ -8,10 +8,9 @@ import (
 	init0 "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	cid "github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
-	autil "github.com/filecoin-project/specs-actors/v2/actors/util"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 // The init actor uniquely has the power to create new actors.
@@ -67,7 +66,7 @@ type ExecReturn = init0.ExecReturn
 func (a Actor) Exec(rt runtime.Runtime, params *ExecParams) *ExecReturn {
 	rt.ValidateImmediateCallerAcceptAny()
 	callerCodeCID, ok := rt.GetActorCodeCID(rt.Caller())
-	autil.AssertMsg(ok, "no code for actor at %s", rt.Caller())
+	builtin.RequireState(rt, ok, "no code for caller at %s", rt.Caller())
 	if !canExec(callerCodeCID, params.CodeCID) {
 		rt.Abortf(exitcode.ErrForbidden, "caller type %v cannot exec actor type %v", callerCodeCID, params.CodeCID)
 	}

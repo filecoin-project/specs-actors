@@ -9,7 +9,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
-	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
+	market2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 )
 
 type marketMigrator struct {
