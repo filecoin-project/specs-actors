@@ -175,10 +175,10 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 			// assume each sector is 32Gb
 			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
 
-			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  cnsMnrs: %d avgWins: %.3f  msgs: %d  deals: %d  gets: %d  puts: %d\n",
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  msgs: %d  deals: %d  gets: %d  puts: %d  write bytes: %d  read bytes: %d\n",
 				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
-				pwrSt.MinerAboveMinPowerCount, float64(sim.WinCount)/float64(epoch), sim.MessageCount, deals,
-				sim.GetVM().StoreReads(), sim.GetVM().StoreWrites())
+				sim.MessageCount, deals, sim.GetVM().StoreReads(), sim.GetVM().StoreWrites(),
+				sim.GetVM().StoreReadBytes(), sim.GetVM().StoreWriteBytes())
 		}
 
 		cumulativeStats.MergeAllStats(sim.GetCallStats())

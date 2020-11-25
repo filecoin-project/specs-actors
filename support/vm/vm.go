@@ -504,6 +504,20 @@ func (vm *VM) StoreWrites() uint64 {
 	return 0
 }
 
+func (vm *VM) StoreReadBytes() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.ReadSize()
+	}
+	return 0
+}
+
+func (vm *VM) StoreWriteBytes() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.WriteSize()
+	}
+	return 0
+}
+
 //
 // invocation tracking
 //
