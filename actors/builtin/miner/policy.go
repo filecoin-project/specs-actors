@@ -128,8 +128,10 @@ var ExtensibleProofTypesV0 = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
 }
 
-// From network version 7, sectors sealed with the V1 seal proof types cannot be extended.
+// From network version 7, sectors sealed with the V1 or V1.1 seal proof types may be extended.
 var ExtensibleProofTypesV7 = map[abi.RegisteredSealProof]struct{}{
+	abi.RegisteredSealProof_StackedDrg32GiBV1:   {},
+	abi.RegisteredSealProof_StackedDrg64GiBV1:   {},
 	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
 	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
 }
