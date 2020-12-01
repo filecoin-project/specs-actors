@@ -36,7 +36,7 @@ type State struct {
 
 	// PendingProposals tracks dealProposals that have not yet reached their deal start date.
 	// We track them here to ensure that miners can't publish the same deal proposal twice
-	PendingProposals cid.Cid // HAMT[DealCid]Bool
+	PendingProposals cid.Cid // HAMT[DealCid]nil
 
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable cid.Cid // BalanceTable
