@@ -229,7 +229,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
 			}
 
-			err = msm.pendingDeals.Put(abi.CidKey(pcid), &deal.Proposal)
+			trueVal := cbg.CborBool(true)
+			err = msm.pendingDeals.Put(abi.CidKey(pcid), &trueVal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
 
 			err = msm.dealProposals.Set(id, &deal.Proposal)
