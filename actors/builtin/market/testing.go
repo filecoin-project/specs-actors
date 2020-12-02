@@ -160,7 +160,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 			}
 
 			_, found := proposalCids[proposalCID]
-			acc.Require(found, "pending proposal with cid %v not fond within proposals %v", proposalCID, pendingProposals)
+			acc.Require(found, "pending proposal with cid %v not found within proposals %v", proposalCID, pendingProposals)
 
 			pendingProposalCount++
 			return nil
