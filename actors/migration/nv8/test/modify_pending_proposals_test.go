@@ -3,7 +3,7 @@ package test
 import (
 	"context"
 	"fmt"
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
+	"strings"
 	"testing"
 
 	addr "github.com/filecoin-project/go-address"
@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
@@ -19,10 +20,12 @@ import (
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
 	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	nv8 "github.com/filecoin-project/specs-actors/v3/actors/migration/nv8"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v3/actors/states"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 	vm3 "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
@@ -79,7 +82,6 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	require.NoError(t, err)
 
 	// add 10 more deals after migration
-	dealStart = v3.GetEpoch() + 2*builtin.EpochsInDay
 	for i := 0; i < 10; i++ {
 		var err error
 		v3, err = v3.WithEpoch(v.GetEpoch() + 1)
@@ -128,6 +130,17 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	v3, err = v3.WithEpoch(dealStart + 1)
 	require.NoError(t, err)
 	vm3.ApplyOk(t, v3, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	// assert that power total invariants are broken
+	stateTree, err := v3.GetStateTree()
+	require.NoError(t, err)
+	totalBalance, err := v3.GetTotalActorBalance()
+	require.NoError(t, err)
+	msgs, err := states.CheckStateInvariants(stateTree, totalBalance, v3.GetEpoch())
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
+
 }
 
 func publishDeal(t *testing.T, v *vm2.VM, provider, dealClient, minerID addr.Address, dealLabel string,
