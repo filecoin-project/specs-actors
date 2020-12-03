@@ -112,27 +112,6 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 		controlAddrs = append(controlAddrs, resolved)
 	}
 
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
-	}
-
-	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalState, "failed to construct initial state: %v", err)
-	}
-
-	emptyBitfield := bitfield.NewFromSet(nil)
-	emptyBitfieldCid := rt.StorePut(emptyBitfield)
-
-	emptyDeadline := ConstructDeadline(emptyArray)
-	emptyDeadlineCid := rt.StorePut(emptyDeadline)
-
-	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
-	emptyVestingFunds := ConstructVestingFunds()
-	emptyDeadlinesCid := rt.StorePut(emptyDeadlines)
-	emptyVestingFundsCid := rt.StorePut(emptyVestingFunds)
-
 	currEpoch := rt.CurrEpoch()
 	offset, err := assignProvingPeriodOffset(rt.Receiver(), currEpoch, rt.HashBlake2b)
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to assign proving period offset")
@@ -142,11 +121,12 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	builtin.RequireState(rt, deadlineIndex < WPoStPeriodDeadlines, "computed proving deadline index %d invalid", deadlineIndex)
 
 	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct initial miner info")
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct initial miner info")
 	infoCid := rt.StorePut(info)
 
-	state, err := ConstructState(infoCid, periodStart, deadlineIndex, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to construct state")
+	store := adt.AsStore(rt)
+	state, err := ConstructState(store, infoCid, periodStart, deadlineIndex)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 	rt.StateCreate(state)
 
 	// Register first cron callback for epoch before the next deadline starts.

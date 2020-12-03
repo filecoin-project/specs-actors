@@ -9,7 +9,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	power "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -60,7 +60,7 @@ func (m PowerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, h
 }
 
 func (a PowerMigrator) ComputeClaimsStats(ctx context.Context, store cbor.IpldStore, claimsRoot cid.Cid) (*claimsSummary, error) {
-	claims, err := adt.AsMap(adt.WrapStore(ctx, store), claimsRoot)
+	claims, err := adt.AsMap(adt.WrapStore(ctx, store), claimsRoot, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}

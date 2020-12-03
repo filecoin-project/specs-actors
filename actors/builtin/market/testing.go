@@ -150,7 +150,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	//
 
 	pendingProposalCount := uint64(0)
-	if pendingProposals, err := adt.AsMap(store, st.PendingProposals); err != nil {
+	if pendingProposals, err := adt.AsMap(store, st.PendingProposals, builtin.DefaultHamtBitwidth); err != nil {
 		acc.Addf("error loading pending proposals: %v", err)
 	} else {
 		err = pendingProposals.ForEach(nil, func(key string) error {
@@ -220,7 +220,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 
 	dealOpEpochCount := uint64(0)
 	dealOpCount := uint64(0)
-	if dealOps, err := AsSetMultimap(store, st.DealOpsByEpoch); err != nil {
+	if dealOps, err := AsSetMultimap(store, st.DealOpsByEpoch, builtin.DefaultHamtBitwidth); err != nil {
 		acc.Addf("error loading deal ops: %v", err)
 	} else {
 		// get into internals just to iterate through full data structure

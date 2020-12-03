@@ -3,6 +3,7 @@ package nv4
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 
 	hamt0 "github.com/filecoin-project/go-hamt-ipld"
 	hamt2 "github.com/filecoin-project/go-hamt-ipld/v2"
@@ -10,8 +11,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	cbg "github.com/whyrusleeping/cbor-gen"
-
-	adt2 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 // An adt.Map key that just preserves the underlying string.
@@ -21,6 +20,14 @@ func (k StringKey) Key() string {
 	return string(k)
 }
 
+var v2HamtOptions = []hamt2.Option{
+	hamt2.UseTreeBitWidth(5),
+	hamt2.UseHashFunction(func(input []byte) []byte {
+		res := sha256.Sum256(input)
+		return res[:]
+	}),
+}
+
 // Migrates a HAMT from v0 (ipfs) to v2 (filecoin-project) without re-encoding keys or values.
 func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid) (cid.Cid, error) {
 	inRootNode, err := hamt0.LoadNode(ctx, store, root, adt0.HamtOptions...)
@@ -28,7 +35,7 @@ func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid) (ci
 		return cid.Undef, err
 	}
 
-	outRootNode := hamt2.NewNode(store, adt2.HamtOptions...)
+	outRootNode := hamt2.NewNode(store, v2HamtOptions...)
 
 	if err = inRootNode.ForEach(ctx, func(k string, val interface{}) error {
 		return outRootNode.SetRaw(ctx, k, val.(*cbg.Deferred).Raw)
@@ -49,7 +56,7 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid)
 	if err != nil {
 		return cid.Undef, err
 	}
-	outRootNode := hamt2.NewNode(store, adt2.HamtOptions...)
+	outRootNode := hamt2.NewNode(store, v2HamtOptions...)
 
 	if err = inRootNode.ForEach(ctx, func(k string, val interface{}) error {
 		var inInner cbg.CborCid

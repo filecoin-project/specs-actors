@@ -14,6 +14,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
+	builtin2 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	power2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	adt2 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	smoothing2 "github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
@@ -121,7 +122,7 @@ func (m *powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore,
 	if err != nil {
 		return cid.Undef, err
 	}
-	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
+	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store), builtin2.DefaultHamtBitwidth)
 
 	var inClaim power0.Claim
 	if err = inMap.ForEach(&inClaim, func(key string) error {

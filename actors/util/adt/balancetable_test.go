@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
@@ -19,7 +20,7 @@ func TestBalanceTable(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap := adt.MakeEmptyMap(store)
+		emptyMap := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
 
 		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
 		require.NoError(t, err)
@@ -128,7 +129,7 @@ func TestSubtractWithMinimum(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap := adt.MakeEmptyMap(store)
+		emptyMap := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
 
 		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
 		require.NoError(t, err)

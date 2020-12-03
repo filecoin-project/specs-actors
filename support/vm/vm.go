@@ -72,7 +72,7 @@ type Invocation struct {
 
 // NewVM creates a new runtime for executing messages.
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
-	actors := adt.MakeEmptyMap(store)
+	actors := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
 	actorRoot, err := actors.Root()
 	if err != nil {
 		panic(err)
@@ -99,7 +99,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 
 // NewVM creates a new runtime for executing messages.
 func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Store, stateRoot cid.Cid, epoch abi.ChainEpoch) (*VM, error) {
-	actors, err := adt.AsMap(store, stateRoot)
+	actors, err := adt.AsMap(store, stateRoot, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		return nil, err
 	}
 
-	actors, err := adt.AsMap(vm.store, vm.stateRoot)
+	actors, err := adt.AsMap(vm.store, vm.stateRoot, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		return nil, err
 	}
 
-	actors, err := adt.AsMap(vm.store, vm.stateRoot)
+	actors, err := adt.AsMap(vm.store, vm.stateRoot, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 
 func (vm *VM) rollback(root cid.Cid) error {
 	var err error
-	vm.actors, err = adt.AsMap(vm.store, root)
+	vm.actors, err = adt.AsMap(vm.store, root, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return errors.Wrapf(err, "failed to load node for %s", root)
 	}

@@ -13,14 +13,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// Branching factor of the HAMT.
-// This value has been empirically chosen, but the optimal value for maps with different mutation profiles
-// may differ, in which case we can expose it for configuration.
-const hamtBitwidth = 5
-
-// HamtOptions specifies all the options used to construct filecoin HAMTs.
-var HamtOptions = []hamt.Option{
-	hamt.UseTreeBitWidth(hamtBitwidth),
+// DefaultHamtOptions specifies default options used to construct Filecoin HAMTs.
+// Specific HAMT instances may specify additional options, especially the bitwidth.
+var DefaultHamtOptions = []hamt.Option{
 	hamt.UseHashFunction(func(input []byte) []byte {
 		res := sha256.Sum256(input)
 		return res[:]
@@ -35,22 +30,27 @@ type Map struct {
 }
 
 // AsMap interprets a store as a HAMT-based map with root `r`.
-func AsMap(s Store, r cid.Cid) (*Map, error) {
-	nd, err := hamt.LoadNode(s.Context(), s, r, HamtOptions...)
+// The HAMT is interpreted with branching factor 2^bitwidth.
+// We could drop this parameter if https://github.com/filecoin-project/go-hamt-ipld/issues/79 is implemented.
+func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
+	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
+	nd, err := hamt.LoadNode(s.Context(), s, root, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load hamt node: %w", err)
 	}
 
 	return &Map{
-		lastCid: r,
+		lastCid: root,
 		root:    nd,
 		store:   s,
 	}, nil
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyMap(s Store) *Map {
-	nd := hamt.NewNode(s, HamtOptions...)
+// The hamt
+func MakeEmptyMap(s Store, bitwidth int) *Map {
+	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
+	nd := hamt.NewNode(s, options...)
 	return &Map{
 		lastCid: cid.Undef,
 		root:    nd,

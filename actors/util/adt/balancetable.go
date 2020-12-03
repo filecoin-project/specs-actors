@@ -6,6 +6,8 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
+
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 )
 
 // A specialization of a map of addresses to (positive) token amounts.
@@ -14,7 +16,7 @@ type BalanceTable Map
 
 // Interprets a store as balance table with root `r`.
 func AsBalanceTable(s Store, r cid.Cid) (*BalanceTable, error) {
-	m, err := AsMap(s, r)
+	m, err := AsMap(s, r, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
