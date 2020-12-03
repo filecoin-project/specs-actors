@@ -1628,6 +1628,9 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 type ReportConsensusFaultParams = miner0.ReportConsensusFaultParams
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *abi.EmptyValue {
+	// Note: only the first report of any fault is processed because it sets the
+	// ConsensusFaultElapsed state variable to an epoch after the fault, and reports prior to
+	// that epoch are no longer valid.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	reporter := rt.Caller()
 
