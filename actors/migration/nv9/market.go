@@ -9,6 +9,7 @@ import (
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 
+	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -25,7 +26,7 @@ func (m MarketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		return nil, err
 	}
 
-	outState := market2.State{
+	outState := market3.State{
 		Proposals:                     inState.Proposals,
 		States:                        inState.States,
 		PendingProposals:              pendingProposalsCid,
