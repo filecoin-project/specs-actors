@@ -64,12 +64,15 @@ func NewDealClientAgent(account address.Address, seed int64, config DealClientCo
 }
 
 func (dca *DealClientAgent) Tick(s SimState) ([]message, error) {
-	var providers []DealProvider
-
 	// aggregate all deals into one message
 	if err := dca.dealEvents.Tick(func() error {
 		provider := s.ChooseDealProvider()
-		providers = append(providers, provider)
+
+		// provider will be nil if called before any miners are added to system
+		if provider == nil {
+			return nil
+		}
+
 		if err := dca.createDeal(s, provider); err != nil {
 			return err
 		}
