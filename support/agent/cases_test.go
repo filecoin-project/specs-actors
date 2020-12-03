@@ -62,6 +62,9 @@ func TestCreate20Miners(t *testing.T) {
 	}
 }
 
+// This test covers all the simulation functionality.
+// 500 epochs is long enough for most, not all, important processes to take place, but runs fast enough
+// to keep in CI.
 func Test500Epochs(t *testing.T) {
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
