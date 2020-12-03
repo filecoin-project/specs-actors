@@ -51,10 +51,10 @@ func (a MarketMigrator) MapPendingProposals(ctx context.Context, store cbor.Ipld
 		return cid.Undef, err
 	}
 
-	newPendingProposals := adt3.MakeEmptyMap(adt3.WrapStore(ctx, store))
+	newPendingProposals := adt3.MakeEmptySet(adt3.WrapStore(ctx, store))
 
 	err = oldPendingProposals.ForEach(nil, func(key string) error {
-		return newPendingProposals.Put(StringKey(key), nil)
+		return newPendingProposals.Put(StringKey(key))
 	})
 	if err != nil {
 		return cid.Undef, err

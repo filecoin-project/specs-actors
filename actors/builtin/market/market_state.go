@@ -36,7 +36,7 @@ type State struct {
 
 	// PendingProposals tracks dealProposals that have not yet reached their deal start date.
 	// We track them here to ensure that miners can't publish the same deal proposal twice
-	PendingProposals cid.Cid // HAMT[DealCid]nil
+	PendingProposals cid.Cid // Set[DealCid]
 
 	// Total amount held in escrow, indexed by actor address (including both locked and unlocked amounts).
 	EscrowTable cid.Cid // BalanceTable
@@ -261,7 +261,7 @@ type marketStateMutation struct {
 	escrowTable  *adt.BalanceTable
 
 	pendingPermit MarketStateMutationPermission
-	pendingDeals  *adt.Map
+	pendingDeals  *adt.Set
 
 	dpePermit    MarketStateMutationPermission
 	dealsByEpoch *SetMultimap
@@ -316,7 +316,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.pendingPermit != Invalid {
-		pending, err := adt.AsMap(m.store, m.st.PendingProposals)
+		pending, err := adt.AsSet(m.store, m.st.PendingProposals)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load pending proposals: %w", err)
 		}
