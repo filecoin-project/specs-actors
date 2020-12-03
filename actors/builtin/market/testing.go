@@ -153,21 +153,14 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	if pendingProposals, err := adt.AsMap(store, st.PendingProposals); err != nil {
 		acc.Addf("error loading pending proposals: %v", err)
 	} else {
-		var pendingProposal DealProposal
-		err = pendingProposals.ForEach(&pendingProposal, func(key string) error {
+		err = pendingProposals.ForEach(nil, func(key string) error {
 			proposalCID, err := cid.Parse([]byte(key))
 			if err != nil {
 				return err
 			}
 
-			pcid, err := pendingProposal.Cid()
-			if err != nil {
-				return err
-			}
-			acc.Require(pcid.Equals(proposalCID), "pending proposal's key does not match its CID %v != %v", pcid, proposalCID)
-
-			_, found := proposalCids[pcid]
-			acc.Require(found, "pending proposal with cid %v not fond within proposals %v", pcid, pendingProposals)
+			_, found := proposalCids[proposalCID]
+			acc.Require(found, "pending proposal with cid %v not found within proposals %v", proposalCID, pendingProposals)
 
 			pendingProposalCount++
 			return nil
