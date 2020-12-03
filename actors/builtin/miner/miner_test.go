@@ -776,7 +776,11 @@ func TestCommitments(t *testing.T) {
 		// Try to precommit with an active consensus fault
 		st = getState(rt)
 
-		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  rt.Epoch() - 1,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{})
 		})
@@ -2883,7 +2887,11 @@ func TestDeclareRecoveries(t *testing.T) {
 		oneSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
 
 		// consensus fault
-		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  rt.Epoch() - 1,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 
 		// advance to first proving period and submit so we'll have time to declare the fault next cycle
 		advanceAndSubmitPoSts(rt, actor, oneSector...)
@@ -4238,16 +4246,43 @@ func TestReportConsensusFault(t *testing.T) {
 	builder := builderForHarness(actor).
 		WithBalance(bigBalance, big.Zero())
 
+	t.Run("invalid report rejected", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		rt.SetEpoch(abi.ChainEpoch(1))
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.reportConsensusFault(rt, addr.TestAddress, nil)
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("mis-targeted report rejected", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		rt.SetEpoch(abi.ChainEpoch(1))
+
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+				Target: tutil.NewIDAddr(t, 1234), // Not receiver
+				Epoch:  rt.Epoch() - 1,
+				Type:   runtime.ConsensusFaultDoubleForkMining,
+			})
+		})
+		actor.checkState(rt)
+	})
+
 	t.Run("Report consensus fault pays reward and charges fee", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
-		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
-		_ = sectorInfo
 
-		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  rt.Epoch() - 1,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 		actor.checkState(rt)
 	})
 
@@ -4256,17 +4291,18 @@ func TestReportConsensusFault(t *testing.T) {
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
 
 		startInfo := actor.getInfo(rt)
 		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultElapsed)
-		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
-		_ = sectorInfo
 
 		reportEpoch := abi.ChainEpoch(333)
 		rt.SetEpoch(reportEpoch)
 
-		actor.reportConsensusFault(rt, addr.TestAddress, rt.Epoch()-1)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  rt.Epoch() - 1,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 		actor.checkState(rt)
@@ -4277,24 +4313,29 @@ func TestReportConsensusFault(t *testing.T) {
 		actor.constructAndVerify(rt)
 		precommitEpoch := abi.ChainEpoch(1)
 		rt.SetEpoch(precommitEpoch)
-		dealIDs := [][]abi.DealID{{1, 2}, {3, 4}}
 
 		startInfo := actor.getInfo(rt)
 		assert.Equal(t, abi.ChainEpoch(-1), startInfo.ConsensusFaultElapsed)
-		sectorInfo := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, dealIDs)
-		_ = sectorInfo
 
 		reportEpoch := abi.ChainEpoch(333)
 		rt.SetEpoch(reportEpoch)
 
 		fault1 := rt.Epoch() - 1
-		actor.reportConsensusFault(rt, addr.TestAddress, fault1)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  fault1,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 		endInfo := actor.getInfo(rt)
 		assert.Equal(t, reportEpoch+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 
 		// same fault can't be reported twice
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress, fault1)
+			actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+				Target: actor.receiver,
+				Epoch:  fault1,
+				Type:   runtime.ConsensusFaultDoubleForkMining,
+			})
 		})
 		rt.Reset()
 
@@ -4302,21 +4343,33 @@ func TestReportConsensusFault(t *testing.T) {
 		rt.SetEpoch(endInfo.ConsensusFaultElapsed)
 		fault2 := endInfo.ConsensusFaultElapsed - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress, fault2)
+			actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+				Target: actor.receiver,
+				Epoch:  fault2,
+				Type:   runtime.ConsensusFaultDoubleForkMining,
+			})
 		})
 		rt.Reset()
 
 		// a new consensus fault can be reported for blocks once original has expired
 		rt.SetEpoch(endInfo.ConsensusFaultElapsed + 1)
 		fault3 := endInfo.ConsensusFaultElapsed
-		actor.reportConsensusFault(rt, addr.TestAddress, fault3)
+		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+			Target: actor.receiver,
+			Epoch:  fault3,
+			Type:   runtime.ConsensusFaultDoubleForkMining,
+		})
 		endInfo = actor.getInfo(rt)
 		assert.Equal(t, rt.Epoch()+miner.ConsensusFaultIneligibilityDuration, endInfo.ConsensusFaultElapsed)
 
 		// old fault still cannot be reported after fault interval has elapsed
 		fault4 := fault1 + 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "too old", func() {
-			actor.reportConsensusFault(rt, addr.TestAddress, fault4)
+			actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
+				Target: actor.receiver,
+				Epoch:  fault4,
+				Type:   runtime.ConsensusFaultDoubleForkMining,
+			})
 		})
 		actor.checkState(rt)
 	})
@@ -5511,7 +5564,7 @@ func (h *actorHarness) terminateSectors(rt *mock.Runtime, sectors bitfield.BitFi
 	return sectorPower.Neg(), pledgeDelta
 }
 
-func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, faultEpoch abi.ChainEpoch) {
+func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address, fault *runtime.ConsensusFault) {
 	rt.SetCaller(from, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 	params := &miner.ReportConsensusFaultParams{
@@ -5520,11 +5573,11 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 		BlockHeaderExtra: nil,
 	}
 
-	rt.ExpectVerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, &runtime.ConsensusFault{
-		Target: h.receiver,
-		Epoch:  faultEpoch,
-		Type:   runtime.ConsensusFaultDoubleForkMining,
-	}, nil)
+	if fault != nil {
+		rt.ExpectVerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, fault, nil)
+	} else {
+		rt.ExpectVerifyConsensusFault(params.BlockHeader1, params.BlockHeader2, params.BlockHeaderExtra, nil, fmt.Errorf("no fault"))
+	}
 
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochBaselinePower:  h.baselinePower,

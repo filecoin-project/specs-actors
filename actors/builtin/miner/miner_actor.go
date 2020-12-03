@@ -1628,8 +1628,9 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 type ReportConsensusFaultParams = miner0.ReportConsensusFaultParams
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *abi.EmptyValue {
-	// Note: only the first reporter of any fault is rewarded.
-	// Subsequent invocations fail because the target miner has been removed.
+	// Note: only the first report of any fault is processed because it sets the
+	// ConsensusFaultElapsed state variable to an epoch after the fault, and reports prior to
+	// that epoch are no longer valid.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 	reporter := rt.Caller()
 
@@ -1637,12 +1638,15 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "fault not verified: %s", err)
 	}
+	if fault.Target != rt.Receiver() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "fault by %v reported to miner %v", fault.Target, rt.Receiver())
+	}
 
 	// Elapsed since the fault (i.e. since the higher of the two blocks)
 	currEpoch := rt.CurrEpoch()
 	faultAge := currEpoch - fault.Epoch
 	if faultAge <= 0 {
-		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, rt.CurrEpoch())
+		rt.Abortf(exitcode.ErrIllegalArgument, "invalid fault epoch %v ahead of current %v", fault.Epoch, currEpoch)
 	}
 
 	// Penalize miner consensus fault fee
@@ -1680,7 +1684,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		rewardAmount = big.Min(burnAmount, slasherReward)
 		// reduce burnAmount by rewardAmount
 		burnAmount = big.Sub(burnAmount, rewardAmount)
-		info.ConsensusFaultElapsed = rt.CurrEpoch() + ConsensusFaultIneligibilityDuration
+		info.ConsensusFaultElapsed = currEpoch + ConsensusFaultIneligibilityDuration
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to save miner info")
 	})
