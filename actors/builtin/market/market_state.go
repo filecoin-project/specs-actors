@@ -337,7 +337,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.dpePermit != Invalid {
-		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch, builtin.DefaultHamtBitwidth)
+		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load deals by epoch: %w", err)
 		}

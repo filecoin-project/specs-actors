@@ -21,12 +21,12 @@ type SetMultimap struct {
 
 // Interprets a store as a HAMT-based map of HAMT-based sets with root `r`.
 // Both inner and outer HAMTs are interpreted with branching factor 2^bitwidth.
-func AsSetMultimap(s adt.Store, r cid.Cid, bitwidth int) (*SetMultimap, error) {
-	m, err := adt.AsMap(s, r, bitwidth)
+func AsSetMultimap(s adt.Store, r cid.Cid, outerBitwidth, innerBitwidth int) (*SetMultimap, error) {
+	m, err := adt.AsMap(s, r, outerBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	return &SetMultimap{mp: m, store: s, innerBitwidth: bitwidth}, nil
+	return &SetMultimap{mp: m, store: s, innerBitwidth: innerBitwidth}, nil
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
