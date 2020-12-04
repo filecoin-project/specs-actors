@@ -181,9 +181,17 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		rt.Abortf(exitcode.ErrIllegalArgument, "deal provider is not a StorageMinerActor")
 	}
 
-	_, worker, _ := builtin.RequestMinerControlAddrs(rt, provider)
-	if worker != rt.Caller() {
-		rt.Abortf(exitcode.ErrForbidden, "caller is not provider %v", provider)
+	caller := rt.Caller()
+	_, worker, controllers := builtin.RequestMinerControlAddrs(rt, provider)
+	callerOk := caller == worker
+	for _, controller := range controllers {
+		if callerOk {
+			break
+		}
+		callerOk = caller == controller
+	}
+	if !callerOk {
+		rt.Abortf(exitcode.ErrForbidden, "caller %v is not worker or control address of provider %v", caller, provider)
 	}
 
 	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
