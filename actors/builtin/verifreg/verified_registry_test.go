@@ -40,7 +40,7 @@ func TestConstruction(t *testing.T) {
 		actor := verifRegActorTestHarness{t: t, rootkey: raddr}
 		actor.constructAndVerify(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore()).Root()
+		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth).Root()
 		require.NoError(t, err)
 
 		state := actor.state(rt)
@@ -60,7 +60,7 @@ func TestConstruction(t *testing.T) {
 		actor := verifRegActorTestHarness{t: t, rootkey: raddr}
 		actor.constructAndVerify(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore()).Root()
+		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth).Root()
 		require.NoError(t, err)
 
 		var state verifreg.State
@@ -916,7 +916,7 @@ func (h *verifRegActorTestHarness) getVerifierCap(rt *mock.Runtime, a address.Ad
 	var st verifreg.State
 	rt.GetState(&st)
 
-	v, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
+	v, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth)
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
@@ -930,7 +930,7 @@ func (h *verifRegActorTestHarness) getClientCap(rt *mock.Runtime, a address.Addr
 	var st verifreg.State
 	rt.GetState(&st)
 
-	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
+	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients, builtin.DefaultHamtBitwidth)
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
@@ -944,7 +944,7 @@ func (h *verifRegActorTestHarness) assertVerifierRemoved(rt *mock.Runtime, a add
 	var st verifreg.State
 	rt.GetState(&st)
 
-	v, err := adt.AsMap(adt.AsStore(rt), st.Verifiers)
+	v, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth)
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap
@@ -957,7 +957,7 @@ func (h *verifRegActorTestHarness) assertClientRemoved(rt *mock.Runtime, a addre
 	var st verifreg.State
 	rt.GetState(&st)
 
-	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients)
+	v, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients, builtin.DefaultHamtBitwidth)
 	require.NoError(h.t, err)
 
 	var dc verifreg.DataCap

@@ -11,6 +11,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
+	builtin2 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	miner2 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	adt2 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -139,7 +140,7 @@ func (m *minerMigrator) migratePreCommittedSectors(ctx context.Context, store cb
 	if err != nil {
 		return cid.Undef, err
 	}
-	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
+	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store), builtin2.DefaultHamtBitwidth)
 
 	var inSPCOCI miner0.SectorPreCommitOnChainInfo
 	if err = inMap.ForEach(&inSPCOCI, func(key string) error {

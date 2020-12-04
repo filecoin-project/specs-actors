@@ -60,7 +60,20 @@ type State struct {
 	TotalClientStorageFee abi.TokenAmount
 }
 
-func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
+func ConstructState(store adt.Store) (*State, error) {
+	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty array: %w", err)
+	}
+	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+	emptyMSetCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
+	}
+
 	return &State{
 		Proposals:        emptyArrayCid,
 		States:           emptyArrayCid,
@@ -74,7 +87,7 @@ func ConstructState(emptyArrayCid, emptyMapCid, emptyMSetCid cid.Cid) *State {
 		TotalClientLockedCollateral:   abi.NewTokenAmount(0),
 		TotalProviderLockedCollateral: abi.NewTokenAmount(0),
 		TotalClientStorageFee:         abi.NewTokenAmount(0),
-	}
+	}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -316,7 +329,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.pendingPermit != Invalid {
-		pending, err := adt.AsSet(m.store, m.st.PendingProposals)
+		pending, err := adt.AsSet(m.store, m.st.PendingProposals, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load pending proposals: %w", err)
 		}
@@ -324,7 +337,7 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 	}
 
 	if m.dpePermit != Invalid {
-		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch)
+		dbe, err := AsSetMultimap(m.store, m.st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load deals by epoch: %w", err)
 		}

@@ -9,6 +9,7 @@ import (
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 
+	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -52,7 +53,7 @@ func (a MarketMigrator) MapPendingProposals(ctx context.Context, store cbor.Ipld
 		return cid.Undef, err
 	}
 
-	newPendingProposals := adt3.MakeEmptySet(adt3.WrapStore(ctx, store))
+	newPendingProposals := adt3.MakeEmptySet(adt3.WrapStore(ctx, store), builtin3.DefaultHamtBitwidth)
 
 	err = oldPendingProposals.ForEach(nil, func(key string) error {
 		return newPendingProposals.Put(StringKey(key))

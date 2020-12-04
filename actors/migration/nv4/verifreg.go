@@ -63,7 +63,7 @@ func (m *verifregMigrator) migrateCapTable(ctx context.Context, store cbor.IpldS
 	if err != nil {
 		return cid.Undef, err
 	}
-	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store))
+	outMap := adt2.MakeEmptyMap(adt2.WrapStore(ctx, store), builtin2.DefaultHamtBitwidth)
 
 	outInit, found, err := m.actorsOut.GetActor(builtin2.InitActorAddr)
 	if err != nil {

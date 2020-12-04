@@ -65,16 +65,10 @@ func NewCustomStoreVMWithSingletons(ctx context.Context, store adt.Store, t test
 
 	vm := NewVM(ctx, lookup, store)
 
-	emptyMapCID, err := adt.MakeEmptyMap(vm.store).Root()
-	require.NoError(t, err)
-	emptyArrayCID, err := adt.MakeEmptyArray(vm.store).Root()
-	require.NoError(t, err)
-	emptyMultimapCID, err := adt.MakeEmptyMultimap(vm.store).Root()
-	require.NoError(t, err)
-
 	initializeActor(ctx, t, vm, &system.State{}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
-	initState := initactor.ConstructState(emptyMapCID, "scenarios")
+	initState, err := initactor.ConstructState(store, "scenarios")
+	require.NoError(t, err)
 	initializeActor(ctx, t, vm, initState, builtin.InitActorCodeID, builtin.InitActorAddr, big.Zero())
 
 	rewardState := reward.ConstructState(abi.NewStoragePower(0))
@@ -83,15 +77,18 @@ func NewCustomStoreVMWithSingletons(ctx context.Context, store adt.Store, t test
 	cronState := cron.ConstructState(cron.BuiltInEntries())
 	initializeActor(ctx, t, vm, cronState, builtin.CronActorCodeID, builtin.CronActorAddr, big.Zero())
 
-	powerState := power.ConstructState(emptyMapCID, emptyMultimapCID)
+	powerState, err := power.ConstructState(store)
+	require.NoError(t, err)
 	initializeActor(ctx, t, vm, powerState, builtin.StoragePowerActorCodeID, builtin.StoragePowerActorAddr, big.Zero())
 
-	marketState := market.ConstructState(emptyArrayCID, emptyMapCID, emptyMultimapCID)
+	marketState, err := market.ConstructState(store)
+	require.NoError(t, err)
 	initializeActor(ctx, t, vm, marketState, builtin.StorageMarketActorCodeID, builtin.StorageMarketActorAddr, big.Zero())
 
 	// this will need to be replaced with the address of a multisig actor for the verified registry to be tested accurately
 	initializeActor(ctx, t, vm, &account.State{Address: VerifregRoot}, builtin.AccountActorCodeID, VerifregRoot, big.Zero())
-	vrState := verifreg.ConstructState(emptyMapCID, VerifregRoot)
+	vrState, err := verifreg.ConstructState(store, VerifregRoot)
+	require.NoError(t, err)
 	initializeActor(ctx, t, vm, vrState, builtin.VerifiedRegistryActorCodeID, builtin.VerifiedRegistryActorAddr, big.Zero())
 
 	// burnt funds
