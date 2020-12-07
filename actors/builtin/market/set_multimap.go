@@ -14,23 +14,26 @@ import (
 )
 
 type SetMultimap struct {
-	mp    *adt.Map
-	store adt.Store
+	mp            *adt.Map
+	store         adt.Store
+	innerBitwidth int
 }
 
 // Interprets a store as a HAMT-based map of HAMT-based sets with root `r`.
-func AsSetMultimap(s adt.Store, r cid.Cid) (*SetMultimap, error) {
-	m, err := adt.AsMap(s, r)
+// Both inner and outer HAMTs are interpreted with branching factor 2^bitwidth.
+func AsSetMultimap(s adt.Store, r cid.Cid, outerBitwidth, innerBitwidth int) (*SetMultimap, error) {
+	m, err := adt.AsMap(s, r, outerBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	return &SetMultimap{mp: m, store: s}, nil
+	return &SetMultimap{mp: m, store: s, innerBitwidth: innerBitwidth}, nil
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptySetMultimap(s adt.Store) *SetMultimap {
-	m := adt.MakeEmptyMap(s)
-	return &SetMultimap{m, s}
+// Both inner and outer HAMTs have branching factor 2^bitwidth.
+func MakeEmptySetMultimap(s adt.Store, bitwidth int) *SetMultimap {
+	m := adt.MakeEmptyMap(s, bitwidth)
+	return &SetMultimap{mp: m, store: s, innerBitwidth: bitwidth}
 }
 
 // Returns the root cid of the underlying HAMT.
@@ -46,7 +49,7 @@ func (mm *SetMultimap) Put(epoch abi.ChainEpoch, v abi.DealID) error {
 		return err
 	}
 	if !found {
-		set = adt.MakeEmptySet(mm.store)
+		set = adt.MakeEmptySet(mm.store, mm.innerBitwidth)
 	}
 
 	// Add to the set.
@@ -75,7 +78,7 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 		return err
 	}
 	if !found {
-		set = adt.MakeEmptySet(mm.store)
+		set = adt.MakeEmptySet(mm.store, mm.innerBitwidth)
 	}
 
 	// Add to the set.
@@ -133,7 +136,7 @@ func (mm *SetMultimap) get(key abi.Keyer) (*adt.Set, bool, error) {
 	}
 	var set *adt.Set
 	if found {
-		set, err = adt.AsSet(mm.store, cid.Cid(setRoot))
+		set, err = adt.AsSet(mm.store, cid.Cid(setRoot), mm.innerBitwidth)
 		if err != nil {
 			return nil, false, err
 		}

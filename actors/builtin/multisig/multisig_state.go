@@ -8,6 +8,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -67,7 +68,7 @@ func (st *State) AmountLocked(elapsedEpoch abi.ChainEpoch) abi.TokenAmount {
 // Iterates all pending transactions and removes an address from each list of approvals, if present.
 // If an approval list becomes empty, the pending transaction is deleted.
 func (st *State) PurgeApprovals(store adt.Store, addr address.Address) error {
-	txns, err := adt.AsMap(store, st.PendingTxns)
+	txns, err := adt.AsMap(store, st.PendingTxns, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load transactions: %w", err)
 	}

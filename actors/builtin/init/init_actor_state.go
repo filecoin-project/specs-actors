@@ -17,12 +17,17 @@ type State struct {
 	NetworkName string
 }
 
-func ConstructState(addressMapRoot cid.Cid, networkName string) *State {
+func ConstructState(store adt.Store, networkName string) (*State, error) {
+	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+
 	return &State{
-		AddressMap:  addressMapRoot,
+		AddressMap:  emptyMapCid,
 		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
 		NetworkName: networkName,
-	}
+	}, nil
 }
 
 // ResolveAddress resolves an address to an ID-address, if possible.
@@ -40,7 +45,7 @@ func (s *State) ResolveAddress(store adt.Store, address addr.Address) (addr.Addr
 	}
 
 	// Lookup address.
-	m, err := adt.AsMap(store, s.AddressMap)
+	m, err := adt.AsMap(store, s.AddressMap, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return addr.Undef, false, xerrors.Errorf("failed to load address map: %w", err)
 	}
@@ -63,7 +68,7 @@ func (s *State) MapAddressToNewID(store adt.Store, address addr.Address) (addr.A
 	actorID := cbg.CborInt(s.NextID)
 	s.NextID++
 
-	m, err := adt.AsMap(store, s.AddressMap)
+	m, err := adt.AsMap(store, s.AddressMap, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return addr.Undef, xerrors.Errorf("failed to load address map: %w", err)
 	}

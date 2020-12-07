@@ -726,7 +726,7 @@ func CheckPreCommits(st *State, store adt.Store, allocatedSectors map[uint64]boo
 	}
 
 	precommitTotal := big.Zero()
-	if precommitted, err := adt.AsMap(store, st.PreCommittedSectors); err != nil {
+	if precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth); err != nil {
 		acc.Addf("error loading precommitted sectors: %v", err)
 	} else {
 		var precommit SectorPreCommitOnChainInfo

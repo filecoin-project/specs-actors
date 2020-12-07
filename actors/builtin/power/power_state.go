@@ -72,7 +72,17 @@ type CronEvent struct {
 	CallbackPayload []byte
 }
 
-func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
+func ConstructState(store adt.Store) (*State, error) {
+	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+	emptyMMapCid, err := adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty multimap: %w", err)
+	}
+
+
 	return &State{
 		TotalRawBytePower:         abi.NewStoragePower(0),
 		TotalBytesCommitted:       abi.NewStoragePower(0),
@@ -88,7 +98,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
 		MinerAboveMinPowerCount:   0,
-	}
+	}, nil
 }
 
 // MinerNominalPowerMeetsConsensusMinimum is used to validate Election PoSt
@@ -96,7 +106,7 @@ func ConstructState(emptyMapCid, emptyMMapCid cid.Cid) *State {
 // the miner meets the minimum.  If the network is a below a threshold of
 // miners and has power > zero the miner meets the minimum.
 func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.Address) (bool, error) { //nolint:deadcode,unused
-	claims, err := adt.AsMap(s, st.Claims)
+	claims, err := adt.AsMap(s, st.Claims, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return false, xerrors.Errorf("failed to load claims: %w", err)
 	}
@@ -131,7 +141,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 
 // Parameters may be negative to subtract.
 func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePower, qapower abi.StoragePower) error {
-	claims, err := adt.AsMap(s, st.Claims)
+	claims, err := adt.AsMap(s, st.Claims, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load claims: %w", err)
 	}
@@ -149,7 +159,7 @@ func (st *State) AddToClaim(s adt.Store, miner addr.Address, power abi.StoragePo
 }
 
 func (st *State) GetClaim(s adt.Store, a addr.Address) (*Claim, bool, error) {
-	claims, err := adt.AsMap(s, st.Claims)
+	claims, err := adt.AsMap(s, st.Claims, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, false, xerrors.Errorf("failed to load claims: %w", err)
 	}

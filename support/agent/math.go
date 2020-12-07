@@ -66,12 +66,11 @@ func (ri *RateIterator) Tick(f func() error) error {
 // If the rate has changed, it will compute a new next occurrence before running tick.
 // This prevents having to wait a long time to recognize a change from a very slow rate to a higher one.
 func (ri *RateIterator) TickWithRate(rate float64, f func() error) error {
-	ri.rate = rate
-
 	// recompute next occurrence if rate has changed
 	if ri.rate != rate && rate > 0.0 {
 		ri.nextOccurrence = 1.0 + poissonDelay(ri.rnd.Float64(), rate)
 	}
+	ri.rate = rate
 
 	return ri.Tick(f)
 }

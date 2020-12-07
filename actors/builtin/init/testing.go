@@ -26,7 +26,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 		NextID:  st.NextID,
 	}
 
-	lut, err := adt.AsMap(store, st.AddressMap)
+	lut, err := adt.AsMap(store, st.AddressMap, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		acc.Addf("error loading address map: %v", err)
 		// Stop here, it's hard to make other useful checks.

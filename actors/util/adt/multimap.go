@@ -16,8 +16,9 @@ type Multimap struct {
 }
 
 // Interprets a store as a HAMT-based map of AMTs with root `r`.
-func AsMultimap(s Store, r cid.Cid) (*Multimap, error) {
-	m, err := AsMap(s, r)
+// The outer map is interpreted with a branching factor of 2^bitwidth.
+func AsMultimap(s Store, r cid.Cid, outerBitwidth int) (*Multimap, error) {
+	m, err := AsMap(s, r, outerBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -26,8 +27,9 @@ func AsMultimap(s Store, r cid.Cid) (*Multimap, error) {
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyMultimap(s Store) *Multimap {
-	m := MakeEmptyMap(s)
+// The outer map has a branching factor of 2^bitwidth.
+func MakeEmptyMultimap(s Store, outerBitwidth int) *Multimap {
+	m := MakeEmptyMap(s, outerBitwidth)
 	return &Multimap{m}
 }
 

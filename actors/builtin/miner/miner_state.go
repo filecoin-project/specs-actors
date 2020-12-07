@@ -164,8 +164,36 @@ type SectorOnChainInfo struct {
 	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
 }
 
-func ConstructState(infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64, emptyBitfieldCid, emptyArrayCid, emptyMapCid, emptyDeadlinesCid cid.Cid,
-	emptyVestingFundsCid cid.Cid) (*State, error) {
+func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64) (*State, error) {
+	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
+	}
+	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty array: %w", err)
+	}
+	emptyBitfield := bitfield.NewFromSet(nil)
+	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty bitfield: %w", err)
+	}
+	emptyDeadline := ConstructDeadline(emptyArrayCid)
+	emptyDeadlineCid, err := store.Put(store.Context(), emptyDeadline)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline: %w", err)
+	}
+	emptyDeadlines := ConstructDeadlines(emptyDeadlineCid)
+	emptyDeadlinesCid, err := store.Put(store.Context(), emptyDeadlines)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadlines: %w", err)
+	}
+	emptyVestingFunds := ConstructVestingFunds()
+	emptyVestingFundsCid, err := store.Put(store.Context(), emptyVestingFunds)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty vesting funds: %w", err)
+	}
+
 	return &State{
 		Info: infoCid,
 
@@ -193,12 +221,12 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 
 	sectorSize, err := sealProofType.SectorSize()
 	if err != nil {
-		return nil, err
+		return nil, xc.ErrIllegalArgument.Wrapf("invalid sector size: %w", err)
 	}
 
 	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(sealProofType)
 	if err != nil {
-		return nil, err
+		return nil, xc.ErrIllegalArgument.Wrapf("invalid partition sectors: %w", err)
 	}
 
 	return &MinerInfo{
@@ -298,7 +326,7 @@ func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField)
 }
 
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
-	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return err
 	}
@@ -312,7 +340,7 @@ func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnC
 }
 
 func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumber) (*SectorPreCommitOnChainInfo, bool, error) {
-	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, false, err
 	}
@@ -328,7 +356,7 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 // This method gets and returns the requested pre-committed sectors, skipping
 // missing sectors.
 func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) ([]*SectorPreCommitOnChainInfo, error) {
-	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +380,7 @@ func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.Secto
 }
 
 func (st *State) DeletePrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) error {
-	precommitted, err := adt.AsMap(store, st.PreCommittedSectors)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return err
 	}

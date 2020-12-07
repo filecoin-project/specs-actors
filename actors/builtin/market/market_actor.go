@@ -64,16 +64,8 @@ var _ runtime.VMActor = Actor{}
 func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	st, err := ConstructState(adt.AsStore(rt))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
-
-	emptyMap, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
-
-	emptyMSet, err := MakeEmptySetMultimap(adt.AsStore(rt)).Root()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create state")
-
-	st := ConstructState(emptyArray, emptyMap, emptyMSet)
 	rt.StateCreate(st)
 	return nil
 }
@@ -231,13 +223,13 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			pcid, err := deal.Proposal.Cid()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
-			has, err := msm.pendingDeals.Get(abi.CidKey(pcid), nil)
+			has, err := msm.pendingDeals.Has(abi.CidKey(pcid))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
 			if has {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
 			}
 
-			err = msm.pendingDeals.Put(abi.CidKey(pcid), &deal.Proposal)
+			err = msm.pendingDeals.Put(abi.CidKey(pcid))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
 
 			err = msm.dealProposals.Set(id, &deal.Proposal)
@@ -385,7 +377,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 			propc, err := proposal.Cid()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate proposal CID")
 
-			has, err := msm.pendingDeals.Get(abi.CidKey(propc), nil)
+			has, err := msm.pendingDeals.Has(abi.CidKey(propc))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get pending proposal %v", propc)
 
 			if !has {

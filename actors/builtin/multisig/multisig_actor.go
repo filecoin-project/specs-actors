@@ -120,7 +120,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative unlock duration disallowed")
 	}
 
-	pending, err := adt.MakeEmptyMap(adt.AsStore(rt)).Root()
+	pending, err := adt.MakeEmptyMap(adt.AsStore(rt), builtin.DefaultHamtBitwidth).Root()
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
 	}
@@ -174,7 +174,7 @@ func (a Actor) Propose(rt runtime.Runtime, params *ProposeParams) *ProposeReturn
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", proposer)
 		}
 
-		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		txnID = st.NextTxnID
@@ -236,7 +236,7 @@ func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", approver)
 		}
 
-		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		txn = getTransaction(rt, ptx, params.ID, params.ProposalHash, true)
@@ -268,7 +268,7 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 			rt.Abortf(exitcode.ErrForbidden, "%s is not a signer", callerAddr)
 		}
 
-		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending txns")
 
 		txn, err := getPendingTransaction(ptx, params.ID)
@@ -487,7 +487,7 @@ func (a Actor) approveTransaction(rt runtime.Runtime, txnID TxnID, txn *Transact
 
 	// add the caller to the list of approvers
 	rt.StateTransaction(&st, func() {
-		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 		// update approved on the transaction
@@ -548,7 +548,7 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 
 		// This could be rearranged to happen inside the first state transaction, before the send().
 		rt.StateTransaction(&st, func() {
-			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns)
+			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
 			// Prior to version 6 we attempt to delete all transactions, even those

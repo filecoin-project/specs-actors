@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
@@ -164,42 +163,17 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 
 	periodStart := abi.ChainEpoch(0)
 
-	emptyMap, err := adt.MakeEmptyMap(store).Root()
-	require.NoError(t, err)
-
-	emptyArray, err := adt.MakeEmptyArray(store).Root()
-	require.NoError(t, err)
-
-	emptyBitfield := bitfield.NewFromSet(nil)
-	emptyBitfieldCid, err := store.Put(ctx, emptyBitfield)
-	require.NoError(t, err)
-
-	emptyDeadline := miner.ConstructDeadline(emptyArray)
-	emptyDeadlineCid, err := store.Put(ctx, emptyDeadline)
-	require.NoError(t, err)
-
-	emptyDeadlines := miner.ConstructDeadlines(emptyDeadlineCid)
-	emptyVestingFunds := miner.ConstructVestingFunds()
-	emptyDeadlinesCid, err := store.Put(ctx, emptyDeadlines)
-	require.NoError(t, err)
-
-	emptyVestingFundsCid, err := store.Put(ctx, emptyVestingFunds)
-	require.NoError(t, err)
-
-	st, err := miner.ConstructState(infoCid, periodStart, 0, emptyBitfieldCid, emptyArray, emptyMap, emptyDeadlinesCid, emptyVestingFundsCid)
+	st, err := miner.ConstructState(store, infoCid, periodStart, 0)
 	require.NoError(t, err)
 
 	return st
 }
 
 func constructPowerStateWithMiner(t *testing.T, store adt.Store, maddr address.Address, pwr abi.StoragePower, proof abi.RegisteredSealProof) *power.State {
-	emptyMap, err := adt.MakeEmptyMap(store).Root()
+	pSt, err := power.ConstructState(store)
 	require.NoError(t, err)
-	emptyMMap, err := adt.MakeEmptyMultimap(store).Root()
-	require.NoError(t, err)
-	pSt := power.ConstructState(emptyMap, emptyMMap)
 
-	claims, err := adt.AsMap(store, pSt.Claims)
+	claims, err := adt.AsMap(store, pSt.Claims, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 
 	claim := &power.Claim{SealProofType: proof, RawBytePower: pwr, QualityAdjPower: pwr}

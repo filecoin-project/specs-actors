@@ -62,6 +62,89 @@ func TestCreate20Miners(t *testing.T) {
 	}
 }
 
+// This test covers all the simulation functionality.
+// 500 epochs is long enough for most, not all, important processes to take place, but runs fast enough
+// to keep in CI.
+func Test500Epochs(t *testing.T) {
+	ctx := context.Background()
+	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
+	cumulativeStats := make(vm_test.StatsByCall)
+	minerCount := 10
+	clientCount := 9
+
+	// set up sim
+	rnd := rand.New(rand.NewSource(42))
+	sim := agent.NewSim(ctx, t, agent.SimConfig{
+		Seed:             rnd.Int63(),
+		CheckpointEpochs: 1000,
+	})
+
+	// create miners
+	workerAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
+	sim.AddAgent(agent.NewMinerGenerator(
+		workerAccounts,
+		agent.MinerAgentConfig{
+			PrecommitRate:    2.0,
+			FaultRate:        0.0001,
+			RecoveryRate:     0.0001,
+			UpgradeSectors:   true,
+			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+			StartingBalance:  big.Div(initialBalance, big.NewInt(2)),
+			MinMarketBalance: big.NewInt(1e18),
+			MaxMarketBalance: big.NewInt(2e18),
+		},
+		1.0, // create miner probability of 1 means a new miner is created every tick
+		rnd.Int63(),
+	))
+
+	clientAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), clientCount, initialBalance, rnd.Int63())
+	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
+		DealRate:         .05,
+		MinPieceSize:     1 << 29,
+		MaxPieceSize:     32 << 30,
+		MinStoragePrice:  big.Zero(),
+		MaxStoragePrice:  abi.NewTokenAmount(200_000_000),
+		MinMarketBalance: big.NewInt(1e18),
+		MaxMarketBalance: big.NewInt(2e18),
+	})
+
+	var pwrSt power.State
+	for i := 0; i < 500; i++ {
+		require.NoError(t, sim.Tick())
+
+		epoch := sim.GetVM().GetEpoch()
+		if epoch%100 == 0 {
+			// compute number of deals
+			deals := 0
+			for _, da := range dealAgents {
+				deals += da.DealCount
+			}
+
+			stateTree, err := sim.GetVM().GetStateTree()
+			require.NoError(t, err)
+
+			totalBalance, err := sim.GetVM().GetTotalActorBalance()
+			require.NoError(t, err)
+
+			acc, err := states.CheckStateInvariants(stateTree, totalBalance, sim.GetVM().GetEpoch()-1)
+			require.NoError(t, err)
+			require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
+
+			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
+
+			// assume each sector is 32Gb
+			sectorCount := big.Div(pwrSt.TotalBytesCommitted, big.NewInt(32<<30))
+
+			fmt.Printf("Power at %d: raw: %v  cmtRaw: %v  cmtSecs: %d  msgs: %d  deals: %d  gets: %d  puts: %d  write bytes: %d  read bytes: %d\n",
+				epoch, pwrSt.TotalRawBytePower, pwrSt.TotalBytesCommitted, sectorCount.Uint64(),
+				sim.MessageCount, deals, sim.GetVM().StoreReads(), sim.GetVM().StoreWrites(),
+				sim.GetVM().StoreReadBytes(), sim.GetVM().StoreWriteBytes())
+		}
+
+		cumulativeStats.MergeAllStats(sim.GetCallStats())
+	}
+}
+
 func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	t.Skip("this is slow")
 	ctx := context.Background()
@@ -149,7 +232,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 
 	clientAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), clientCount, initialBalance, rnd.Int63())
 	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
-		DealRate:         .01,
+		DealRate:         .05,
 		MinPieceSize:     1 << 29,
 		MaxPieceSize:     32 << 30,
 		MinStoragePrice:  big.Zero(),
@@ -159,7 +242,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	})
 
 	var pwrSt power.State
-	for i := 0; i < 50_000; i++ {
+	for i := 0; i < 20_000; i++ {
 		require.NoError(t, sim.Tick())
 
 		epoch := sim.GetVM().GetEpoch()
@@ -348,9 +431,10 @@ func TestCCUpgrades(t *testing.T) {
 }
 
 func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent string) { // nolint:unused
-	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  avg gets: %.2f, avg puts: %.2f\n",
+	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  read: %d  written: %d  avg gets: %.2f, avg puts: %.2f\n",
 		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
-		float32(stats.Reads)/float32(stats.Calls), float32(stats.Writes)/float32(stats.Calls))
+		stats.ReadBytes, stats.WriteBytes, float32(stats.Reads)/float32(stats.Calls),
+		float32(stats.Writes)/float32(stats.Calls))
 
 	if stats.SubStats == nil {
 		return

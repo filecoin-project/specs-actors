@@ -11,8 +11,9 @@ type Set struct {
 }
 
 // AsSet interprets a store as a HAMT-based set with root `r`.
-func AsSet(s Store, r cid.Cid) (*Set, error) {
-	m, err := AsMap(s, r)
+// The HAMT is interpreted with branching factor 2^bitwidth.
+func AsSet(s Store, r cid.Cid, bitwidth int) (*Set, error) {
+	m, err := AsMap(s, r, bitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -23,8 +24,9 @@ func AsSet(s Store, r cid.Cid) (*Set, error) {
 }
 
 // NewSet creates a new HAMT with root `r` and store `s`.
-func MakeEmptySet(s Store) *Set {
-	m := MakeEmptyMap(s)
+// The HAMT has branching factor 2^bitwidth.
+func MakeEmptySet(s Store, bitwidth int) *Set {
+	m := MakeEmptyMap(s, bitwidth)
 	return &Set{m}
 }
 
