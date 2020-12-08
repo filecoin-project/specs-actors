@@ -56,7 +56,7 @@ func (n nilMigrator) MigrateState(_ context.Context, _ cbor.IpldStore, in StateM
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config) (cid.Cid, error) {
 	if cfg.MaxWorkers <= 0 {
 		return cid.Undef, xerrors.Errorf("invalid migration config with %d workers", cfg.MaxWorkers)
 	}
@@ -75,7 +75,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 		builtin2.SystemActorCodeID:           nilMigrator{builtin3.SystemActorCodeID},
 		builtin2.VerifiedRegistryActorCodeID: nilMigrator{builtin3.VerifiedRegistryActorCodeID},
 	}
-	// Set of prior vresion code CIDs for actors to defer during iteration, for explicit migration afterwards.
+	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.
 	var deferredCodeIDs = map[cid.Cid]struct{}{
 		// None
 	}
@@ -85,7 +85,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 
 	// Load input and output state trees
 	adtStore := adt3.WrapStore(ctx, store)
-	actorsIn, err := states2.LoadTree(adtStore, stateRootIn) // FIXME actorsRootIn?
+	actorsIn, err := states2.LoadTree(adtStore, actorsRootIn)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -130,9 +130,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, stateRootIn cid
 				result, err := migrateOneActor(ctx, store, input, priorEpoch)
 				if err != nil {
 					return err
-				}
-				if result == nil { // Actor is deferred
-					continue
 				}
 				select {
 				case resultCh <- result:
@@ -196,7 +193,7 @@ func migrateOneActor(ctx context.Context, store cbor.IpldStore, input *migration
 
 	// Set up new actor record with the migrated state.
 	return &migrationResult{
-		addr,
+		addr, // Unchanged
 		states3.Actor{
 			Code:       result.NewCodeCID,
 			Head:       result.NewHead,
