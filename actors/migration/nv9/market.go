@@ -14,11 +14,11 @@ import (
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
-type MarketMigrator struct{}
+type marketMigrator struct{}
 
-func (m MarketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, head cid.Cid, info MigrationInfo) (*StateMigrationResult, error) {
+func (m marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in StateMigrationInput) (*StateMigrationResult, error) {
 	var inState market2.State
-	if err := store.Get(ctx, head, &inState); err != nil {
+	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
 	}
 
@@ -43,11 +43,12 @@ func (m MarketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 
 	newHead, err := store.Put(ctx, &outState)
 	return &StateMigrationResult{
-		NewHead: newHead,
+		NewCodeCID: builtin3.StorageMarketActorCodeID,
+		NewHead:    newHead,
 	}, err
 }
 
-func (a MarketMigrator) MapPendingProposals(ctx context.Context, store cbor.IpldStore, pendingProposalsRoot cid.Cid) (cid.Cid, error) {
+func (a marketMigrator) MapPendingProposals(ctx context.Context, store cbor.IpldStore, pendingProposalsRoot cid.Cid) (cid.Cid, error) {
 	oldPendingProposals, err := adt2.AsMap(adt2.WrapStore(ctx, store), pendingProposalsRoot)
 	if err != nil {
 		return cid.Undef, err

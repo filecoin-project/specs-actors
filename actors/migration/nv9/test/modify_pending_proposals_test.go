@@ -11,21 +11,22 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
+	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	exported3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
 	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv9"
-	"github.com/filecoin-project/specs-actors/v3/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v3/actors/states"
+	states3 "github.com/filecoin-project/specs-actors/v3/actors/states"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 	vm3 "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
@@ -45,7 +46,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 		SealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		Peer:          abi.PeerID("not really a peer id"),
 	}
-	ret := vm2.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	ret := vm2.ApplyOk(t, v, addrs[0], builtin2.StoragePowerActorAddr, minerBalance, builtin2.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power2.CreateMinerReturn)
 	require.True(t, ok)
@@ -53,9 +54,9 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	// add market collateral for clients and miner
 	for i := 0; i < 9; i++ {
 		collateral := big.Mul(big.NewInt(30), vm2.FIL)
-		vm2.ApplyOk(t, v, addrs[i+1], builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &addrs[i+1])
+		vm2.ApplyOk(t, v, addrs[i+1], builtin2.StorageMarketActorAddr, collateral, builtin2.MethodsMarket.AddBalance, &addrs[i+1])
 		collateral = big.Mul(big.NewInt(64), vm2.FIL)
-		vm2.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
+		vm2.ApplyOk(t, v, worker, builtin2.StorageMarketActorAddr, collateral, builtin2.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 	}
 
 	// create 100 deals over 100 epochs to fill pending proposals structure
@@ -66,15 +67,15 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 		v, err = v.WithEpoch(v.GetEpoch() + 1)
 		require.NoError(t, err)
 		deals = append(deals, publishDeal(t, v, worker, addrs[1+i%9], minerAddrs.IDAddress, fmt.Sprintf("deal%d", i),
-			1<<26, false, dealStart, 210*builtin.EpochsInDay))
+			1<<26, false, dealStart, 210*builtin2.EpochsInDay))
 	}
 
 	// run migration
-	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{})
+	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1})
 	require.NoError(t, err)
 
-	lookup := map[cid.Cid]runtime.VMActor{}
-	for _, ba := range exported.BuiltinActors() {
+	lookup := map[cid.Cid]rt.VMActor{}
+	for _, ba := range exported3.BuiltinActors() {
 		lookup[ba.Code()] = ba
 	}
 
@@ -87,7 +88,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 		v3, err = v3.WithEpoch(v.GetEpoch() + 1)
 		require.NoError(t, err)
 		deals = append(deals, publishV3Deal(t, v3, worker, addrs[1+i%9], minerAddrs.IDAddress, fmt.Sprintf("deal1%d", i),
-			1<<26, false, dealStart, 210*builtin.EpochsInDay))
+			1<<26, false, dealStart, 210*builtin3.EpochsInDay))
 	}
 
 	// add even deals to a sector we will commit (to let the odd deals expire)
@@ -106,9 +107,9 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       dealIDs,
-		Expiration:    v.GetEpoch() + 220*builtin.EpochsInDay,
+		Expiration:    v.GetEpoch() + 220*builtin3.EpochsInDay,
 	}
-	vm3.ApplyOk(t, v3, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+	vm3.ApplyOk(t, v3, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin3.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to min seal duration
 	proveTime := v3.GetEpoch() + miner3.PreCommitChallengeDelay + 1
@@ -120,16 +121,16 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	proveCommitParams := miner3.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	vm3.ApplyOk(t, v3, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
+	vm3.ApplyOk(t, v3, worker, minerAddrs.RobustAddress, big.Zero(), builtin3.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
 	// This activates deals hitting the pending deals structure.
-	vm3.ApplyOk(t, v3, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	vm3.ApplyOk(t, v3, builtin3.SystemActorAddr, builtin3.CronActorAddr, big.Zero(), builtin3.MethodsCron.EpochTick, nil)
 
 	// Run cron after deal start to expire pending deals
 	v3, err = v3.WithEpoch(dealStart + 1)
 	require.NoError(t, err)
-	vm3.ApplyOk(t, v3, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	vm3.ApplyOk(t, v3, builtin3.SystemActorAddr, builtin3.CronActorAddr, big.Zero(), builtin3.MethodsCron.EpochTick, nil)
 
 	// Assert that no invariants are broken. CheckStateInvariants used to assert that Pending Proposal value cid
 	// matched its key, so this also checks that the market invariants have been corrected.
@@ -137,7 +138,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	require.NoError(t, err)
 	totalBalance, err := v3.GetTotalActorBalance()
 	require.NoError(t, err)
-	msgs, err := states.CheckStateInvariants(stateTree, totalBalance, v3.GetEpoch())
+	msgs, err := states3.CheckStateInvariants(stateTree, totalBalance, v3.GetEpoch())
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
@@ -167,18 +168,18 @@ func publishDeal(t *testing.T, v *vm2.VM, provider, dealClient, minerID addr.Add
 			ClientSignature: crypto.Signature{},
 		}},
 	}
-	ret, code := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
+	ret, code := v.ApplyMessage(provider, builtin2.StorageMarketActorAddr, big.Zero(), builtin2.MethodsMarket.PublishStorageDeals, &publishDealParams)
 	require.Equal(t, exitcode.Ok, code)
 
 	expectedPublishSubinvocations := []vm2.ExpectInvocation{
-		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm2.ExpectInvocation{}},
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm2.ExpectInvocation{}},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm2.ExpectInvocation{}},
+		{To: minerID, Method: builtin2.MethodsMiner.ControlAddresses, SubInvocations: []vm2.ExpectInvocation{}},
+		{To: builtin2.RewardActorAddr, Method: builtin2.MethodsReward.ThisEpochReward, SubInvocations: []vm2.ExpectInvocation{}},
+		{To: builtin2.StoragePowerActorAddr, Method: builtin2.MethodsPower.CurrentTotalPower, SubInvocations: []vm2.ExpectInvocation{}},
 	}
 
 	vm2.ExpectInvocation{
-		To:             builtin.StorageMarketActorAddr,
-		Method:         builtin.MethodsMarket.PublishStorageDeals,
+		To:             builtin2.StorageMarketActorAddr,
+		Method:         builtin2.MethodsMarket.PublishStorageDeals,
 		SubInvocations: expectedPublishSubinvocations,
 	}.Matches(t, v.LastInvocation())
 
@@ -208,18 +209,18 @@ func publishV3Deal(t *testing.T, v *vm3.VM, provider, dealClient, minerID addr.A
 			ClientSignature: crypto.Signature{},
 		}},
 	}
-	ret, code := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
+	ret, code := v.ApplyMessage(provider, builtin3.StorageMarketActorAddr, big.Zero(), builtin3.MethodsMarket.PublishStorageDeals, &publishDealParams)
 	require.Equal(t, exitcode.Ok, code)
 
 	expectedPublishSubinvocations := []vm3.ExpectInvocation{
-		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm3.ExpectInvocation{}},
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm3.ExpectInvocation{}},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm3.ExpectInvocation{}},
+		{To: minerID, Method: builtin3.MethodsMiner.ControlAddresses, SubInvocations: []vm3.ExpectInvocation{}},
+		{To: builtin3.RewardActorAddr, Method: builtin3.MethodsReward.ThisEpochReward, SubInvocations: []vm3.ExpectInvocation{}},
+		{To: builtin3.StoragePowerActorAddr, Method: builtin3.MethodsPower.CurrentTotalPower, SubInvocations: []vm3.ExpectInvocation{}},
 	}
 
 	vm3.ExpectInvocation{
-		To:             builtin.StorageMarketActorAddr,
-		Method:         builtin.MethodsMarket.PublishStorageDeals,
+		To:             builtin3.StorageMarketActorAddr,
+		Method:         builtin3.MethodsMarket.PublishStorageDeals,
 		SubInvocations: expectedPublishSubinvocations,
 	}.Matches(t, v.LastInvocation())
 
