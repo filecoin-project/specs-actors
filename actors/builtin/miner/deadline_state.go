@@ -898,6 +898,7 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	return powerDelta, penalizedPower, nil
 }
 
+// TODO: We're only using PowerDelta at this point. We should simplify.
 type PoStResult struct {
 	// Power activated or deactivated (positive or negative).
 	PowerDelta PowerPair
@@ -921,9 +922,7 @@ func (p *PoStResult) PenaltyPower() PowerPair {
 // changes to power (newly faulty power, power that should have been proven
 // recovered but wasn't, and newly recovered power).
 //
-// NOTE: This function does not actually _verify_ any proofs. The returned
-// Sectors and IgnoredSectors must subsequently be validated against the PoSt
-// submitted by the miner.
+// NOTE: This function does not actually _verify_ any proofs.
 func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
 	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,

@@ -427,11 +427,12 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Record proven sectors/partitions, returning updates to power and the final set of sectors
 		// proven/skipped.
 		//
-		// NOTE: This function does not actually check the proofs but does assume that they'll be
-		// successfully validated. The actual proof verification is done below in verifyWindowedPost.
+		// NOTE: This function does not actually check the proofs but does assume that they're correct. Instead,
+		// it snapshots the deadline's state and the submitted proofs at the end of the challenge window and
+		// allows third-parties to challenge these proofs.
 		//
-		// If proof verification fails, the this deadline MUST NOT be saved and this function should
-		// be aborted.
+		// While we could perform _all_ operations at the end of challenge window, we do as we can here to avoid
+		// overloading cron.
 		faultExpiration := currDeadline.Last() + FaultMaxAge
 		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
@@ -439,27 +440,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// Skipped sectors (including retracted recoveries) pay nothing at Window PoSt,
 		// but will incur the "ongoing" fault fee at deadline end.
 
-		// Validate proofs
-
-		// Load sector infos for proof, substituting a known-good sector for known-faulty sectors.
-		// Note: this is slightly sub-optimal, loading info for the recovering sectors again after they were already
-		// loaded above.
-		sectorInfos, err := sectors.LoadForProof(postResult.Sectors, postResult.IgnoredSectors)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proven sector info")
-
-		if len(sectorInfos) == 0 {
-			// Abort verification if all sectors are (now) faults. There's nothing to prove.
-			// It's not rational for a miner to submit a Window PoSt marking *all* non-faulty sectors as skipped,
-			// since that will just cause them to pay a penalty at deadline end that would otherwise be zero
-			// if they had *not* declared them.
-			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
-		}
-
-		// Verify the proof.
-		// A failed verification doesn't immediately cause a penalty; the miner can try again.
-		//
-		// This function aborts on failure.
-		verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+		// Store proofs in case they need to be challenged later.
+		proofs, err := adt.AsArray(store, deadline.Proofs)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
+		err = proofs.AppendContinuous(&WindowedPoSt{
+			Partitions: partitionIndexes,
+			Proofs:     params.Proofs,
+		})
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to append new proofs")
+		deadline.Proofs, err = proofs.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed store proofs")
 
 		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
