@@ -12,6 +12,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -40,9 +41,6 @@ type Deadline struct {
 	// recovered, and this queue will not be updated at that time.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
-	// Partitions numbers with PoSt submissions since the proving period started.
-	PostSubmissions bitfield.BitField
-
 	// Partitions with sectors that terminated early.
 	EarlyTerminations bitfield.BitField
 
@@ -54,10 +52,32 @@ type Deadline struct {
 
 	// Memoized sum of faulty power in partitions.
 	FaultyPower PowerPair
+
+	// Bitfield of partitions that have been posted.
+	PostSubmissions bitfield.BitField
+
+	// AMT of WindowPoSt proofs.
+	// TODO: this AMT could be inefficient. The proof will be ~200 bytes so
+	// we could end up writing ~1600 bytes to update this AMT.
+	// We could also mis-estimate gas, so we need to be very careful here.
+	Proofs cid.Cid // AMT[]WindowedPoSt
+
+	// Snapshot of partition state at the end of the previous challenge
+	// window for this deadline.
+	PartitionsSnapshot cid.Cid
+	// Snapshot of the proofs submitted by the end of the previous challenge
+	// window for this deadline.
+	ProofsSnapshot cid.Cid
+}
+
+type WindowedPoSt struct {
+	Partitions bitfield.BitField
+	Proofs     []proof.PoStProof
 }
 
 const DeadlinePartitionsAmtBitwidth = 3
 const DeadlineExpirationAmtBitwidth = 5
+const DeadlineProofsAmtBitwidth = 5
 
 //
 // Deadlines (plural)
@@ -129,14 +149,22 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
 	}
 
+	emptyProofsArrayCid, err := adt.StoreEmptyArray(store, DeadlineProofsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
+	}
+
 	return &Deadline{
-		Partitions:        emptyPartitionsArrayCid,
-		ExpirationsEpochs: emptyDeadlineExpirationArrayCid,
-		PostSubmissions:   bitfield.New(),
-		EarlyTerminations: bitfield.New(),
-		LiveSectors:       0,
-		TotalSectors:      0,
-		FaultyPower:       NewPowerPairZero(),
+		Partitions:         emptyPartitionsArrayCid,
+		ExpirationsEpochs:  emptyDeadlineExpirationArrayCid,
+		EarlyTerminations:  bitfield.New(),
+		LiveSectors:        0,
+		TotalSectors:       0,
+		FaultyPower:        NewPowerPairZero(),
+		PostSubmissions:    bitfield.New(),
+		Proofs:             emptyProofsArrayCid,
+		PartitionsSnapshot: emptyPartitionsArrayCid,
+		ProofsSnapshot:     emptyProofsArrayCid,
 	}, nil
 }
 

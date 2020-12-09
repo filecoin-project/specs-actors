@@ -179,6 +179,7 @@ func main() {
 		miner.WorkerKeyChange{},
 		miner.VestingFunds{},
 		miner.VestingFund{},
+		miner.WindowedPoSt{},
 		// method params and returns
 		// miner.ConstructorParams{}, // in power actor
 		//miner.SubmitWindowedPoStParams{}, // Aliased from v0
