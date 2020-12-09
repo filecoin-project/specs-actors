@@ -893,8 +893,14 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 		return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to update deadline expiration queue: %w", err)
 	}
 
-	// Reset PoSt submissions.
+	// Reset PoSt submissions, snapshot proofs.
 	dl.PostSubmissions = bitfield.New()
+	dl.PartitionsSnapshot = dl.Partitions
+	dl.ProofsSnapshot = dl.Proofs
+	dl.Proofs, err = adt.MakeEmptyArray(store).Root()
+	if err != nil {
+		return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to clear pending proofs array", err)
+	}
 	return powerDelta, penalizedPower, nil
 }
 
