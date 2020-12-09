@@ -540,8 +540,8 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 		allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge fault bitfields")
 
-		// FIXME: handle compaction
-		sectors, err := LoadSectors(store, st.Sectors)
+		// Load sectors as seen at the end of the last proving period.
+		sectors, err := LoadSectors(store, dl.SectorsSnapshot)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 		sectorInfos, err := sectors.LoadForProof(allSectorsNos, allIgnoredNos)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post challenge")

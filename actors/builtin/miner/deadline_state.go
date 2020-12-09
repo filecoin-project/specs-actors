@@ -68,6 +68,9 @@ type Deadline struct {
 	// Snapshot of the proofs submitted by the end of the previous challenge
 	// window for this deadline.
 	ProofsSnapshot cid.Cid
+	// Snapshot of the miner's sectors at the end of the previous challenge
+	// window for this deadline.
+	SectorsSnapshot cid.Cid
 }
 
 type WindowedPoSt struct {
@@ -154,6 +157,11 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
 	}
 
+	emptySectorsArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty sectors array: %w", err)
+	}
+
 	return &Deadline{
 		Partitions:         emptyPartitionsArrayCid,
 		ExpirationsEpochs:  emptyDeadlineExpirationArrayCid,
@@ -164,6 +172,7 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		PostSubmissions:    bitfield.New(),
 		Proofs:             emptyProofsArrayCid,
 		PartitionsSnapshot: emptyPartitionsArrayCid,
+		SectorsSnapshot:    emptySectorsArrayCid,
 		ProofsSnapshot:     emptyProofsArrayCid,
 	}, nil
 }
@@ -895,12 +904,6 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PostSubmissions = bitfield.New()
-	dl.PartitionsSnapshot = dl.Partitions
-	dl.ProofsSnapshot = dl.Proofs
-	dl.Proofs, err = adt.MakeEmptyArray(store).Root()
-	if err != nil {
-		return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to clear pending proofs array", err)
-	}
 	return powerDelta, penalizedPower, nil
 }
 

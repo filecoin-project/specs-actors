@@ -1151,6 +1151,15 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
 
+		// Setup snapshots for challenges.
+		deadline.PartitionsSnapshot = deadline.Partitions
+		deadline.ProofsSnapshot = deadline.Proofs
+		deadline.Proofs, err = adt.MakeEmptyArray(store).Root()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to clear pending proofs array", err)
+		}
+		deadline.SectorsSnapshot = st.Sectors
+
 		// Capture deadline's faulty power after new faults have been detected, but before it is
 		// dropped along with faulty sectors expiring this round.
 		totalFaultyPower = deadline.FaultyPower
