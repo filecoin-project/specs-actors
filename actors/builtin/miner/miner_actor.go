@@ -560,6 +560,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 	})
 
 	// TODO: Pay submitter some fee.
+	return nil
 }
 
 ///////////////////////
