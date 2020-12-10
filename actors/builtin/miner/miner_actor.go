@@ -597,12 +597,16 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			// 2. Successful challenges will always penalize, even if we can't find the target sectors and mark them faulty.
 			//    You can run but you can't hide.
 
+			// TODO: this is using the sector _snapshot_ is that
+			// going to be an issue?
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
 			powerDelta, err = dl.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
 
-			// Clear proof snapshot so the miner can't be charged multiple times.
-			dl.ProofsSnapshot, err = adt.MakeEmptyArray(store).Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear proofs")
+			// Delete challenged proof so it can't be charged multiple times.
+			err = proofs.Delete(params.ProofIndex)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete challenged proof")
+			dl.ProofsSnapshot, err = proofs.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update proofs")
 
 			err = deadlines.UpdateDeadline(store, params.Deadline, dl)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
