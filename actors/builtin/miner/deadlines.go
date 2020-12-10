@@ -74,6 +74,6 @@ func deadlineCanCompact(provingPeriodStart abi.ChainEpoch, dlIdx uint64, current
 	// window post to give the network time to challenge the sectors, and at
 	// least 1 window before the next window opens to avoid compacting an
 	// immutable deadline.
-	return currentEpoch > (dlInfo.Close-WPoStProvingPeriod)+ChainFinality &&
+	return currentEpoch >= (dlInfo.Close-WPoStProvingPeriod)+ChainFinality &&
 		currentEpoch < dlInfo.Open-WPoStChallengeWindow
 }

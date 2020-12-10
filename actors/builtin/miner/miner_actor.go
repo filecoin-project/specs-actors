@@ -417,6 +417,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
 
+		// TODO: we now check this twice: once here and once in the when
+		// we record the proofs. We can probably just do it once there.
 		alreadyProven, err := bitfield.IntersectBitField(deadline.PostSubmissions, partitionIndexes)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check proven partitions")
 		empty, err := alreadyProven.IsEmpty()
@@ -438,8 +440,21 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
-		// Skipped sectors (including retracted recoveries) pay nothing at Window PoSt,
-		// but will incur the "ongoing" fault fee at deadline end.
+		// Make sure we actually proved something.
+
+		// TODO: refactor RecordProvenSectors to return what we actually need.
+		provenSectors, err := bitfield.SubtractBitField(postResult.Sectors, postResult.IgnoredSectors)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine proven sectors for deadline %d", params.Deadline)
+
+		noSectors, err := provenSectors.IsEmpty()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine if any sectors were proven", params.Deadline)
+		if noSectors {
+			// Abort verification if all sectors are (now) faults. There's nothing to prove.
+			// It's not rational for a miner to submit a Window PoSt marking *all* non-faulty sectors as skipped,
+			// since that will just cause them to pay a penalty at deadline end that would otherwise be zero
+			// if they had *not* declared them.
+			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
+		}
 
 		// Store proofs in case they need to be challenged later.
 		proofs, err := adt.AsArray(store, deadline.Proofs)

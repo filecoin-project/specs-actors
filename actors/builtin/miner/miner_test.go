@@ -3395,6 +3395,9 @@ func TestCompactPartitions(t *testing.T) {
 		sectors := bitfield.NewFromSet([]uint64{uint64(sector1)})
 		actor.terminateSectors(rt, sectors, expectedFee)
 
+		// Wait Finality epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.ChainFinality)
+
 		// compacting partition will remove sector1 but retain sector 2, 3 and 4.
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -3422,6 +3425,9 @@ func TestCompactPartitions(t *testing.T) {
 		// fault sector1
 		actor.declareFaults(rt, info[0])
 
+		// Wait Finality epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.ChainFinality)
+
 		partId := uint64(0)
 		deadlineId := uint64(0)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to remove partitions from deadline 0: while removing partitions: cannot remove partition 0: has faults", func() {
@@ -3435,9 +3441,18 @@ func TestCompactPartitions(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		rt.SetEpoch(200)
+		// Wait until deadline 0 (the one to which we'll assign the
+		// sector) has elapsed. That'll let us commit, prove, then wait
+		// finality epochs.
+		st := getState(rt)
+		deadlineEpoch := miner.NewDeadlineInfo(st.ProvingPeriodStart, 0, rt.Epoch()).NextNotElapsed().NextOpen()
+		rt.SetEpoch(deadlineEpoch)
+
 		// create 2 sectors in partition 0
 		actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
+
+		// Wait Finality epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, deadlineEpoch+miner.ChainFinality)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
