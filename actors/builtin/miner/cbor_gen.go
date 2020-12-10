@@ -754,7 +754,7 @@ func (t *Deadlines) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufDeadline = []byte{138}
+var lengthBufDeadline = []byte{139}
 
 func (t *Deadline) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -824,6 +824,12 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.ProofsSnapshot: %w", err)
 	}
 
+	// t.SectorsSnapshot (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.SectorsSnapshot); err != nil {
+		return xerrors.Errorf("failed to write cid field t.SectorsSnapshot: %w", err)
+	}
+
 	return nil
 }
 
@@ -841,7 +847,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -958,6 +964,18 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ProofsSnapshot = c
+
+	}
+	// t.SectorsSnapshot (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.SectorsSnapshot: %w", err)
+		}
+
+		t.SectorsSnapshot = c
 
 	}
 	return nil
@@ -2457,5 +2475,82 @@ func (t *WindowedPoSt) UnmarshalCBOR(r io.Reader) error {
 		t.Proofs[i] = v
 	}
 
+	return nil
+}
+
+var lengthBufChallengeWindowedPoStParams = []byte{130}
+
+func (t *ChallengeWindowedPoStParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufChallengeWindowedPoStParams); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Deadline (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.Deadline)); err != nil {
+		return err
+	}
+
+	// t.ProofIndex (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ProofIndex)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *ChallengeWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
+	*t = ChallengeWindowedPoStParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Deadline (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Deadline = uint64(extra)
+
+	}
+	// t.ProofIndex (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.ProofIndex = uint64(extra)
+
+	}
 	return nil
 }

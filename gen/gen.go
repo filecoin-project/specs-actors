@@ -180,6 +180,7 @@ func main() {
 		miner.VestingFunds{},
 		miner.VestingFund{},
 		miner.WindowedPoSt{},
+		miner.ChallengeWindowedPoStParams{},
 		// method params and returns
 		// miner.ConstructorParams{}, // in power actor
 		//miner.SubmitWindowedPoStParams{}, // Aliased from v0
