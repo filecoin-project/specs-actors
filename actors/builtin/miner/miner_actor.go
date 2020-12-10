@@ -616,6 +616,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			// going to be an issue?
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
 			powerDelta, err = dl.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
 
 			// Delete challenged proof so it can't be charged multiple times.
 			err = proofs.Delete(params.ProofIndex)
@@ -640,6 +641,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			err := st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay debt")
 			toBurn = big.Add(penaltyFromVesting, penaltyFromBalance)
 			pledgeDelta = penaltyFromVesting.Neg()
 		}

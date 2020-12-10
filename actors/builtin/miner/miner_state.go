@@ -1156,7 +1156,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		deadline.ProofsSnapshot = deadline.Proofs
 		deadline.Proofs, err = adt.MakeEmptyArray(store).Root()
 		if err != nil {
-			return nil, xerrors.Errorf("failed to clear pending proofs array", err)
+			return nil, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 		}
 		deadline.SectorsSnapshot = st.Sectors
 

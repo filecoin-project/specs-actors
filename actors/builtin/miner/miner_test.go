@@ -5091,7 +5091,7 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 
 type poStConfig struct {
 	expectedPowerDelta miner.PowerPair
-	verificationError  error
+	//verificationError  error
 }
 
 func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
