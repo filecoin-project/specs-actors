@@ -208,6 +208,24 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		for _, p := range postSubmissions {
 			acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
 		}
+
+		expectedPoSts := deadline.PostSubmissions
+		proofs, err := adt.AsArray(store, deadline.Proofs)
+		acc.RequireNoError(err, "failed to load proofs")
+		var post WindowedPoSt
+		err = proofs.ForEach(&post, func(idx int64) error {
+			acc.Require(len(post.Proofs) == 0, "invalid number of proofs")
+			contains, err := util.BitFieldContainsAll(expectedPoSts, post.Partitions)
+			acc.RequireNoError(err, "failed to check if posts were expected")
+			acc.Require(contains, "unexpected post")
+			expectedPoSts, err = bitfield.SubtractBitField(expectedPoSts, post.Partitions)
+			acc.RequireNoError(err, "failed to subtract found posts from expected posts")
+			return nil
+		})
+		acc.RequireNoError(err, "failed to iterate over proofs")
+		missingPoSts, err := expectedPoSts.All(1 << 20)
+		acc.RequireNoError(err, "failed to expand missing posts")
+		acc.Require(len(missingPoSts) == 0, "missing posts for partitions: %v", missingPoSts)
 	}
 
 	// Check memoized sector and power values.

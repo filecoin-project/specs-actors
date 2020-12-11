@@ -1903,6 +1903,8 @@ func TestWindowPost(t *testing.T) {
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
 		actor.checkState(rt)
+
+		// Proof should exist in state.
 	})
 
 	t.Run("test duplicate proof rejected", func(t *testing.T) {

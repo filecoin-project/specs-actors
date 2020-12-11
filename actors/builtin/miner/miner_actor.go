@@ -417,16 +417,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
 
-		// TODO: we now check this twice: once here and once in the when
-		// we record the proofs. We can probably just do it once there.
-		alreadyProven, err := bitfield.IntersectBitField(deadline.PostSubmissions, partitionIndexes)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check proven partitions")
-		empty, err := alreadyProven.IsEmpty()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check proven intersection is empty")
-		if !empty {
-			rt.Abortf(exitcode.ErrIllegalArgument, "partition already proven: %v", alreadyProven)
-		}
-
 		// Record proven sectors/partitions, returning updates to power and the final set of sectors
 		// proven/skipped.
 		//
@@ -437,7 +427,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// While we could perform _all_ operations at the end of challenge window, we do as we can here to avoid
 		// overloading cron.
 		faultExpiration := currDeadline.Last() + FaultMaxAge
-		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
+		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions, params.Proofs)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
 		// Make sure we actually proved something.
@@ -455,17 +445,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			// if they had *not* declared them.
 			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
 		}
-
-		// Store proofs in case they need to be challenged later.
-		proofs, err := adt.AsArray(store, deadline.Proofs)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
-		err = proofs.AppendContinuous(&WindowedPoSt{
-			Partitions: partitionIndexes,
-			Proofs:     params.Proofs,
-		})
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to append new proofs")
-		deadline.Proofs, err = proofs.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed store proofs")
 
 		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)

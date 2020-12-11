@@ -687,7 +687,7 @@ func TestSectorAssignment(t *testing.T) {
 
 			// Now make sure proving activates power.
 
-			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions)
+			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions, nil)
 			require.NoError(t, err)
 
 			expectedPowerDelta := miner.PowerForSectors(sectorSize, selectSectors(t, sectorInfos, allSectorBf))

@@ -1152,12 +1152,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		}
 
 		// Setup snapshots for challenges.
-		deadline.PartitionsSnapshot = deadline.Partitions
-		deadline.ProofsSnapshot = deadline.Proofs
-		deadline.Proofs, err = adt.MakeEmptyArray(store).Root()
-		if err != nil {
-			return nil, xerrors.Errorf("failed to clear pending proofs array: %w", err)
-		}
+		// TODO: we should probably put this into ProcessDeadlineEnd but
+		// then we'd need to pass the sectors in? Another reason to not
+		// snapshot the sector set.
 		deadline.SectorsSnapshot = st.Sectors
 
 		// Capture deadline's faulty power after new faults have been detected, but before it is

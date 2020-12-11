@@ -904,6 +904,12 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PostSubmissions = bitfield.New()
+	dl.PartitionsSnapshot = dl.Partitions
+	dl.ProofsSnapshot = dl.Proofs
+	dl.Proofs, err = adt.MakeEmptyArray(store).Root()
+	if err != nil {
+		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
+	}
 	return powerDelta, penalizedPower, nil
 }
 
@@ -936,7 +942,24 @@ func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
 	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,
 	postPartitions []PoStPartition,
+	proofs []proof.PoStProof,
 ) (*PoStResult, error) {
+
+	partitionIndexes := bitfield.New()
+	for _, partition := range postPartitions {
+		partitionIndexes.Set(partition.Index)
+	}
+
+	// First check to see if we're proving any already proven partitions.
+	// This is faster than checking one by one.
+	if alreadyProven, err := bitfield.IntersectBitField(dl.PostSubmissions, partitionIndexes); err != nil {
+		return nil, xerrors.Errorf("failed to check proven partitions: %w", err)
+	} else if empty, err := alreadyProven.IsEmpty(); err != nil {
+		return nil, xerrors.Errorf("failed to check proven intersection is empty: %w", err)
+	} else if !empty {
+		return nil, xc.ErrIllegalArgument.Wrapf("partition already proven: %v", alreadyProven)
+	}
+
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {
 		return nil, err
@@ -952,16 +975,6 @@ func (dl *Deadline) RecordProvenSectors(
 
 	// Accumulate sectors info for proof verification.
 	for _, post := range postPartitions {
-		// Note: In v3 we can remove this check because it will be rejected in the actor method.
-		alreadyProven, err := dl.PostSubmissions.IsSet(post.Index)
-		if err != nil {
-			return nil, xc.ErrIllegalState.Wrapf("failed to check if partition %d already posted: %w", post.Index, err)
-		}
-		if alreadyProven {
-			// Skip partitions already proven for this deadline.
-			continue
-		}
-
 		var partition Partition
 		found, err := partitions.Get(post.Index, &partition)
 		if err != nil {
@@ -1025,6 +1038,18 @@ func (dl *Deadline) RecordProvenSectors(
 	dl.Partitions, err = partitions.Root()
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
+	}
+
+	// Save proof.
+	if proofArr, err := adt.AsArray(store, dl.Proofs); err != nil {
+		return nil, xerrors.Errorf("failed to load proofs: %w", err)
+	} else if err := proofArr.AppendContinuous(&WindowedPoSt{
+		Partitions: partitionIndexes,
+		Proofs:     proofs,
+	}); err != nil {
+		return nil, xerrors.Errorf("failed to store proof: %w", err)
+	} else if dl.Proofs, err = proofArr.Root(); err != nil {
+		return nil, xerrors.Errorf("failed to save proofs: %w", err)
 	}
 
 	// Collect all sectors, faults, and recoveries for proof verification.

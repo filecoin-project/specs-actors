@@ -79,7 +79,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		// Prove everything
-		result, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 0, []miner.PoStPartition{{Index: 0}, {Index: 1}, {Index: 2}})
+		result, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 0, []miner.PoStPartition{{Index: 0}, {Index: 1}, {Index: 2}}, nil)
 		require.NoError(t, err)
 		require.True(t, result.PowerDelta.Equals(power))
 
@@ -513,7 +513,7 @@ func TestDeadlines(t *testing.T) {
 		postResult1, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
 			{Index: 0, Skipped: bf()},
 			{Index: 1, Skipped: bf()},
-		})
+		}, nil)
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult1.Sectors, 1, 2, 3, 4, 5, 6, 7, 8)
 		assertEmptyBitfield(t, postResult1.IgnoredSectors)
@@ -531,9 +531,8 @@ func TestDeadlines(t *testing.T) {
 			).assert(t, store, dl)
 
 		postResult2, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
-			{Index: 1, Skipped: bf()}, // ignore already posted partitions
 			{Index: 2, Skipped: bf()},
-		})
+		}, nil)
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult2.Sectors, 9, 10)
 		assertEmptyBitfield(t, postResult2.IgnoredSectors)
@@ -601,7 +600,7 @@ func TestDeadlines(t *testing.T) {
 		postResult, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
 			{Index: 0, Skipped: bf(1)},
 			{Index: 1, Skipped: bf(7)},
-		})
+		}, nil)
 
 		require.NoError(t, err)
 		// 1, 5, and 7 are expected to be faulty.
@@ -669,7 +668,7 @@ func TestDeadlines(t *testing.T) {
 			{Index: 0, Skipped: bf()},
 			{Index: 1, Skipped: bf()},
 			{Index: 2, Skipped: bf(10)},
-		})
+		}, nil)
 
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult1.Sectors, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
@@ -722,7 +721,7 @@ func TestDeadlines(t *testing.T) {
 		_, err = dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
 			{Index: 0, Skipped: bf()},
 			{Index: 3, Skipped: bf()},
-		})
+		}, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such partition")
 	})
@@ -765,7 +764,7 @@ func TestDeadlines(t *testing.T) {
 			{Index: 0, Skipped: bf()},
 			{Index: 1, Skipped: bf()},
 			{Index: 2, Skipped: bf()},
-		})
+		}, nil)
 
 		require.NoError(t, err)
 		// 1 & 5 are still faulty
