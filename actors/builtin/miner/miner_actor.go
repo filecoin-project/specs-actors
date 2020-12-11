@@ -587,9 +587,9 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge fault bitfields")
 
 			// Load sectors as seen at the end of the last proving period.
-			sectors, err := LoadSectors(store, dl.SectorsSnapshot)
+			sectorsSnapshot, err := LoadSectors(store, dl.SectorsSnapshot)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
-			sectorInfos, err := sectors.LoadForProof(allSectorsNos, allIgnoredNos)
+			sectorInfos, err := sectorsSnapshot.LoadForProof(allSectorsNos, allIgnoredNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post challenge")
 
 			// Find the proving period start for the deadline in question.
@@ -612,8 +612,16 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			// 2. Successful challenges will always penalize, even if we can't find the target sectors and mark them faulty.
 			//    You can run but you can't hide.
 
-			// TODO: this is using the sector _snapshot_ is that
-			// going to be an issue?
+			// Load sectors. We can't use the snapshot as a sector
+			// with an extended expiration could end up being
+			// scheduled to expire at the wrong time.
+			//
+			// Unfortunately, this means we'll need to load all
+			// sector infos twice (once for the proof, once to mark
+			// faulty). We can't use memoized power info because
+			// sectors may have been terminated.
+			sectors, err := LoadSectors(store, st.Sectors)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
 			powerDelta, err = dl.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
