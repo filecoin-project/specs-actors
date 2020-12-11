@@ -1306,9 +1306,8 @@ type TerminateSectorsReturn = miner0.TerminateSectorsReturn
 //     AddressedPartitionsMax per epoch until the queue is empty.
 //
 // The sectors are immediately ignored for Window PoSt proofs, and should be
-// masked in the same way as faulty sectors. A miner terminating sectors in the
-// current deadline must be careful to compute an appropriate Window PoSt proof
-// for the sectors that will be active at the time the PoSt is submitted.
+// masked in the same way as faulty sectors. A miner may not terminate sectors in the
+// current deadline or the next deadline to be proven.
 //
 // This function may be invoked with no new sectors to explicitly process the
 // next batch of sectors.
@@ -1353,6 +1352,12 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 
 		err = toProcess.ForEach(func(dlIdx uint64, partitionSectors PartitionSectorMap) error {
+			// If the deadline the current or next deadline to prove, don't allow terminating sectors.
+			// We assume that deadlines are immutable when being proven.
+			if !deadlineIsMutable(st.ProvingPeriodStart, dlIdx, currEpoch) {
+				rt.Abortf(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline %d", dlIdx)
+			}
+
 			quant := st.QuantSpecForDeadline(dlIdx)
 
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
