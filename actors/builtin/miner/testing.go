@@ -214,7 +214,8 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		acc.RequireNoError(err, "failed to load proofs")
 		var post WindowedPoSt
 		err = proofs.ForEach(&post, func(idx int64) error {
-			acc.Require(len(post.Proofs) == 0, "invalid number of proofs")
+			// This is allowed to be 0 for testing.
+			//acc.Require(len(post.Proofs) == 0, "invalid number of proofs")
 			contains, err := util.BitFieldContainsAll(expectedPoSts, post.Partitions)
 			acc.RequireNoError(err, "failed to check if posts were expected")
 			acc.Require(contains, "unexpected post")
