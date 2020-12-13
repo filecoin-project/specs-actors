@@ -65,10 +65,8 @@ const (
 	MaxMultiaddrData = 1024 // PARAM_SPEC
 )
 
-// Maximum size of a single prove-commit proof, in bytes.
-// The 1024 maximum at network version 4 was an error (the expected size is 1920).
-const MaxProveCommitSizeV4 = 1024
-const MaxProveCommitSizeV5 = 10240
+// Maximum size of a single prove-commit proof, in bytes (the expected size is 1920).
+const MaxProveCommitSize = 10240
 
 // Maximum number of control addresses a miner may register.
 const MaxControlAddresses = 10
@@ -123,23 +121,15 @@ func CanPreCommitSealProof(s abi.RegisteredSealProof, nv network.Version) bool {
 }
 
 // List of proof types for which sector lifetime may be extended.
-var ExtensibleProofTypesV0 = map[abi.RegisteredSealProof]struct{}{
-	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
-	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
-}
-
 // From network version 7, sectors sealed with the V1 seal proof types cannot be extended.
-var ExtensibleProofTypesV7 = map[abi.RegisteredSealProof]struct{}{
+var ExtensibleProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
 	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
 }
 
 // Checks whether a seal proof type is supported for new miners and sectors.
-func CanExtendSealProofType(s abi.RegisteredSealProof, nv network.Version) bool {
-	_, ok := ExtensibleProofTypesV0[s]
-	if nv >= network.Version7 {
-		_, ok = ExtensibleProofTypesV7[s]
-	}
+func CanExtendSealProofType(s abi.RegisteredSealProof) bool {
+	_, ok := ExtensibleProofTypes[s]
 	return ok
 }
 
