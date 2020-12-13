@@ -22,19 +22,39 @@ func (m marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 		return nil, err
 	}
 
-	pendingProposalsCid, err := m.MapPendingProposals(ctx, store, inState.PendingProposals)
+	pendingProposalsCidOut, err := m.MapPendingProposals(ctx, store, inState.PendingProposals)
+	if err != nil {
+		return nil, err
+	}
+	proposalsCidOut, err := migrateAMTRaw(ctx, store, inState.Proposals, adt3.DefaultAmtOptions)
+	if err != nil {
+		return nil, err
+	}
+	statesCidOut, err := migrateAMTRaw(ctx, store, inState.States, adt3.DefaultAmtOptions)
+	if err != nil {
+		return nil, err
+	}
+	escrowTableCidOut, err := migrateHAMTRaw(ctx, store, inState.EscrowTable, adt3.DefaultHamtOptions)
+	if err != nil {
+		return nil, err
+	}
+	lockedTableCidOut, err := migrateHAMTRaw(ctx, store, inState.LockedTable, adt3.DefaultHamtOptions)
+	if err != nil {
+		return nil, err
+	}
+	dobeCidOut, err := migrateHAMTHAMTRaw(ctx, store, inState.DealOpsByEpoch, adt3.DefaultHamtOptions, adt3.DefaultHamtOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	outState := market3.State{
-		Proposals:                     inState.Proposals,
-		States:                        inState.States,
-		PendingProposals:              pendingProposalsCid,
-		EscrowTable:                   inState.EscrowTable,
-		LockedTable:                   inState.LockedTable,
+		Proposals:                     proposalsCidOut,
+		States:                        statesCidOut,
+		PendingProposals:              pendingProposalsCidOut,
+		EscrowTable:                   escrowTableCidOut,
+		LockedTable:                   lockedTableCidOut,
 		NextID:                        inState.NextID,
-		DealOpsByEpoch:                inState.DealOpsByEpoch,
+		DealOpsByEpoch:                dobeCidOut,
 		LastCron:                      inState.LastCron,
 		TotalClientLockedCollateral:   inState.TotalClientLockedCollateral,
 		TotalProviderLockedCollateral: inState.TotalProviderLockedCollateral,

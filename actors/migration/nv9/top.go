@@ -66,7 +66,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin2.AccountActorCodeID:          nilMigrator{builtin3.AccountActorCodeID},
 		builtin2.CronActorCodeID:             nilMigrator{builtin3.CronActorCodeID},
 		builtin2.InitActorCodeID:             initMigrator{},
-		builtin2.MultisigActorCodeID:         msigMigrator{},
+		builtin2.MultisigActorCodeID:         multisigMigrator{},
 		builtin2.PaymentChannelActorCodeID:   paychMigrator{},
 		builtin2.RewardActorCodeID:           nilMigrator{builtin3.RewardActorCodeID},
 		builtin2.StorageMarketActorCodeID:    marketMigrator{},

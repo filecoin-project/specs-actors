@@ -21,6 +21,10 @@ import (
 // This value has been empirically chosen, but the optimal value for maps with different mutation profiles may differ.
 const DefaultHamtBitwidth = 5
 
+// Default log2 of branching factor for AMTs.
+// This value has been empirically chosen, but the optimal value for arrays with different mutation profiles may differ.
+const DefaultAmtBitwidth = 3
+
 type BigFrac struct {
 	Numerator   big.Int
 	Denominator big.Int
