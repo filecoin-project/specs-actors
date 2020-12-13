@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
+	hamt "github.com/filecoin-project/go-hamt-ipld/v3"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -20,6 +21,16 @@ var DefaultHamtOptions = []hamt.Option{
 		res := sha256.Sum256(input)
 		return res[:]
 	}),
+}
+
+// DefaultHamtOptionsWithDefaultBitwidth specifies DefaultHamtOptions plus
+// a bitwidh of the default hamt bitwidth (5)
+var DefaultHamtOptionsWithDefaultBitwidth = []hamt.Option{
+	hamt.UseHashFunction(func(input []byte) []byte {
+		res := sha256.Sum256(input)
+		return res[:]
+	}),
+	hamt.UseTreeBitWidth(builtin.DefaultHamtBitwidth),
 }
 
 // Map stores key-value pairs in a HAMT.

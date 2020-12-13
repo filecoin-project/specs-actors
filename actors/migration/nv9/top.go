@@ -65,15 +65,15 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	var migrations = map[cid.Cid]StateMigration{
 		builtin2.AccountActorCodeID:          nilMigrator{builtin3.AccountActorCodeID},
 		builtin2.CronActorCodeID:             nilMigrator{builtin3.CronActorCodeID},
-		builtin2.InitActorCodeID:             nilMigrator{builtin3.InitActorCodeID},
-		builtin2.MultisigActorCodeID:         nilMigrator{builtin3.MultisigActorCodeID},
-		builtin2.PaymentChannelActorCodeID:   nilMigrator{builtin3.PaymentChannelActorCodeID},
+		builtin2.InitActorCodeID:             initMigrator{},
+		builtin2.MultisigActorCodeID:         msigMigrator{},
+		builtin2.PaymentChannelActorCodeID:   paychMigrator{},
 		builtin2.RewardActorCodeID:           nilMigrator{builtin3.RewardActorCodeID},
 		builtin2.StorageMarketActorCodeID:    marketMigrator{},
-		builtin2.StorageMinerActorCodeID:     nilMigrator{builtin3.StorageMinerActorCodeID},
-		builtin2.StoragePowerActorCodeID:     nilMigrator{builtin3.StoragePowerActorCodeID},
+		builtin2.StorageMinerActorCodeID:     minerMigrator{},
+		builtin2.StoragePowerActorCodeID:     powerMigrator{},
 		builtin2.SystemActorCodeID:           nilMigrator{builtin3.SystemActorCodeID},
-		builtin2.VerifiedRegistryActorCodeID: nilMigrator{builtin3.VerifiedRegistryActorCodeID},
+		builtin2.VerifiedRegistryActorCodeID: verifregMigrator{},
 	}
 	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.
 	var deferredCodeIDs = map[cid.Cid]struct{}{
