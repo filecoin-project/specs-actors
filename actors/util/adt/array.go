@@ -3,13 +3,16 @@ package adt
 import (
 	"bytes"
 
-	amt "github.com/filecoin-project/go-amt-ipld/v2"
+	amt "github.com/filecoin-project/go-amt-ipld/v3"
+
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
+
+var DefaultAmtOptions = []amt.Option{}
 
 // Array stores a sparse sequence of values in an AMT.
 type Array struct {
@@ -32,7 +35,8 @@ func AsArray(s Store, r cid.Cid) (*Array, error) {
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
 func MakeEmptyArray(s Store) *Array {
-	root := amt.NewAMT(s)
+	root, _ := amt.NewAMT(s)
+	// TODO: propagate error when adding bitwith params here
 	return &Array{
 		root:  root,
 		store: s,
@@ -47,8 +51,8 @@ func (a *Array) Root() (cid.Cid, error) {
 // Appends a value to the end of the array. Assumes continuous array.
 // If the array isn't continuous use Set and a separate counter
 func (a *Array) AppendContinuous(value cbor.Marshaler) error {
-	if err := a.root.Set(a.store.Context(), a.root.Count, value); err != nil {
-		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", a.root.Count, value, a.root)
+	if err := a.root.Set(a.store.Context(), a.root.Len(), value); err != nil {
+		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", a.root.Len(), value, a.root)
 	}
 	return nil
 }
@@ -92,7 +96,7 @@ func (a *Array) ForEach(out cbor.Unmarshaler, fn func(i int64) error) error {
 }
 
 func (a *Array) Length() uint64 {
-	return a.root.Count
+	return a.root.Len()
 }
 
 // Get retrieves array element into the 'out' unmarshaler, returning a boolean
