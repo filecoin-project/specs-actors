@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/ipld"
@@ -16,7 +17,7 @@ import (
 )
 
 func sectorsArr(t *testing.T, store adt.Store, sectors []*miner.SectorOnChainInfo) miner.Sectors {
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	sectorArr := miner.Sectors{emptyArray}
 	require.NoError(t, sectorArr.Store(sectors...))

@@ -923,7 +923,7 @@ func selectSectors(t *testing.T, sectors []*miner.SectorOnChainInfo, field bitfi
 }
 
 func emptyPartition(t *testing.T, store adt.Store) *miner.Partition {
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	root, err := emptyArray.Root()
 	require.NoError(t, err)

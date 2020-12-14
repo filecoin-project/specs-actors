@@ -85,7 +85,7 @@ func TestMarketActor(t *testing.T) {
 		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
 		assert.NoError(t, err)
 
-		emptyArray, err := adt.MakeEmptyArray(store)
+		emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 		require.NoError(t, err)
 
 		emptyArrayRoot, err := emptyArray.Root()

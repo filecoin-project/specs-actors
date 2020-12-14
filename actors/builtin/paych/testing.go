@@ -24,7 +24,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	acc.Require(st.SettlingAt >= st.MinSettleHeight,
 		"channel is setting at epoch %d before min settle height %d", st.SettlingAt, st.MinSettleHeight)
 
-	if lanes, err := adt.AsArray(store, st.LaneStates); err != nil {
+	if lanes, err := adt.AsArray(store, st.LaneStates, builtin.DefaultAmtBitwidth); err != nil {
 		acc.Addf("error loading lanes: %v", err)
 	} else {
 		var lane LaneState

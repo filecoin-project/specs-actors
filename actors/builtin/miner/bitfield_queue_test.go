@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/mock"
@@ -226,7 +227,7 @@ func TestBitfieldQueue(t *testing.T) {
 func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.BitfieldQueue {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	root, err := emptyArray.Root()
 	require.NoError(t, err)

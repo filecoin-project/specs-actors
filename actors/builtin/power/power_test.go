@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/filecoin-project/go-state-types/network"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -665,7 +667,7 @@ func TestCron(t *testing.T) {
 		// assert used cron events are cleaned up
 		st := getState(rt)
 
-		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue, builtin.DefaultHamtBitwidth)
+		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
 		require.NoError(t, err)
 
 		var ev power.CronEvent
@@ -810,7 +812,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		st := getState(rt)
 		store := rt.AdtStore()
 		require.NotNil(t, st.ProofValidationBatch)
-		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth)
+		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
 		require.NoError(t, err)
 		arr, found, err := mmap.Get(abi.AddrKey(miner))
 		require.NoError(t, err)
@@ -1220,7 +1222,7 @@ func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainE
 	var st power.State
 	rt.GetState(&st)
 
-	events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, builtin.DefaultHamtBitwidth)
+	events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
 	evts, found, err := events.Get(abi.IntKey(int64(epoch)))

@@ -12,6 +12,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -129,7 +130,7 @@ func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
-	arr, err := adt.AsArray(store, d.Partitions)
+	arr, err := adt.AsArray(store, d.Partitions, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
 	}
@@ -298,7 +299,7 @@ func (dl *Deadline) AddSectors(
 				// This case will usually happen zero times.
 				// It would require adding more than a full partition in one go
 				// to happen more than once.
-				emptyArray, err := adt.MakeEmptyArray(store)
+				emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 				if err != nil {
 					return NewPowerPairZero(), err
 				}
@@ -573,7 +574,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
 	}
 
-	newPartitions, err := adt.MakeEmptyArray(store)
+	newPartitions, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to create empty array for initializing partitions: %w", err)
 	}

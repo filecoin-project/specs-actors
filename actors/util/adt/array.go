@@ -21,8 +21,9 @@ type Array struct {
 }
 
 // AsArray interprets a store as an AMT-based array with root `r`.
-func AsArray(s Store, r cid.Cid) (*Array, error) {
-	root, err := amt.LoadAMT(s.Context(), s, r)
+func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
+	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(bitwidth))
+	root, err := amt.LoadAMT(s.Context(), s, r, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to root: %w", err)
 	}
@@ -34,8 +35,9 @@ func AsArray(s Store, r cid.Cid) (*Array, error) {
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyArray(s Store) (*Array, error) {
-	root, err := amt.NewAMT(s)
+func MakeEmptyArray(s Store, bitwidth int) (*Array, error) {
+	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(bitwidth))
+	root, err := amt.NewAMT(s, options...)
 	if err != nil {
 		return nil, err
 	}

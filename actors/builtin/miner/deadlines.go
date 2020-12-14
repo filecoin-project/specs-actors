@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -28,7 +29,7 @@ func FindSector(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumbe
 			return 0, 0, err
 		}
 
-		partitions, err := adt.AsArray(store, dl.Partitions)
+		partitions, err := adt.AsArray(store, dl.Partitions, builtin.DefaultAmtBitwidth)
 		if err != nil {
 			return 0, 0, err
 		}

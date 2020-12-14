@@ -9,11 +9,12 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 func LoadSectors(store adt.Store, root cid.Cid) (Sectors, error) {
-	sectorsArr, err := adt.AsArray(store, root)
+	sectorsArr, err := adt.AsArray(store, root, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return Sectors{}, err
 	}

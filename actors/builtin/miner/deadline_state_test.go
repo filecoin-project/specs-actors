@@ -876,7 +876,7 @@ func TestDeadlines(t *testing.T) {
 }
 
 func emptyDeadline(t *testing.T, store adt.Store) *miner.Deadline {
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	root, err := emptyArray.Root()
 	require.NoError(t, err)

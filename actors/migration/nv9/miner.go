@@ -120,7 +120,7 @@ func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldSt
 	if err != nil {
 		return cid.Undef, err
 	}
-	outArray, err := adt3.MakeEmptyArray(adt2.WrapStore(ctx, store))
+	outArray, err := adt3.MakeEmptyArray(adt2.WrapStore(ctx, store), builtin3.DefaultAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}

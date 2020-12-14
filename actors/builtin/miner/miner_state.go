@@ -169,7 +169,7 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
 	}
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty array")
 	}

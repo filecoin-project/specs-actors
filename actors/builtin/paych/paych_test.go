@@ -271,7 +271,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				rt.Call(actor.UpdateChannelState, ucp)
 				var st State
 				rt.GetState(&st)
-				lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+				lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates, builtin.DefaultAmtBitwidth)
 				assert.NoError(t, err)
 				assert.Equal(t, uint64(1), lstates.Length())
 
@@ -297,14 +297,14 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 func assertLaneStatesLength(t *testing.T, rt *mock.Runtime, rcid cid.Cid, l int) {
 	t.Helper()
-	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid, builtin.DefaultAmtBitwidth)
 	assert.NoError(t, err)
 	assert.Equal(t, arr.Length(), uint64(l))
 }
 
 func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid.Cid {
 	t.Helper()
-	arr, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	arr, err := adt.MakeEmptyArray(adt.AsStore(rt), builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	for i, ls := range lss {
 		err := arr.Set(uint64(i), ls)
@@ -318,7 +318,7 @@ func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid
 }
 
 func getLaneState(t *testing.T, rt *mock.Runtime, rcid cid.Cid, lane uint64) *LaneState {
-	arr, err := adt.AsArray(adt.AsStore(rt), rcid)
+	arr, err := adt.AsArray(adt.AsStore(rt), rcid, builtin.DefaultAmtBitwidth)
 	assert.NoError(t, err)
 
 	var out LaneState
@@ -965,7 +965,7 @@ func (h *pcActorHarness) checkState(rt *mock.Runtime) {
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	var st State
 	rt.GetState(&st)
-	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt), builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
 	emptyArrCid, err := emptyArray.Root()
 	assert.NoError(t, err)
@@ -985,7 +985,7 @@ func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState Sta
 		assertLaneStatesLength(t, rt, st.LaneStates, expLanes)
 		assert.True(t, reflect.DeepEqual(expectedState.LaneStates, st.LaneStates))
 	} else {
-		emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+		emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt), builtin.DefaultAmtBitwidth)
 		require.NoError(t, err)
 		ecid, err := emptyArray.Root()
 		assert.NoError(t, err)

@@ -61,7 +61,7 @@ type State struct {
 }
 
 func ConstructState(store adt.Store) (*State, error) {
-	emptyArray, err := adt.MakeEmptyArray(store)
+	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty array: %w", err)
 	}

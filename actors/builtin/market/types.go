@@ -2,6 +2,7 @@ package market
 
 import (
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	. "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 
 	"github.com/ipfs/go-cid"
@@ -15,7 +16,7 @@ type DealArray struct {
 
 // Interprets a store as balance table with root `r`.
 func AsDealProposalArray(s Store, r cid.Cid) (*DealArray, error) {
-	a, err := AsArray(s, r)
+	a, err := AsArray(s, r, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ type DealState struct {
 
 // Interprets a store as balance table with root `r`.
 func AsDealStateArray(s Store, r cid.Cid) (*DealMetaArray, error) {
-	dsa, err := AsArray(s, r)
+	dsa, err := AsArray(s, r, builtin.DefaultAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}

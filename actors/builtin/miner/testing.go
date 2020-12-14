@@ -64,7 +64,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 
 	minerSummary.Deals = map[abi.DealID]DealSummary{}
 	var allSectors map[abi.SectorNumber]*SectorOnChainInfo
-	if sectorsArr, err := adt.AsArray(store, st.Sectors); err != nil {
+	if sectorsArr, err := adt.AsArray(store, st.Sectors, builtin.DefaultAmtBitwidth); err != nil {
 		acc.Addf("error loading sectors")
 	} else {
 		allSectors = map[abi.SectorNumber]*SectorOnChainInfo{}
@@ -255,7 +255,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	{
 		// Validate partition expiration queue contains an entry for each partition and epoch with an expiration.
 		// The queue may be a superset of the partitions that have expirations because we never remove from it.
-		if expirationEpochs, err := adt.AsArray(store, deadline.ExpirationsEpochs); err != nil {
+		if expirationEpochs, err := adt.AsArray(store, deadline.ExpirationsEpochs, builtin.DefaultAmtBitwidth); err != nil {
 			acc.Addf("error loading expiration queue: %v", err)
 		} else {
 			for epoch, expiringPIdxs := range partitionsWithExpirations { // nolint:nomaprange
