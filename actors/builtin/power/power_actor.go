@@ -195,7 +195,7 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.E
 
 	var st State
 	rt.StateTransaction(&st, func() {
-		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, CronQueueHamtBitwidth, CronQueueAmtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
 		err = st.appendCronEvent(events, params.EventEpoch, &minerEvent)
@@ -267,10 +267,10 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 		store := adt.AsStore(rt)
 		var mmap *adt.Multimap
 		if st.ProofValidationBatch == nil {
-			mmap = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+			mmap = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 		} else {
 			var err error
-			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
 		}
 
@@ -345,7 +345,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		if st.ProofValidationBatch == nil {
 			return
 		}
-		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs validation batch")
 
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
@@ -427,7 +427,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 	var cronEvents []CronEvent
 	var st State
 	rt.StateTransaction(&st, func() {
-		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+		events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, CronQueueHamtBitwidth, CronQueueAmtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)

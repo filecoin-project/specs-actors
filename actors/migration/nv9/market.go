@@ -6,6 +6,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
+	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
+	hamt3 "github.com/filecoin-project/go-hamt-ipld/v3"
 	market2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 
@@ -26,19 +28,19 @@ func (m marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	if err != nil {
 		return nil, err
 	}
-	proposalsCidOut, err := migrateAMTRaw(ctx, store, inState.Proposals, adt3.DefaultAmtOptions)
+	proposalsCidOut, err := migrateAMTRaw(ctx, store, inState.Proposals, []amt3.Option{amt3.UseTreeBitWidth(market3.ProposalsAmtBitwidth)})
 	if err != nil {
 		return nil, err
 	}
-	statesCidOut, err := migrateAMTRaw(ctx, store, inState.States, adt3.DefaultAmtOptions)
+	statesCidOut, err := migrateAMTRaw(ctx, store, inState.States, []amt3.Option{amt3.UseTreeBitWidth(market3.StatesAmtBitwidth)})
 	if err != nil {
 		return nil, err
 	}
-	escrowTableCidOut, err := migrateHAMTRaw(ctx, store, inState.EscrowTable, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	escrowTableCidOut, err := migrateHAMTRaw(ctx, store, inState.EscrowTable, append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(adt3.BalanceTableBitwidth)))
 	if err != nil {
 		return nil, err
 	}
-	lockedTableCidOut, err := migrateHAMTRaw(ctx, store, inState.LockedTable, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	lockedTableCidOut, err := migrateHAMTRaw(ctx, store, inState.LockedTable, append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(adt3.BalanceTableBitwidth)))
 	if err != nil {
 		return nil, err
 	}

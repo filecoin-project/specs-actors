@@ -667,7 +667,7 @@ func TestCron(t *testing.T) {
 		// assert used cron events are cleaned up
 		st := getState(rt)
 
-		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue, power.CronQueueHamtBitwidth, power.CronQueueAmtBitwidth)
 		require.NoError(t, err)
 
 		var ev power.CronEvent
@@ -812,7 +812,7 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		st := getState(rt)
 		store := rt.AdtStore()
 		require.NotNil(t, st.ProofValidationBatch)
-		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, power.ProofValidationBatchAmtBitwidth)
 		require.NoError(t, err)
 		arr, found, err := mmap.Get(abi.AddrKey(miner))
 		require.NoError(t, err)
@@ -1222,7 +1222,7 @@ func (h *spActorHarness) getEnrolledCronTicks(rt *mock.Runtime, epoch abi.ChainE
 	var st power.State
 	rt.GetState(&st)
 
-	events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth)
+	events, err := adt.AsMultimap(adt.AsStore(rt), st.CronEventQueue, power.CronQueueHamtBitwidth, power.CronQueueAmtBitwidth)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load cron events")
 
 	evts, found, err := events.Get(abi.IntKey(int64(epoch)))

@@ -6,9 +6,11 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
-
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 )
+
+// Bitwidth of balance table HAMTs, determined empirically from mutation
+// patterns and projections of mainnet data
+const BalanceTableBitwidth = 6
 
 // A specialization of a map of addresses to (positive) token amounts.
 // Absent keys implicitly have a balance of zero.
@@ -16,7 +18,7 @@ type BalanceTable Map
 
 // Interprets a store as balance table with root `r`.
 func AsBalanceTable(s Store, r cid.Cid) (*BalanceTable, error) {
-	m, err := AsMap(s, r, builtin.DefaultHamtBitwidth)
+	m, err := AsMap(s, r, BalanceTableBitwidth)
 	if err != nil {
 		return nil, err
 	}

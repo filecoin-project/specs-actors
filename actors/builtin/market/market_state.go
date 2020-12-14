@@ -61,14 +61,23 @@ type State struct {
 }
 
 func ConstructState(store adt.Store) (*State, error) {
-	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	emptyProposalsArray, err := adt.MakeEmptyArray(store, ProposalsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty array: %w", err)
 	}
-	emptyArrayCid, err := emptyArray.Root()
+	emptyProposalsArrayCid, err := emptyProposalsArray.Root()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to persist empty array: %w", err)
 	}
+	emptyStatesArray, err := adt.MakeEmptyArray(store, StatesAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty states array: %w", err)
+	}
+	emptyStatesArrayCid, err := emptyStatesArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty states array: %w", err)
+	}
+
 	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
@@ -77,13 +86,17 @@ func ConstructState(store adt.Store) (*State, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
 	}
+	emptyBalanceTableCid, err := adt.MakeEmptyMap(store, adt.BalanceTableBitwidth).Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty balance table: %w", err)
+	}
 
 	return &State{
-		Proposals:        emptyArrayCid,
-		States:           emptyArrayCid,
+		Proposals:        emptyProposalsArrayCid,
+		States:           emptyStatesArrayCid,
 		PendingProposals: emptyMapCid,
-		EscrowTable:      emptyMapCid,
-		LockedTable:      emptyMapCid,
+		EscrowTable:      emptyBalanceTableCid,
+		LockedTable:      emptyBalanceTableCid,
 		NextID:           abi.DealID(0),
 		DealOpsByEpoch:   emptyMSetCid,
 		LastCron:         abi.ChainEpoch(-1),

@@ -10,7 +10,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -163,8 +162,8 @@ const entrySectorsMax = 10_000
 // Loads a queue root.
 // Epochs provided to subsequent method calls will be quantized upwards to quanta mod offsetSeed before being
 // written to/read from queue entries.
-func LoadExpirationQueue(store adt.Store, root cid.Cid, quant QuantSpec) (ExpirationQueue, error) {
-	arr, err := adt.AsArray(store, root, builtin.DefaultAmtBitwidth)
+func LoadExpirationQueue(store adt.Store, root cid.Cid, quant QuantSpec, bitwidth int) (ExpirationQueue, error) {
+	arr, err := adt.AsArray(store, root, bitwidth)
 	if err != nil {
 		return ExpirationQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}

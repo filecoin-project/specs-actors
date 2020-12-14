@@ -1420,7 +1420,7 @@ func TestCCUpgrade(t *testing.T) {
 		}, dQueue)
 
 		// but partitions expiration set at that epoch is empty
-		queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.QuantSpecForDeadline(dlInfo))
+		queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.QuantSpecForDeadline(dlInfo), miner.PartitionExpirationAmtBitwidth)
 		require.NoError(t, err)
 		var es miner.ExpirationSet
 		expirationSetNotEmpty, err := queue.Get(uint64(expectedReplacedExpiration), &es)
@@ -4628,7 +4628,7 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 }
 
 func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *miner.Deadline) map[abi.ChainEpoch][]uint64 {
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization, miner.DeadlineExpirationAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
@@ -4641,7 +4641,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 }
 
 func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *miner.Partition) map[abi.ChainEpoch]*miner.ExpirationSet {
-	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.NoQuantization)
+	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.NoQuantization, miner.PartitionExpirationAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch]*miner.ExpirationSet{}
 	var es miner.ExpirationSet

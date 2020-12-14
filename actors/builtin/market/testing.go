@@ -60,7 +60,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	expectedDealOps := make(map[abi.DealID]struct{})
 	totalProposalCollateral := abi.NewTokenAmount(0)
 
-	if proposals, err := adt.AsArray(store, st.Proposals, builtin.DefaultAmtBitwidth); err != nil {
+	if proposals, err := adt.AsArray(store, st.Proposals, ProposalsAmtBitwidth); err != nil {
 		acc.Addf("error loading proposals: %v", err)
 	} else {
 		var proposal DealProposal
@@ -105,7 +105,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 	//
 
 	dealStateCount := uint64(0)
-	if dealStates, err := adt.AsArray(store, st.States, builtin.DefaultAmtBitwidth); err != nil {
+	if dealStates, err := adt.AsArray(store, st.States, StatesAmtBitwidth); err != nil {
 		acc.Addf("error loading deal states: %v", err)
 	} else {
 		var dealState DealState

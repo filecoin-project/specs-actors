@@ -876,12 +876,17 @@ func TestDeadlines(t *testing.T) {
 }
 
 func emptyDeadline(t *testing.T, store adt.Store) *miner.Deadline {
-	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	emptyPartitionsArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
 	require.NoError(t, err)
-	root, err := emptyArray.Root()
+	partitionsRoot, err := emptyPartitionsArray.Root()
 	require.NoError(t, err)
 
-	return miner.ConstructDeadline(root)
+	emptyDeadlineExpirationArray, err := adt.MakeEmptyArray(store, miner.DeadlineExpirationAmtBitwidth)
+	require.NoError(t, err)
+	expirationsRoot, err := emptyDeadlineExpirationArray.Root()
+	require.NoError(t, err)
+
+	return miner.ConstructDeadline(partitionsRoot, expirationsRoot)
 }
 
 // Helper type for validating deadline state.

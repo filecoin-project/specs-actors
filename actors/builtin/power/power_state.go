@@ -77,7 +77,7 @@ func ConstructState(store adt.Store) (*State, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyMMapCid, err := adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, builtin.DefaultAmtBitwidth).Root()
+	emptyCronQueueMMapCid, err := adt.MakeEmptyMultimap(store, CronQueueHamtBitwidth, CronQueueAmtBitwidth).Root()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multimap: %w", err)
 	}
@@ -93,7 +93,7 @@ func ConstructState(store adt.Store) (*State, error) {
 		ThisEpochPledgeCollateral: abi.NewTokenAmount(0),
 		ThisEpochQAPowerSmoothed:  smoothing.NewEstimate(InitialQAPowerEstimatePosition, InitialQAPowerEstimateVelocity),
 		FirstCronEpoch:            0,
-		CronEventQueue:            emptyMMapCid,
+		CronEventQueue:            emptyCronQueueMMapCid,
 		Claims:                    emptyMapCid,
 		MinerCount:                0,
 		MinerAboveMinPowerCount:   0,

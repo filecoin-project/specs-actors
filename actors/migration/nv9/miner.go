@@ -3,6 +3,7 @@ package nv9
 import (
 	"context"
 
+	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
@@ -27,11 +28,11 @@ func (m minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 	if err != nil {
 		return nil, err
 	}
-	preCommittedSectorsExpiryOut, err := migrateAMTRaw(ctx, store, inState.PreCommittedSectorsExpiry, adt3.DefaultAmtOptions)
+	preCommittedSectorsExpiryOut, err := migrateAMTRaw(ctx, store, inState.PreCommittedSectorsExpiry, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.PrecommitExpiryAmtBitwidth)))
 	if err != nil {
 		return nil, err
 	}
-	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, adt3.DefaultAmtOptions)
+	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.SectorsAmtBitwidth)))
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 			return cid.Undef, xerrors.Errorf("partitions: %w", err)
 		}
 
-		expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, adt3.DefaultAmtOptions)
+		expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.DeadlineExpirationAmtBitwidth)))
 		if err != nil {
 			return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 		}
@@ -127,7 +128,7 @@ func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldSt
 
 	var inPartition miner2.Partition
 	if err = inArray.ForEach(&inPartition, func(i int64) error {
-		expirationEpochs, err := migrateAMTRaw(ctx, store, inPartition.ExpirationsEpochs, adt3.DefaultAmtOptions)
+		expirationEpochs, err := migrateAMTRaw(ctx, store, inPartition.ExpirationsEpochs, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.PartitionExpirationAmtBitwidth)))
 		if err != nil {
 			return xerrors.Errorf("expiration queue: %w", err)
 		}

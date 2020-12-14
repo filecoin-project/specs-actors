@@ -77,6 +77,9 @@ type State struct {
 	EarlyTerminations bitfield.BitField
 }
 
+const PrecommitExpiryAmtBitwidth = 6
+const SectorsAmtBitwidth = 6
+
 type MinerInfo struct {
 	// Account that owns this miner.
 	// - Income and returned collateral are paid to this address.
@@ -169,20 +172,45 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
 	}
-	emptyArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	emptyPrecommitsExpiryArray, err := adt.MakeEmptyArray(store, PrecommitExpiryAmtBitwidth)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to construct empty array")
+		return nil, xerrors.Errorf("failed to construct empty precommits array: %w", err)
 	}
-	emptyArrayCid, err := emptyArray.Root()
+	emptyPrecommitsArrayCid, err := emptyPrecommitsExpiryArray.Root()
 	if err != nil {
-		return nil, xerrors.Errorf("failed to persist empty array: %w", err)
+		return nil, xerrors.Errorf("failed to persist empty precommits array: %w", err)
 	}
+	emptySectorsArray, err := adt.MakeEmptyArray(store, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty sectors array: %w", err)
+	}
+	emptySectorsArrayCid, err := emptySectorsArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty sectors array: %w", err)
+	}
+	emptyPartitionsArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty partitions array: %w", err)
+	}
+	emptyPartitionsArrayCid, err := emptyPartitionsArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty partitions array: %w", err)
+	}
+	emptyDeadlineExpirationArray, err := adt.MakeEmptyArray(store, DeadlineExpirationAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
+	}
+	emptyDeadlineExpirationArrayCid, err := emptyDeadlineExpirationArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty deadline expiration array: %w", err)
+	}
+
 	emptyBitfield := bitfield.NewFromSet(nil)
 	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty bitfield: %w", err)
 	}
-	emptyDeadline := ConstructDeadline(emptyArrayCid)
+	emptyDeadline := ConstructDeadline(emptyPartitionsArrayCid, emptyDeadlineExpirationArrayCid)
 	emptyDeadlineCid, err := store.Put(store.Context(), emptyDeadline)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty deadline: %w", err)
@@ -210,9 +238,9 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 		InitialPledge: abi.NewTokenAmount(0),
 
 		PreCommittedSectors:       emptyMapCid,
-		PreCommittedSectorsExpiry: emptyArrayCid,
+		PreCommittedSectorsExpiry: emptyPrecommitsArrayCid,
 		AllocatedSectors:          emptyBitfieldCid,
-		Sectors:                   emptyArrayCid,
+		Sectors:                   emptySectorsArrayCid,
 		ProvingPeriodStart:        periodStart,
 		CurrentDeadline:           deadlineIndex,
 		Deadlines:                 emptyDeadlinesCid,
@@ -980,7 +1008,7 @@ func (st *State) QuantSpecEveryDeadline() QuantSpec {
 func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
 	// Load BitField Queue for sector expiry
 	quant := st.QuantSpecEveryDeadline()
-	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant, PrecommitExpiryAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
 	}
@@ -1002,7 +1030,7 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 	depositToBurn = abi.NewTokenAmount(0)
 
 	// expire pre-committed sectors
-	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
+	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline(), PrecommitExpiryAmtBitwidth)
 	if err != nil {
 		return depositToBurn, xerrors.Errorf("failed to load sector expiry queue: %w", err)
 	}
