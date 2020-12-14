@@ -87,6 +87,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 		var err error
 		v3, err = v3.WithEpoch(v.GetEpoch() + 1)
 		require.NoError(t, err)
+
 		deals = append(deals, publishV3Deal(t, v3, worker, addrs[1+i%9], minerAddrs.IDAddress, fmt.Sprintf("deal1%d", i),
 			1<<26, false, dealStart, 210*builtin3.EpochsInDay))
 	}

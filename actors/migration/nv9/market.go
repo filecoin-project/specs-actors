@@ -34,15 +34,15 @@ func (m marketMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, 
 	if err != nil {
 		return nil, err
 	}
-	escrowTableCidOut, err := migrateHAMTRaw(ctx, store, inState.EscrowTable, adt3.DefaultHamtOptions)
+	escrowTableCidOut, err := migrateHAMTRaw(ctx, store, inState.EscrowTable, adt3.DefaultHamtOptionsWithDefaultBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	lockedTableCidOut, err := migrateHAMTRaw(ctx, store, inState.LockedTable, adt3.DefaultHamtOptions)
+	lockedTableCidOut, err := migrateHAMTRaw(ctx, store, inState.LockedTable, adt3.DefaultHamtOptionsWithDefaultBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	dobeCidOut, err := migrateHAMTHAMTRaw(ctx, store, inState.DealOpsByEpoch, adt3.DefaultHamtOptions, adt3.DefaultHamtOptions)
+	dobeCidOut, err := migrateHAMTHAMTRaw(ctx, store, inState.DealOpsByEpoch, adt3.DefaultHamtOptionsWithDefaultBitwidth, adt3.DefaultHamtOptionsWithDefaultBitwidth)
 	if err != nil {
 		return nil, err
 	}
