@@ -61,9 +61,13 @@ type State struct {
 }
 
 func ConstructState(store adt.Store) (*State, error) {
-	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	emptyArray, err := adt.MakeEmptyArray(store)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty array: %w", err)
+	}
+	emptyArrayCid, err := emptyArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty array: %w", err)
 	}
 	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
 	if err != nil {

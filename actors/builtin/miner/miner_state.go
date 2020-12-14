@@ -169,9 +169,13 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
 	}
-	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	emptyArray, err := adt.MakeEmptyArray(store)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to construct empty array: %w", err)
+		return nil, xerrors.Errorf("failed to construct empty array")
+	}
+	emptyArrayCid, err := emptyArray.Root()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to persist empty array: %w", err)
 	}
 	emptyBitfield := bitfield.NewFromSet(nil)
 	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)

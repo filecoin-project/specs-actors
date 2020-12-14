@@ -85,7 +85,10 @@ func TestMarketActor(t *testing.T) {
 		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
 		assert.NoError(t, err)
 
-		emptyArray, err := adt.MakeEmptyArray(store).Root()
+		emptyArray, err := adt.MakeEmptyArray(store)
+		require.NoError(t, err)
+
+		emptyArrayRoot, err := emptyArray.Root()
 		assert.NoError(t, err)
 
 		emptyMultiMap, err := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
@@ -94,8 +97,8 @@ func TestMarketActor(t *testing.T) {
 		var state market.State
 		rt.GetState(&state)
 
-		assert.Equal(t, emptyArray, state.Proposals)
-		assert.Equal(t, emptyArray, state.States)
+		assert.Equal(t, emptyArrayRoot, state.Proposals)
+		assert.Equal(t, emptyArrayRoot, state.States)
 		assert.Equal(t, emptyMap, state.EscrowTable)
 		assert.Equal(t, emptyMap, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)

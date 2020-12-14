@@ -226,7 +226,9 @@ func TestBitfieldQueue(t *testing.T) {
 func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.BitfieldQueue {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	root, err := adt.MakeEmptyArray(store).Root()
+	emptyArray, err := adt.MakeEmptyArray(store)
+	require.NoError(t, err)
+	root, err := emptyArray.Root()
 	require.NoError(t, err)
 
 	queue, err := miner.LoadBitfieldQueue(store, root, quant)

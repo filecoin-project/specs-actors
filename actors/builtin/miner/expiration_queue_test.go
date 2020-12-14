@@ -754,7 +754,9 @@ func requireNoExpirationGroupsBefore(t *testing.T, epoch abi.ChainEpoch, queue m
 func emptyExpirationQueueWithQuantizing(t *testing.T, quant miner.QuantSpec) miner.ExpirationQueue {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	root, err := adt.MakeEmptyArray(store).Root()
+	emptyArray, err := adt.MakeEmptyArray(store)
+	require.NoError(t, err)
+	root, err := emptyArray.Root()
 	require.NoError(t, err)
 
 	queue, err := miner.LoadExpirationQueue(store, root, quant)

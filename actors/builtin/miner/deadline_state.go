@@ -298,11 +298,15 @@ func (dl *Deadline) AddSectors(
 				// This case will usually happen zero times.
 				// It would require adding more than a full partition in one go
 				// to happen more than once.
-				emptyArray, err := adt.MakeEmptyArray(store).Root()
+				emptyArray, err := adt.MakeEmptyArray(store)
 				if err != nil {
 					return NewPowerPairZero(), err
 				}
-				partition = ConstructPartition(emptyArray)
+				emptyArrayRoot, err := emptyArray.Root()
+				if err != nil {
+					return NewPowerPairZero(), err
+				}
+				partition = ConstructPartition(emptyArrayRoot)
 			}
 
 			// Figure out which (if any) sectors we want to add to this partition.
@@ -569,7 +573,10 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
 	}
 
-	newPartitions := adt.MakeEmptyArray(store)
+	newPartitions, err := adt.MakeEmptyArray(store)
+	if err != nil {
+		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to create empty array for initializing partitions: %w", err)
+	}
 	allDeadSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	allLiveSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	removedPower = NewPowerPairZero()

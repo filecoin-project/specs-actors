@@ -34,13 +34,15 @@ func AsArray(s Store, r cid.Cid) (*Array, error) {
 }
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
-func MakeEmptyArray(s Store) *Array {
-	root, _ := amt.NewAMT(s)
-	// TODO: propagate error when adding bitwith params here
+func MakeEmptyArray(s Store) (*Array, error) {
+	root, err := amt.NewAMT(s)
+	if err != nil {
+		return nil, err
+	}
 	return &Array{
 		root:  root,
 		store: s,
-	}
+	}, nil
 }
 
 // Returns the root CID of the underlying AMT.

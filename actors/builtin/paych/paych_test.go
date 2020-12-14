@@ -304,7 +304,8 @@ func assertLaneStatesLength(t *testing.T, rt *mock.Runtime, rcid cid.Cid, l int)
 
 func constructLaneStateAMT(t *testing.T, rt *mock.Runtime, lss []*LaneState) cid.Cid {
 	t.Helper()
-	arr := adt.MakeEmptyArray(adt.AsStore(rt))
+	arr, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	require.NoError(t, err)
 	for i, ls := range lss {
 		err := arr.Set(uint64(i), ls)
 		assert.NoError(t, err)
@@ -964,7 +965,9 @@ func (h *pcActorHarness) checkState(rt *mock.Runtime) {
 func verifyInitialState(t *testing.T, rt *mock.Runtime, sender, receiver addr.Address) {
 	var st State
 	rt.GetState(&st)
-	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+	require.NoError(t, err)
+	emptyArrCid, err := emptyArray.Root()
 	assert.NoError(t, err)
 	expectedState := State{From: sender, To: receiver, ToSend: abi.NewTokenAmount(0), LaneStates: emptyArrCid}
 	verifyState(t, rt, -1, expectedState)
@@ -982,7 +985,9 @@ func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState Sta
 		assertLaneStatesLength(t, rt, st.LaneStates, expLanes)
 		assert.True(t, reflect.DeepEqual(expectedState.LaneStates, st.LaneStates))
 	} else {
-		ecid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+		emptyArray, err := adt.MakeEmptyArray(adt.AsStore(rt))
+		require.NoError(t, err)
+		ecid, err := emptyArray.Root()
 		assert.NoError(t, err)
 		assert.Equal(t, st.LaneStates, ecid)
 	}

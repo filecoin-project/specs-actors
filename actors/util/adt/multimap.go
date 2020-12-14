@@ -46,7 +46,10 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 		return err
 	}
 	if !found {
-		array = MakeEmptyArray(mm.mp.store)
+		array, err = MakeEmptyArray(mm.mp.store)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Append to the array.

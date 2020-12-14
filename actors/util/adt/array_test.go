@@ -14,7 +14,8 @@ import (
 func TestArrayNotFound(t *testing.T) {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	arr := adt.MakeEmptyArray(store)
+	arr, err := adt.MakeEmptyArray(store)
+	require.NoError(t, err)
 
 	found, err := arr.Get(7, nil)
 	require.NoError(t, err)

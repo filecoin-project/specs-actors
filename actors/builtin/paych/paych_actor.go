@@ -61,8 +61,10 @@ func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *ab
 	from, err := pca.resolveAccount(rt, params.From)
 	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve from address: %s", params.From)
 
-	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	emptyArr, err := adt.MakeEmptyArray(adt.AsStore(rt))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
+	emptyArrCid, err := emptyArr.Root()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to persist empty array")
 
 	st := ConstructState(from, to, emptyArrCid)
 	rt.StateCreate(st)
