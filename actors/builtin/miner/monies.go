@@ -4,7 +4,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/math"
@@ -57,8 +56,8 @@ const TerminationLifetimeCap = 140 // PARAM_SPEC
 const ConsensusFaultFactor = 5
 
 // Fraction of total reward (block reward + gas reward) to be locked up as of V6
-var LockedRewardFactorNumV6 = big.NewInt(75)
-var LockedRewardFactorDenomV6 = big.NewInt(100)
+var LockedRewardFactorNum = big.NewInt(75)
+var LockedRewardFactorDenom = big.NewInt(100)
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
@@ -176,12 +175,8 @@ func ConsensusFaultPenalty(thisEpochReward abi.TokenAmount) abi.TokenAmount {
 }
 
 // Returns the amount of a reward to vest, and the vesting schedule, for a reward amount.
-func LockedRewardFromReward(reward abi.TokenAmount, nv network.Version) (abi.TokenAmount, *VestSpec) {
-	lockAmount := reward
-	spec := &RewardVestingSpec
-	if nv >= network.Version6 {
-		// Locked amount is 75% of award.
-		lockAmount = big.Div(big.Mul(reward, LockedRewardFactorNumV6), LockedRewardFactorDenomV6)
-	}
-	return lockAmount, spec
+func LockedRewardFromReward(reward abi.TokenAmount) (abi.TokenAmount, *VestSpec) {
+	// Locked amount is 75% of award.
+	lockAmount := big.Div(big.Mul(reward, LockedRewardFactorNum), LockedRewardFactorDenom)
+	return lockAmount, &RewardVestingSpec
 }

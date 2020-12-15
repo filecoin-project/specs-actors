@@ -8,7 +8,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/go-state-types/network"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
@@ -137,11 +136,9 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 
 		st.MinerCount += 1
 
-		// starting version 7, call addToClaim to ensure new claim updates all power stats
-		if rt.NetworkVersion() >= network.Version7 {
-			err := st.updateStatsForNewMiner(params.SealProofType)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed update power stats for new miner %v", addresses.IDAddress)
-		}
+		// Ensure new claim updates all power stats
+		err = st.updateStatsForNewMiner(params.SealProofType)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed update power stats for new miner %v", addresses.IDAddress)
 
 		st.Claims, err = claims.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
@@ -494,10 +491,8 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 					continue
 				}
 
-				// Starting version 7, decrement miner count to keep stats consistent.
-				if rt.NetworkVersion() >= network.Version7 {
-					st.MinerCount--
-				}
+				// Decrement miner count to keep stats consistent.
+				st.MinerCount--
 			}
 
 			st.Claims, err = claims.Root()

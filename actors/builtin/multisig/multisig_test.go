@@ -11,7 +11,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/go-state-types/network"
 	"github.com/minio/blake2b-simd"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -1916,10 +1915,6 @@ func TestLockBalance(t *testing.T) {
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.lockBalance(rt, vestStart, vestDuration, abi.NewTokenAmount(-1))
 		})
-
-		// Before version 7, allow negative amount.
-		rt.SetNetworkVersion(network.Version6)
-		actor.lockBalance(rt, vestStart, vestDuration, abi.NewTokenAmount(-1))
 	})
 }
 

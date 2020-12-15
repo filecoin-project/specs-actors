@@ -291,42 +291,15 @@ func TestConstruction(t *testing.T) {
 	t.Run("checks seal proof version", func(t *testing.T) {
 		actor := newHarness(t, 0)
 		builder := builderForHarness(actor)
-		{
-			// Before version 7, only V1 accepted
-			rt := builder.Build(t)
-			rt.SetNetworkVersion(network.Version6)
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.constructAndVerify(rt)
-			})
-			rt.Reset()
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
+		// From version 8, only V1_1 accepted
+		rt := builder.Build(t)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.constructAndVerify(rt)
-		}
-		{
-			// Version 7 accepts either
-			rt := builder.Build(t)
-			rt.SetNetworkVersion(network.Version7)
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-			actor.constructAndVerify(rt)
-
-			rt = builder.Build(t)
-			rt.SetNetworkVersion(network.Version7)
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
-			actor.constructAndVerify(rt)
-		}
-		{
-			// From version 8, only V1_1 accepted
-			rt := builder.Build(t)
-			rt.SetNetworkVersion(network.Version8)
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.constructAndVerify(rt)
-			})
-			rt.Reset()
-			actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
-			actor.constructAndVerify(rt)
-		}
+		})
+		rt.Reset()
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
+		actor.constructAndVerify(rt)
 	})
 }
 
@@ -555,16 +528,6 @@ func TestCommitments(t *testing.T) {
 		expectedPledgeDelta abi.TokenAmount
 		sealProofType       abi.RegisteredSealProof
 	}{{
-		name:                "precommit vests funds in version 6",
-		version:             network.Version6,
-		expectedPledgeDelta: abi.NewTokenAmount(-1000),
-		sealProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1,
-	}, {
-		name:                "precommit stops vesting funds in version 7",
-		version:             network.Version7,
-		expectedPledgeDelta: abi.NewTokenAmount(0),
-		sealProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-	}, {
 		name:                "precommit does not vest funds in version 8",
 		version:             network.Version8,
 		expectedPledgeDelta: abi.NewTokenAmount(0),
@@ -862,17 +825,7 @@ func TestCommitments(t *testing.T) {
 
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
-		// Too big at version 4
 		proveCommit := makeProveCommit(sectorNo)
-		proveCommit.Proof = make([]byte, 1920)
-		rt.SetNetworkVersion(network.Version4)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
-		})
-		rt.Reset()
-
-		// Good proof at version 5
-		rt.SetNetworkVersion(network.Version5)
 		actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
 		st := getState(rt)
 
@@ -899,17 +852,7 @@ func TestCommitments(t *testing.T) {
 		vestingPledgeDelta abi.TokenAmount
 		sealProofType      abi.RegisteredSealProof
 	}{{
-		name:               "verify proof vests funds in network version 6",
-		version:            network.Version6,
-		vestingPledgeDelta: abi.NewTokenAmount(-1000),
-		sealProofType:      abi.RegisteredSealProof_StackedDrg32GiBV1,
-	}, {
-		name:               "verify proof does not vest starting version 7",
-		version:            network.Version7,
-		vestingPledgeDelta: abi.NewTokenAmount(0),
-		sealProofType:      abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-	}, {
-		name:               "verify proof still does not vest at version 7",
+		name:               "verify proof does not vest at version 8",
 		version:            network.Version8,
 		vestingPledgeDelta: abi.NewTokenAmount(0),
 		sealProofType:      abi.RegisteredSealProof_StackedDrg32GiBV1_1,
@@ -1056,28 +999,6 @@ func TestCommitments(t *testing.T) {
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
-
-		// Before version 7, V1 ok, V1_1 rejected
-		{
-			pc := actor.makePreCommit(101, challengeEpoch, expiration, nil)
-			pc.SealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				actor.preCommitSector(rt, pc, preCommitConf{})
-			})
-			rt.Reset()
-			pc.SealProof = abi.RegisteredSealProof_StackedDrg32GiBV1
-			actor.preCommitSector(rt, pc, preCommitConf{})
-		}
-		{
-			// At version 7, both are accepted
-			rt.SetNetworkVersion(network.Version7)
-			pc := actor.makePreCommit(102, challengeEpoch, expiration, nil)
-			pc.SealProof = abi.RegisteredSealProof_StackedDrg32GiBV1
-			actor.preCommitSector(rt, pc, preCommitConf{})
-			pc3 := actor.makePreCommit(103, challengeEpoch, expiration, nil)
-			pc.SealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
-			actor.preCommitSector(rt, pc3, preCommitConf{})
-		}
 		{
 			// After version 7, only V1_1 accepted
 			rt.SetNetworkVersion(network.Version8)
@@ -1939,71 +1860,6 @@ func TestCCUpgrade(t *testing.T) {
 		assert.Equal(t, st.InitialPledge, big.Add(newSector1.InitialPledge, newSector2.InitialPledge))
 		actor.checkState(rt)
 	})
-
-	t.Run("upgrade seal proof type", func(t *testing.T) {
-		actor := newHarness(t, periodOffset)
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-		rt := builderForHarness(actor).
-			WithBalance(bigBalance, big.Zero()).
-			Build(t)
-		rt.SetNetworkVersion(network.Version7) // Version 7 allows both seal proof types
-		actor.constructAndVerify(rt)
-
-		// Commit and prove first sector with V1
-		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
-		oldSector := actor.commitAndProveSector(rt, 101, defaultSectorExpiration, nil)
-		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, oldSector.SealProof)
-		advanceAndSubmitPoSts(rt, actor, oldSector)
-
-		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
-		require.NoError(t, err)
-
-		// Commit and prove upgrade sector with V1_1
-		challengeEpoch := rt.Epoch() - 1
-		upgradeParams := actor.makePreCommit(102, challengeEpoch, oldSector.Expiration, []abi.DealID{1})
-		upgradeParams.SealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
-		upgradeParams.ReplaceCapacity = true
-		upgradeParams.ReplaceSectorDeadline = dlIdx
-		upgradeParams.ReplaceSectorPartition = pIdx
-		upgradeParams.ReplaceSectorNumber = oldSector.SectorNumber
-		upgrade := actor.preCommitSector(rt, upgradeParams, preCommitConf{})
-
-		// Prove new sector
-		rt.SetEpoch(upgrade.PreCommitEpoch + miner.PreCommitChallengeDelay + 1)
-		newSector := actor.proveCommitSectorAndConfirm(rt, upgrade, makeProveCommit(upgrade.Info.SectorNumber), proveCommitConf{})
-		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1_1, newSector.SealProof)
-
-		// Both sectors are present (in the same deadline/partition).
-		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
-		assert.Equal(t, uint64(2), deadline.TotalSectors)
-		assert.Equal(t, uint64(2), deadline.LiveSectors)
-		assertBitfieldEquals(t, partition.Sectors, uint64(newSector.SectorNumber), uint64(oldSector.SectorNumber))
-
-		// Roll forward to the beginning of the next iteration of this deadline
-		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
-		advanceToEpochWithCron(rt, actor, dlInfo.NextNotElapsed().Open)
-		dlInfo = actor.deadline(rt)
-
-		// Submit post for both sectors, new sector gains power.
-		// Note that this PoSt is over two sectors with different seal proof types (but compatible Window PoSt parameters).
-		newPower := miner.PowerForSector(actor.sectorSize, newSector)
-		partitions := []miner.PoStPartition{
-			{Index: pIdx, Skipped: bitfield.New()},
-		}
-		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{oldSector, newSector}, &poStConfig{
-			expectedPowerDelta: newPower,
-		})
-
-		// At deadline cron, old sector expires.
-		expectedPowerDelta := miner.PowerForSector(actor.sectorSize, oldSector).Neg()
-		actor.onDeadlineCron(rt, &cronConfig{
-			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
-			expiredSectorsPowerDelta:  &expectedPowerDelta,
-			expectedEnrollment:        dlInfo.Last() + miner.WPoStChallengeWindow,
-		})
-		actor.checkState(rt)
-	})
 }
 
 func TestWindowPost(t *testing.T) {
@@ -2095,28 +1951,13 @@ func TestWindowPost(t *testing.T) {
 		expectQueryNetworkInfo(rt, actor)
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 
-		{
-			// Before version 7, the rejection is a side-effect of there being no active sectors after
-			// the duplicate is ignored.
-			rt.SetNetworkVersion(network.Version6)
-			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
-			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
-				rt.Call(actor.a.SubmitWindowedPoSt, &params)
-			})
-			rt.Reset()
-		}
-
-		{
-			// From version 7, a duplicate is explicitly rejected.
-			rt.SetNetworkVersion(network.Version7)
-			rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
-			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
-			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
-				rt.Call(actor.a.SubmitWindowedPoSt, &params)
-			})
-			rt.Reset()
-		}
+		// From version 7, a duplicate is explicitly rejected.
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+		rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, dlinfo.Challenge, nil, commitRand)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
+			rt.Call(actor.a.SubmitWindowedPoSt, &params)
+		})
+		rt.Reset()
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -2167,21 +2008,7 @@ func TestWindowPost(t *testing.T) {
 			sectorsToProve := append(sectors[:actor.partitionSize], lastSector)
 			pwr := miner.PowerForSectors(actor.sectorSize, sectorsToProve)
 
-			// Before network version 6, the miner would silently drop the sector infos for the partition already
-			// proven. This means that the sectors provided for verification would not match the sectors from
-			// which the proof was constructed by the miner worker, so will be rejected.
-			rt.SetNetworkVersion(network.Version6)
-			sectorsSubmitted := []*miner.SectorOnChainInfo{lastSector} // Doesn't match partitions
-			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid PoSt", func() {
-				actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsSubmitted, &poStConfig{
-					expectedPowerDelta: miner.NewPowerPairZero(),
-					verificationError:  fmt.Errorf("wrong sectors"),
-				})
-			})
-			rt.Reset()
-
 			// From network version 7, the miner outright rejects attempts to prove a partition twice.
-			rt.SetNetworkVersion(network.Version7)
 			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "partition already proven", func() {
 				actor.submitWindowPoSt(rt, dlinfo, partitions, sectorsToProve, &poStConfig{
 					expectedPowerDelta: pwr,
@@ -3074,44 +2901,6 @@ func TestExtendSectorExpiration(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("fails to update deadline expiration queue until nv=7", func(t *testing.T) {
-		rt := builder.Build(t)
-		rt.SetNetworkVersion(network.Version6)
-		// set actor to use proof type valid for nv=6
-		proofTypeDefault := actor.sealProofType
-		actor.sealProofType = abi.RegisteredSealProof_StackedDrg32GiBV1
-		defer func() {
-			actor.sealProofType = proofTypeDefault
-		}()
-		oldSector := commitSector(t, rt)
-		advanceAndSubmitPoSts(rt, actor, oldSector)
-
-		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
-		require.NoError(t, err)
-
-		extension := 42 * miner.WPoStProvingPeriod
-		newExpiration := oldSector.Expiration + extension
-		params := &miner.ExtendSectorExpirationParams{
-			Extensions: []miner.ExpirationExtension{{
-				Deadline:      dlIdx,
-				Partition:     pIdx,
-				Sectors:       bf(uint64(oldSector.SectorNumber)),
-				NewExpiration: newExpiration,
-			}},
-		}
-
-		actor.extendSectors(rt, params)
-
-		// ExtendSectorExpiration fails to update the deadline expiration queue.
-		st = getState(rt)
-		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
-		assert.Equal(t, 2, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
-		for _, msg := range msgs.Messages() {
-			assert.True(t, strings.Contains(msg, "at epoch 668439"))
-		}
-	})
-
 	t.Run("updates many sectors", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -3509,7 +3298,7 @@ func TestRepayDebts(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		rewardAmount := big.Mul(big.NewInt(4), big.NewInt(1e18))
-		amountLocked, _ := miner.LockedRewardFromReward(rewardAmount, rt.NetworkVersion())
+		amountLocked, _ := miner.LockedRewardFromReward(rewardAmount)
 		rt.SetBalance(amountLocked)
 		actor.applyRewards(rt, rewardAmount, big.Zero())
 		require.Equal(t, amountLocked, actor.getLockedFunds(rt))
@@ -4383,31 +4172,16 @@ func TestApplyRewards(t *testing.T) {
 		WithBalance(bigBalance, big.Zero())
 
 	t.Run("funds are locked", func(t *testing.T) {
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-		{
-			rt := builder.Build(t)
-			rt.SetNetworkVersion(network.Version5)
-			actor.constructAndVerify(rt)
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
 
-			rwd := abi.NewTokenAmount(1_000_000)
-			actor.applyRewards(rt, rwd, big.Zero())
+		rwd := abi.NewTokenAmount(1_000_000)
+		actor.applyRewards(rt, rwd, big.Zero())
 
-			assert.Equal(t, rwd, actor.getLockedFunds(rt))
-		}
-		{
-			rt := builder.Build(t)
-			rt.SetNetworkVersion(network.Version6)
-			actor.constructAndVerify(rt)
-
-			rwd := abi.NewTokenAmount(1_000_000)
-			actor.applyRewards(rt, rwd, big.Zero())
-
-			expected := abi.NewTokenAmount(750_000)
-			assert.Equal(t, expected, actor.getLockedFunds(rt))
-		}
+		expected := abi.NewTokenAmount(750_000)
+		assert.Equal(t, expected, actor.getLockedFunds(rt))
 	})
 
-	actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
 	t.Run("funds vest", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -4446,7 +4220,7 @@ func TestApplyRewards(t *testing.T) {
 			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
-		lockedAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
+		lockedAmt, _ := miner.LockedRewardFromReward(amt)
 		assert.Equal(t, lockedAmt, st.LockedFunds)
 		actor.checkState(rt)
 	})
@@ -4460,7 +4234,7 @@ func TestApplyRewards(t *testing.T) {
 		rt.SetBalance(big.Add(rt.Balance(), rwd))
 		actor.applyRewards(rt, rwd, penalty)
 
-		expectedLockAmt, _ := miner.LockedRewardFromReward(rwd, rt.NetworkVersion())
+		expectedLockAmt, _ := miner.LockedRewardFromReward(rwd)
 		expectedLockAmt = big.Sub(expectedLockAmt, penalty)
 		assert.Equal(t, expectedLockAmt, actor.getLockedFunds(rt))
 
@@ -4530,7 +4304,7 @@ func TestApplyRewards(t *testing.T) {
 
 		// pledge change is new reward - reward taken for fee debt
 		// 3*LockedRewardFactor*amt - 2*amt = remainingLocked
-		lockedReward, _ := miner.LockedRewardFromReward(reward, rt.NetworkVersion())
+		lockedReward, _ := miner.LockedRewardFromReward(reward)
 		remainingLocked := big.Sub(lockedReward, st.FeeDebt) // note that this would be clamped at 0 if difference above is < 0
 		pledgeDelta := remainingLocked
 		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
@@ -5606,7 +5380,7 @@ func (h *actorHarness) applyRewards(rt *mock.Runtime, amt, penalty abi.TokenAmou
 	// We further assume the miner can pay the penalty.  If the miner
 	// goes into debt we can't rely on the harness call
 	// TODO unify those cases
-	lockAmt, _ := miner.LockedRewardFromReward(amt, rt.NetworkVersion())
+	lockAmt, _ := miner.LockedRewardFromReward(amt)
 	pledgeDelta := big.Sub(lockAmt, penalty)
 
 	rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
@@ -5983,7 +5757,7 @@ func makeDeadlineCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power.Enro
 func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	return &miner.ProveCommitSectorParams{
 		SectorNumber: sectorNo,
-		Proof:        []byte("proof"),
+		Proof:        make([]byte, 1920),
 	}
 }
 
