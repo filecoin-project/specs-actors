@@ -497,22 +497,22 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 		// TODO: move into deadline state function.
 		{
 			// Load the target state.
-			deadlines, err := st.LoadDeadlines(store)
+			deadlinesCurrent, err := st.LoadDeadlines(store)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-			dl, err := deadlines.LoadDeadline(store, params.Deadline)
+			dlCurrent, err := deadlinesCurrent.LoadDeadline(store, params.Deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline")
 
-			proofs, err := adt.AsArray(store, dl.ProofsSnapshot)
+			proofsSnapshot, err := adt.AsArray(store, dlCurrent.PoStSubmissionsSnapshot)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
 
-			partitionsSnapshot, err := adt.AsArray(store, dl.PartitionsSnapshot)
+			partitionsSnapshot, err := adt.AsArray(store, dlCurrent.PartitionsSnapshot)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
 
 			// Load the target proof.
 			var post WindowedPoSt
-			found, err := proofs.Get(params.ProofIndex, &post)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof")
+			found, err := proofsSnapshot.Get(params.ProofIndex, &post)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof %d", params.ProofIndex)
 			if !found {
 				rt.Abortf(exitcode.ErrIllegalArgument, "failed to find post %d", params.ProofIndex)
 			}
@@ -520,20 +520,20 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			var allSectors, allIgnored []bitfield.BitField
 			faults := make(PartitionSectorMap)
 			err = post.Partitions.ForEach(func(partIdx uint64) error {
-				var partition Partition
-				if found, err := partitionsSnapshot.Get(partIdx, &partition); err != nil {
+				var partitionSnapshot Partition
+				if found, err := partitionsSnapshot.Get(partIdx, &partitionSnapshot); err != nil {
 					return err
 				} else if !found {
 					return exitcode.ErrIllegalState.Wrapf("failed to find partition when challenging proof %d", params.ProofIndex)
 				}
 
 				// Record sectors for proof verification
-				allSectors = append(allSectors, partition.Sectors)
-				allIgnored = append(allIgnored, partition.Faults)
-				allIgnored = append(allIgnored, partition.Terminated)
+				allSectors = append(allSectors, partitionSnapshot.Sectors)
+				allIgnored = append(allIgnored, partitionSnapshot.Faults)
+				allIgnored = append(allIgnored, partitionSnapshot.Terminated)
 
 				// Record active sectors for marking faults.
-				active, err := partition.ActiveSectors()
+				active, err := partitionSnapshot.ActiveSectors()
 				if err != nil {
 					return err
 				}
@@ -547,9 +547,8 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 				// NOTE: This also includes power that was
 				// activated at the end of the last challenge
 				// window, and power from sectors that have since
-				// expired. That means we may end up over-penalizing,
-				// but that's fine. The miner submitted a bad proof.
-				faultyPower = faultyPower.Add(partition.ActivePower())
+				// expired.
+				faultyPower = faultyPower.Add(partitionSnapshot.ActivePower())
 				return nil
 			})
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
@@ -561,7 +560,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge fault bitfields")
 
 			// Load sectors as seen at the end of the last proving period.
-			sectorsSnapshot, err := LoadSectors(store, dl.SectorsSnapshot)
+			sectorsSnapshot, err := LoadSectors(store, dlCurrent.SectorsSnapshot)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 			sectorInfos, err := sectorsSnapshot.LoadForProof(allSectorsNos, allIgnoredNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post challenge")
@@ -597,18 +596,18 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			sectors, err := LoadSectors(store, st.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			powerDelta, err = dl.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
+			powerDelta, err = dlCurrent.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
 
 			// Delete challenged proof so it can't be charged multiple times.
-			err = proofs.Delete(params.ProofIndex)
+			err = proofsSnapshot.Delete(params.ProofIndex)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete challenged proof")
-			dl.ProofsSnapshot, err = proofs.Root()
+			dlCurrent.PoStSubmissionsSnapshot, err = proofsSnapshot.Root()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update proofs")
 
-			err = deadlines.UpdateDeadline(store, params.Deadline, dl)
+			err = deadlinesCurrent.UpdateDeadline(store, params.Deadline, dlCurrent)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
-			err = st.SaveDeadlines(store, deadlines)
+			err = st.SaveDeadlines(store, deadlinesCurrent)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 		}
 
@@ -1456,7 +1455,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			deadlinePowerDelta, err := deadline.DeclareFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, pm)
+			deadlinePowerDelta, err := deadline.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, pm)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
 			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
@@ -1595,7 +1594,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		if !deadlineCanCompact(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
+		if !deadlineAvailableForCompaction(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
 				"cannot compact deadline %d during its challenge window, or the prior challenge window, or before %d epochs have passed since its last challenge window ended", params.Deadline, ChainFinality)
 		}

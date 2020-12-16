@@ -236,7 +236,7 @@ func (p *Partition) addFaults(
 // - The sectors' expirations are rescheduled to the fault expiration epoch, as "early" (if not expiring earlier).
 //
 // Returns the power of the now-faulty sectors.
-func (p *Partition) DeclareFaults(
+func (p *Partition) RecordFaults(
 	store adt.Store, sectors Sectors, sectorNos bitfield.BitField, faultExpirationEpoch abi.ChainEpoch,
 	ssize abi.SectorSize, quant QuantSpec,
 ) (newFaults bitfield.BitField, powerDelta, newFaultyPower PowerPair, err error) {

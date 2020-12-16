@@ -173,7 +173,7 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, proveFirst)
 
 		// Mark faulty.
-		powerDelta, err := dl.DeclareFaults(
+		powerDelta, err := dl.RecordFaults(
 			store, sectorsArr(t, store, sectors), sectorSize, quantSpec, 9,
 			map[uint64]bitfield.BitField{
 				0: bf(1),
@@ -742,7 +742,7 @@ func TestDeadlines(t *testing.T) {
 		}))
 
 		// Retract recovery for sector 1.
-		powerDelta, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]bitfield.BitField{
+		powerDelta, err := dl.RecordFaults(store, sectorArr, sectorSize, quantSpec, 13, map[uint64]bitfield.BitField{
 			0: bf(1),
 		})
 
@@ -848,7 +848,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, allSectors)
 
 		// Declare sectors 1 & 6 faulty.
-		_, err := dl.DeclareFaults(store, sectorArr, sectorSize, quantSpec, 17, map[uint64]bitfield.BitField{
+		_, err := dl.RecordFaults(store, sectorArr, sectorSize, quantSpec, 17, map[uint64]bitfield.BitField{
 			0: bf(1),
 			4: bf(6),
 		})
@@ -951,7 +951,7 @@ func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.D
 	assertBitfieldsEqual(t, s.recovering, recoveries)
 	assertBitfieldsEqual(t, s.terminations, terminations)
 	assertBitfieldsEqual(t, s.unproven, unproven)
-	assertBitfieldsEqual(t, s.posts, dl.PostSubmissions)
+	assertBitfieldsEqual(t, s.posts, dl.PartitionsPoSted)
 
 	partitions, err := dl.PartitionsArray(store)
 	require.NoError(t, err)

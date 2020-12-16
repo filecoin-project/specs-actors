@@ -134,7 +134,7 @@ func TestConstruction(t *testing.T) {
 			rt.StoreGet(deadlines.Due[i], &deadline)
 			assert.True(t, deadline.Partitions.Defined())
 			assert.True(t, deadline.ExpirationsEpochs.Defined())
-			assertEmptyBitfield(t, deadline.PostSubmissions)
+			assertEmptyBitfield(t, deadline.PartitionsPoSted)
 			assertEmptyBitfield(t, deadline.EarlyTerminations)
 			assert.Equal(t, uint64(0), deadline.LiveSectors)
 		}
@@ -493,7 +493,7 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
 		assert.Equal(t, uint64(1), deadline.LiveSectors)
-		assertEmptyBitfield(t, deadline.PostSubmissions)
+		assertEmptyBitfield(t, deadline.PartitionsPoSted)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
 		quant := st.QuantSpecForDeadline(dlIdx)
@@ -1219,7 +1219,7 @@ func TestCCUpgrade(t *testing.T) {
 			require.NoError(t, err)
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
-			newFaults, _, _, err := partition.DeclareFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
+			newFaults, _, _, err := partition.RecordFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
 				actor.sectorSize, quant)
 			require.NoError(t, err)
 			assertBitfieldEquals(t, newFaults, uint64(oldSectors[0].SectorNumber))
@@ -1898,7 +1898,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Verify proof recorded
 		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -1934,7 +1934,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Verify proof recorded
 		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
 
 		// Submit a duplicate proof for the same partition. This will be rejected because after ignoring the
 		// already-proven partition, there are no sectors remaining.
@@ -1999,7 +1999,7 @@ func TestWindowPost(t *testing.T) {
 			})
 			// Verify proof recorded
 			deadline := actor.getDeadline(rt, dlIdx)
-			assertBitfieldEquals(t, deadline.PostSubmissions, 0)
+			assertBitfieldEquals(t, deadline.PartitionsPoSted, 0)
 		}
 		{
 			// Attempt PoSt for both partitions, thus duplicating proof for partition 0, so rejected
@@ -2030,7 +2030,7 @@ func TestWindowPost(t *testing.T) {
 			})
 			// Verify both proofs now recorded
 			deadline := actor.getDeadline(rt, dlIdx)
-			assertBitfieldEquals(t, deadline.PostSubmissions, 0, 1)
+			assertBitfieldEquals(t, deadline.PartitionsPoSted, 0, 1)
 		}
 
 		// Advance to end-of-deadline cron to verify no penalties.

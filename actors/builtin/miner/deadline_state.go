@@ -53,29 +53,42 @@ type Deadline struct {
 	// Memoized sum of faulty power in partitions.
 	FaultyPower PowerPair
 
-	// Bitfield of partitions that have been posted.
-	PostSubmissions bitfield.BitField
+	// Partitions that have been proved by window PoSts so far during the
+	// current challenge window.
+	//
+	// Except during the challenge window immediately following the actors
+	// v3 upgrade, all partitions marked in this bitfield must also be
+	// marked in one of the "Partitions" bitfields in the Proofs AMT. This
+	// bitfield exists so we can efficiently determine which partitions have
+	// been proven, while the per-proof bitfields exist so that proofs can
+	// be challenged later.
+	PartitionsPoSted bitfield.BitField
 
 	// AMT of WindowPoSt proofs.
 	// TODO: this AMT could be inefficient. The proof will be ~200 bytes so
 	// we could end up writing ~1600 bytes to update this AMT.
 	// We could also mis-estimate gas, so we need to be very careful here.
-	Proofs cid.Cid // AMT[]WindowedPoSt
+	PoStSubmissions cid.Cid // AMT[]WindowedPoSt
 
 	// Snapshot of partition state at the end of the previous challenge
 	// window for this deadline.
 	PartitionsSnapshot cid.Cid
 	// Snapshot of the proofs submitted by the end of the previous challenge
 	// window for this deadline.
-	ProofsSnapshot cid.Cid
+	PoStSubmissionsSnapshot cid.Cid
 	// Snapshot of the miner's sectors at the end of the previous challenge
 	// window for this deadline.
 	SectorsSnapshot cid.Cid
 }
 
 type WindowedPoSt struct {
+	// Partitions proved by this WindowedPoSt.
 	Partitions bitfield.BitField
-	Proofs     []proof.PoStProof
+	// Array of proofs, one per distinct registered proof type present in
+	// the sectors being proven. In the usual case of a single proof type,
+	// this array will always have a single element (independent of number
+	// of partitions).
+	Proofs []proof.PoStProof
 }
 
 const DeadlinePartitionsAmtBitwidth = 3
@@ -163,17 +176,17 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 	}
 
 	return &Deadline{
-		Partitions:         emptyPartitionsArrayCid,
-		ExpirationsEpochs:  emptyDeadlineExpirationArrayCid,
-		EarlyTerminations:  bitfield.New(),
-		LiveSectors:        0,
-		TotalSectors:       0,
-		FaultyPower:        NewPowerPairZero(),
-		PostSubmissions:    bitfield.New(),
-		Proofs:             emptyProofsArrayCid,
-		PartitionsSnapshot: emptyPartitionsArrayCid,
-		SectorsSnapshot:    emptySectorsArrayCid,
-		ProofsSnapshot:     emptyProofsArrayCid,
+		Partitions:              emptyPartitionsArrayCid,
+		ExpirationsEpochs:       emptyDeadlineExpirationArrayCid,
+		EarlyTerminations:       bitfield.New(),
+		LiveSectors:             0,
+		TotalSectors:            0,
+		FaultyPower:             NewPowerPairZero(),
+		PartitionsPoSted:        bitfield.New(),
+		PoStSubmissions:         emptyProofsArrayCid,
+		PartitionsSnapshot:      emptyPartitionsArrayCid,
+		SectorsSnapshot:         emptySectorsArrayCid,
+		PoStSubmissionsSnapshot: emptyProofsArrayCid,
 	}, nil
 }
 
@@ -725,7 +738,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 	return live, dead, removedPower, nil
 }
 
-func (dl *Deadline) DeclareFaults(
+func (dl *Deadline) RecordFaults(
 	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
 	faultExpirationEpoch abi.ChainEpoch, partitionSectors PartitionSectorMap,
 ) (powerDelta PowerPair, err error) {
@@ -746,7 +759,7 @@ func (dl *Deadline) DeclareFaults(
 			return xc.ErrNotFound.Wrapf("no such partition %d", partIdx)
 		}
 
-		newFaults, partitionPowerDelta, partitionNewFaultyPower, err := partition.DeclareFaults(
+		newFaults, partitionPowerDelta, partitionNewFaultyPower, err := partition.RecordFaults(
 			store, sectors, sectorNos, faultExpirationEpoch, ssize, quant,
 		)
 		if err != nil {
@@ -839,7 +852,7 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	detectedAny := false
 	var rescheduledPartitions []uint64
 	for partIdx := uint64(0); partIdx < partitions.Length(); partIdx++ {
-		proven, err := dl.PostSubmissions.IsSet(partIdx)
+		proven, err := dl.PartitionsPoSted.IsSet(partIdx)
 		if err != nil {
 			return powerDelta, penalizedPower, xerrors.Errorf("failed to check submission for partition %d: %w", partIdx, err)
 		}
@@ -903,10 +916,10 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	}
 
 	// Reset PoSt submissions, snapshot proofs.
-	dl.PostSubmissions = bitfield.New()
+	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
-	dl.ProofsSnapshot = dl.Proofs
-	dl.Proofs, err = adt.MakeEmptyArray(store).Root()
+	dl.PoStSubmissionsSnapshot = dl.PoStSubmissions
+	dl.PoStSubmissions, err = adt.MakeEmptyArray(store).Root()
 	if err != nil {
 		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 	}
@@ -952,7 +965,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 	// First check to see if we're proving any already proven partitions.
 	// This is faster than checking one by one.
-	if alreadyProven, err := bitfield.IntersectBitField(dl.PostSubmissions, partitionIndexes); err != nil {
+	if alreadyProven, err := bitfield.IntersectBitField(dl.PartitionsPoSted, partitionIndexes); err != nil {
 		return nil, xerrors.Errorf("failed to check proven partitions: %w", err)
 	} else if empty, err := alreadyProven.IsEmpty(); err != nil {
 		return nil, xerrors.Errorf("failed to check proven intersection is empty: %w", err)
@@ -1018,7 +1031,7 @@ func (dl *Deadline) RecordProvenSectors(
 		powerDelta = powerDelta.Add(newPowerDelta).Add(recoveredPower)
 
 		// Record the post.
-		dl.PostSubmissions.Set(post.Index)
+		dl.PartitionsPoSted.Set(post.Index)
 
 		// At this point, the partition faults represents the expected faults for the proof, with new skipped
 		// faults and recoveries taken into account.
@@ -1041,14 +1054,14 @@ func (dl *Deadline) RecordProvenSectors(
 	}
 
 	// Save proof.
-	if proofArr, err := adt.AsArray(store, dl.Proofs); err != nil {
+	if proofArr, err := adt.AsArray(store, dl.PoStSubmissions); err != nil {
 		return nil, xerrors.Errorf("failed to load proofs: %w", err)
 	} else if err := proofArr.AppendContinuous(&WindowedPoSt{
 		Partitions: partitionIndexes,
 		Proofs:     proofs,
 	}); err != nil {
 		return nil, xerrors.Errorf("failed to store proof: %w", err)
-	} else if dl.Proofs, err = proofArr.Root(); err != nil {
+	} else if dl.PoStSubmissions, err = proofArr.Root(); err != nil {
 		return nil, xerrors.Errorf("failed to save proofs: %w", err)
 	}
 

@@ -202,15 +202,15 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	acc.RequireNoError(err, "error iterating partitions")
 
 	// Check PoSt submissions
-	if postSubmissions, err := deadline.PostSubmissions.All(1 << 20); err != nil {
+	if postSubmissions, err := deadline.PartitionsPoSted.All(1 << 20); err != nil {
 		acc.Addf("error expanding post submissions: %v", err)
 	} else {
 		for _, p := range postSubmissions {
 			acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
 		}
 
-		expectedPoSts := deadline.PostSubmissions
-		proofs, err := adt.AsArray(store, deadline.Proofs)
+		expectedPoSts := deadline.PartitionsPoSted
+		proofs, err := adt.AsArray(store, deadline.PoStSubmissions)
 		acc.RequireNoError(err, "failed to load proofs")
 		var post WindowedPoSt
 		err = proofs.ForEach(&post, func(idx int64) error {

@@ -801,15 +801,15 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PostSubmissions (bitfield.BitField) (struct)
-	if err := t.PostSubmissions.MarshalCBOR(w); err != nil {
+	// t.PartitionsPoSted (bitfield.BitField) (struct)
+	if err := t.PartitionsPoSted.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.Proofs (cid.Cid) (struct)
+	// t.PoStSubmissions (cid.Cid) (struct)
 
-	if err := cbg.WriteCidBuf(scratch, w, t.Proofs); err != nil {
-		return xerrors.Errorf("failed to write cid field t.Proofs: %w", err)
+	if err := cbg.WriteCidBuf(scratch, w, t.PoStSubmissions); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PoStSubmissions: %w", err)
 	}
 
 	// t.PartitionsSnapshot (cid.Cid) (struct)
@@ -818,10 +818,10 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.PartitionsSnapshot: %w", err)
 	}
 
-	// t.ProofsSnapshot (cid.Cid) (struct)
+	// t.PoStSubmissionsSnapshot (cid.Cid) (struct)
 
-	if err := cbg.WriteCidBuf(scratch, w, t.ProofsSnapshot); err != nil {
-		return xerrors.Errorf("failed to write cid field t.ProofsSnapshot: %w", err)
+	if err := cbg.WriteCidBuf(scratch, w, t.PoStSubmissionsSnapshot); err != nil {
+		return xerrors.Errorf("failed to write cid field t.PoStSubmissionsSnapshot: %w", err)
 	}
 
 	// t.SectorsSnapshot (cid.Cid) (struct)
@@ -921,25 +921,25 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PostSubmissions (bitfield.BitField) (struct)
+	// t.PartitionsPoSted (bitfield.BitField) (struct)
 
 	{
 
-		if err := t.PostSubmissions.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PostSubmissions: %w", err)
+		if err := t.PartitionsPoSted.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.PartitionsPoSted: %w", err)
 		}
 
 	}
-	// t.Proofs (cid.Cid) (struct)
+	// t.PoStSubmissions (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.Proofs: %w", err)
+			return xerrors.Errorf("failed to read cid field t.PoStSubmissions: %w", err)
 		}
 
-		t.Proofs = c
+		t.PoStSubmissions = c
 
 	}
 	// t.PartitionsSnapshot (cid.Cid) (struct)
@@ -954,16 +954,16 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		t.PartitionsSnapshot = c
 
 	}
-	// t.ProofsSnapshot (cid.Cid) (struct)
+	// t.PoStSubmissionsSnapshot (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.ProofsSnapshot: %w", err)
+			return xerrors.Errorf("failed to read cid field t.PoStSubmissionsSnapshot: %w", err)
 		}
 
-		t.ProofsSnapshot = c
+		t.PoStSubmissionsSnapshot = c
 
 	}
 	// t.SectorsSnapshot (cid.Cid) (struct)
