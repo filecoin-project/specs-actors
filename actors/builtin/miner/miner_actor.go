@@ -349,11 +349,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "expected at most %d bytes of randomness, got %d", abi.RandomnessLength, len(params.ChainCommitRand))
 	}
 
-	partitionIndexes := bitfield.New()
-	for _, partition := range params.Partitions {
-		partitionIndexes.Set(partition.Index)
-	}
-
 	var postResult *PoStResult
 	var info *MinerInfo
 	rt.StateTransaction(&st, func() {
