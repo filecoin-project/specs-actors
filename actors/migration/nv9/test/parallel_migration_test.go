@@ -48,7 +48,8 @@ func TestParallelMigrationCalls(t *testing.T) {
 
 	emptyMapCID, err := adt2.MakeEmptyMap(syncStore).Root()
 	require.NoError(t, err)
-	emptyArrayCID, err := adt2.MakeEmptyArray(syncStore).Root()
+	emptyArray := adt2.MakeEmptyArray(syncStore)
+	emptyArrayCID, err := emptyArray.Root()
 	require.NoError(t, err)
 	emptyMultimapCID, err := adt2.MakeEmptyMultimap(syncStore).Root()
 	require.NoError(t, err)

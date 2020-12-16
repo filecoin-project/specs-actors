@@ -61,8 +61,10 @@ func (pca *Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *ab
 	from, err := pca.resolveAccount(rt, params.From)
 	builtin.RequireNoErr(rt, err, exitcode.Unwrap(err, exitcode.ErrIllegalState), "failed to resolve from address: %s", params.From)
 
-	emptyArrCid, err := adt.MakeEmptyArray(adt.AsStore(rt)).Root()
+	emptyArr, err := adt.MakeEmptyArray(adt.AsStore(rt), LaneStatesAmtBitwidth)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty array")
+	emptyArrCid, err := emptyArr.Root()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to persist empty array")
 
 	st := ConstructState(from, to, emptyArrCid)
 	rt.StateCreate(st)
@@ -223,7 +225,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 	rt.StateTransaction(&st, func() {
 		laneFound := true
 
-		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates)
+		lstates, err := adt.AsArray(adt.AsStore(rt), st.LaneStates, LaneStatesAmtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load lanes")
 
 		// Find the voucher lane, creating if necessary.

@@ -82,10 +82,16 @@ func TestMarketActor(t *testing.T) {
 
 		store := adt.AsStore(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+		emptyBalanceTable, err := adt.StoreEmptyMap(store, adt.BalanceTableBitwidth)
 		assert.NoError(t, err)
 
-		emptyArray, err := adt.MakeEmptyArray(store).Root()
+		emptyMap, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
+		assert.NoError(t, err)
+
+		emptyProposalsArrayCid, err := adt.StoreEmptyArray(store, market.ProposalsAmtBitwidth)
+		assert.NoError(t, err)
+
+		emptyStatesArrayCid, err := adt.StoreEmptyArray(store, market.StatesAmtBitwidth)
 		assert.NoError(t, err)
 
 		emptyMultiMap, err := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
@@ -94,10 +100,11 @@ func TestMarketActor(t *testing.T) {
 		var state market.State
 		rt.GetState(&state)
 
-		assert.Equal(t, emptyArray, state.Proposals)
-		assert.Equal(t, emptyArray, state.States)
-		assert.Equal(t, emptyMap, state.EscrowTable)
-		assert.Equal(t, emptyMap, state.LockedTable)
+		assert.Equal(t, emptyProposalsArrayCid, state.Proposals)
+		assert.Equal(t, emptyStatesArrayCid, state.States)
+		assert.Equal(t, emptyMap, state.PendingProposals)
+		assert.Equal(t, emptyBalanceTable, state.EscrowTable)
+		assert.Equal(t, emptyBalanceTable, state.LockedTable)
 		assert.Equal(t, abi.DealID(0), state.NextID)
 		assert.Equal(t, emptyMultiMap, state.DealOpsByEpoch)
 		assert.Equal(t, abi.ChainEpoch(-1), state.LastCron)

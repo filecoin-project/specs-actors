@@ -13,7 +13,7 @@ import (
 )
 
 func LoadSectors(store adt.Store, root cid.Cid) (Sectors, error) {
-	sectorsArr, err := adt.AsArray(store, root)
+	sectorsArr, err := adt.AsArray(store, root, SectorsAmtBitwidth)
 	if err != nil {
 		return Sectors{}, err
 	}

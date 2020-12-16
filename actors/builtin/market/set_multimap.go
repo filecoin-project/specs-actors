@@ -3,7 +3,7 @@ package market
 import (
 	"reflect"
 
-	"github.com/filecoin-project/go-hamt-ipld/v2"
+	"github.com/filecoin-project/go-hamt-ipld/v3"
 	"github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
 	"github.com/pkg/errors"

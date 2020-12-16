@@ -119,7 +119,7 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, abi.ChainEpoch(1234), st.StartEpoch)
 
 		// assert no transactions
-		empty, err := adt.MakeEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth).Root()
+		empty, err := adt.StoreEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth)
 		require.NoError(t, err)
 		assert.Equal(t, empty, st.PendingTxns)
 

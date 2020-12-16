@@ -31,7 +31,7 @@ var MinVerifiedDealSize = abi.NewStoragePower(1 << 20)
 
 // rootKeyAddress comes from genesis.
 func ConstructState(store adt.Store, rootKeyAddress addr.Address) (*State, error) {
-	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}

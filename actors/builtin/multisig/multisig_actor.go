@@ -119,7 +119,7 @@ func (a Actor) Constructor(rt runtime.Runtime, params *ConstructorParams) *abi.E
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative unlock duration disallowed")
 	}
 
-	pending, err := adt.MakeEmptyMap(adt.AsStore(rt), builtin.DefaultHamtBitwidth).Root()
+	pending, err := adt.StoreEmptyMap(adt.AsStore(rt), builtin.DefaultHamtBitwidth)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to create empty map: %v", err)
 	}

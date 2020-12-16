@@ -77,6 +77,9 @@ type State struct {
 	EarlyTerminations bitfield.BitField
 }
 
+const PrecommitExpiryAmtBitwidth = 6
+const SectorsAmtBitwidth = 6
+
 type MinerInfo struct {
 	// Account that owns this miner.
 	// - Income and returned collateral are paid to this address.
@@ -165,20 +168,28 @@ type SectorOnChainInfo struct {
 }
 
 func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64) (*State, error) {
-	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyPrecommitMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
 	}
-	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	emptyPrecommitsExpiryArrayCid, err := adt.StoreEmptyArray(store, PrecommitExpiryAmtBitwidth)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to construct empty array: %w", err)
+		return nil, xerrors.Errorf("failed to construct empty precommits array: %w", err)
 	}
+	emptySectorsArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty sectors array: %w", err)
+	}
+
 	emptyBitfield := bitfield.NewFromSet(nil)
 	emptyBitfieldCid, err := store.Put(store.Context(), emptyBitfield)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty bitfield: %w", err)
 	}
-	emptyDeadline := ConstructDeadline(emptyArrayCid)
+	emptyDeadline, err := ConstructDeadline(store)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline: %w", err)
+	}
 	emptyDeadlineCid, err := store.Put(store.Context(), emptyDeadline)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty deadline: %w", err)
@@ -188,8 +199,7 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty deadlines: %w", err)
 	}
-	emptyVestingFunds := ConstructVestingFunds()
-	emptyVestingFundsCid, err := store.Put(store.Context(), emptyVestingFunds)
+	emptyVestingFundsCid, err := store.Put(store.Context(), ConstructVestingFunds())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty vesting funds: %w", err)
 	}
@@ -205,10 +215,10 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 
 		InitialPledge: abi.NewTokenAmount(0),
 
-		PreCommittedSectors:       emptyMapCid,
-		PreCommittedSectorsExpiry: emptyArrayCid,
+		PreCommittedSectors:       emptyPrecommitMapCid,
+		PreCommittedSectorsExpiry: emptyPrecommitsExpiryArrayCid,
 		AllocatedSectors:          emptyBitfieldCid,
-		Sectors:                   emptyArrayCid,
+		Sectors:                   emptySectorsArrayCid,
 		ProvingPeriodStart:        periodStart,
 		CurrentDeadline:           deadlineIndex,
 		Deadlines:                 emptyDeadlinesCid,
@@ -976,7 +986,7 @@ func (st *State) QuantSpecEveryDeadline() QuantSpec {
 func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
 	// Load BitField Queue for sector expiry
 	quant := st.QuantSpecEveryDeadline()
-	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant)
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant, PrecommitExpiryAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
 	}
@@ -998,7 +1008,7 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 	depositToBurn = abi.NewTokenAmount(0)
 
 	// expire pre-committed sectors
-	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline())
+	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline(), PrecommitExpiryAmtBitwidth)
 	if err != nil {
 		return depositToBurn, xerrors.Errorf("failed to load sector expiry queue: %w", err)
 	}

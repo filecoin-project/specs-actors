@@ -56,6 +56,9 @@ type Deadline struct {
 	FaultyPower PowerPair
 }
 
+const DeadlinePartitionsAmtBitwidth = 3
+const DeadlineExpirationAmtBitwidth = 5
+
 //
 // Deadlines (plural)
 //
@@ -116,20 +119,29 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 // Deadline (singular)
 //
 
-func ConstructDeadline(emptyArrayCid cid.Cid) *Deadline {
+func ConstructDeadline(store adt.Store) (*Deadline, error) {
+	emptyPartitionsArrayCid, err := adt.StoreEmptyArray(store, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty partitions array: %w", err)
+	}
+	emptyDeadlineExpirationArrayCid, err := adt.StoreEmptyArray(store, DeadlineExpirationAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
+	}
+
 	return &Deadline{
-		Partitions:        emptyArrayCid,
-		ExpirationsEpochs: emptyArrayCid,
+		Partitions:        emptyPartitionsArrayCid,
+		ExpirationsEpochs: emptyDeadlineExpirationArrayCid,
 		PostSubmissions:   bitfield.New(),
 		EarlyTerminations: bitfield.New(),
 		LiveSectors:       0,
 		TotalSectors:      0,
 		FaultyPower:       NewPowerPairZero(),
-	}
+	}, nil
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
-	arr, err := adt.AsArray(store, d.Partitions)
+	arr, err := adt.AsArray(store, d.Partitions, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
 	}
@@ -159,7 +171,7 @@ func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.
 		return nil
 	}
 
-	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs, quant)
+	queue, err := LoadBitfieldQueue(store, d.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load expiration queue: %w", err)
 	}
@@ -296,13 +308,11 @@ func (dl *Deadline) AddSectors(
 				return NewPowerPairZero(), err
 			} else if !found {
 				// This case will usually happen zero times.
-				// It would require adding more than a full partition in one go
-				// to happen more than once.
-				emptyArray, err := adt.MakeEmptyArray(store).Root()
+				// It would require adding more than a full partition in one go to happen more than once.
+				partition, err = ConstructPartition(store)
 				if err != nil {
 					return NewPowerPairZero(), err
 				}
-				partition = ConstructPartition(emptyArray)
 			}
 
 			// Figure out which (if any) sectors we want to add to this partition.
@@ -351,7 +361,7 @@ func (dl *Deadline) AddSectors(
 
 	// Next, update the expiration queue.
 	{
-		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+		deadlineExpirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 		if err != nil {
 			return NewPowerPairZero(), xerrors.Errorf("failed to load expiration epochs: %w", err)
 		}
@@ -448,7 +458,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSect
 
 // Returns nil if nothing was popped.
 func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (bitfield.BitField, bool, error) {
-	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 	if err != nil {
 		return bitfield.BitField{}, false, err
 	}
@@ -569,7 +579,10 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
 	}
 
-	newPartitions := adt.MakeEmptyArray(store)
+	newPartitions, err := adt.MakeEmptyArray(store, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to create empty array for initializing partitions: %w", err)
+	}
 	allDeadSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	allLiveSectors := make([]bitfield.BitField, 0, len(toRemoveSet))
 	removedPower = NewPowerPairZero()
@@ -656,7 +669,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 
 	// Update expiration bitfields.
 	{
-		expirationEpochs, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant)
+		expirationEpochs, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 		if err != nil {
 			return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to load expiration queue: %w", err)
 		}

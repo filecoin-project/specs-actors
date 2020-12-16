@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
+	hamt "github.com/filecoin-project/go-hamt-ipld/v3"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
@@ -46,8 +46,7 @@ func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
 	}, nil
 }
 
-// Creates a new map backed by an empty HAMT and flushes it to the store.
-// The hamt
+// Creates a new map backed by an empty HAMT.
 func MakeEmptyMap(s Store, bitwidth int) *Map {
 	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
 	nd := hamt.NewNode(s, options...)
@@ -56,6 +55,12 @@ func MakeEmptyMap(s Store, bitwidth int) *Map {
 		root:    nd,
 		store:   s,
 	}
+}
+
+// Creates and stores a new empty map, returning its CID.
+func StoreEmptyMap(s Store, bitwidth int) (cid.Cid, error) {
+	m := MakeEmptyMap(s, bitwidth)
+	return m.Root()
 }
 
 // Returns the root cid of underlying HAMT.

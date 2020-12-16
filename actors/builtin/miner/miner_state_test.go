@@ -603,7 +603,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 
 		// assert
 		quant := harness.s.QuantSpecEveryDeadline()
-		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant)
+		queue, err := miner.LoadBitfieldQueue(harness.store, harness.s.PreCommittedSectorsExpiry, quant, miner.PrecommitExpiryAmtBitwidth)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 1, queue.Length())

@@ -19,8 +19,8 @@ type BitfieldQueue struct {
 	quant QuantSpec
 }
 
-func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec) (BitfieldQueue, error) {
-	arr, err := adt.AsArray(store, root)
+func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec, bitwidth int) (BitfieldQueue, error) {
+	arr, err := adt.AsArray(store, root, bitwidth)
 	if err != nil {
 		return BitfieldQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
 	}

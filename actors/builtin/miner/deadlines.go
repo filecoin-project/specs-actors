@@ -28,7 +28,7 @@ func FindSector(store adt.Store, deadlines *Deadlines, sectorNum abi.SectorNumbe
 			return 0, 0, err
 		}
 
-		partitions, err := adt.AsArray(store, dl.Partitions)
+		partitions, err := adt.AsArray(store, dl.Partitions, DeadlinePartitionsAmtBitwidth)
 		if err != nil {
 			return 0, 0, err
 		}

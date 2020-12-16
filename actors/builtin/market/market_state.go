@@ -61,27 +61,36 @@ type State struct {
 }
 
 func ConstructState(store adt.Store) (*State, error) {
-	emptyArrayCid, err := adt.MakeEmptyArray(store).Root()
+	emptyProposalsArrayCid, err := adt.StoreEmptyArray(store, ProposalsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty array: %w", err)
 	}
-	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyStatesArrayCid, err := adt.StoreEmptyArray(store, StatesAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty states array: %w", err)
+	}
+
+	emptyPendingProposalsMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyMSetCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyDealOpsHamtCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
 	}
+	emptyBalanceTableCid, err := adt.StoreEmptyMap(store, adt.BalanceTableBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty balance table: %w", err)
+	}
 
 	return &State{
-		Proposals:        emptyArrayCid,
-		States:           emptyArrayCid,
-		PendingProposals: emptyMapCid,
-		EscrowTable:      emptyMapCid,
-		LockedTable:      emptyMapCid,
+		Proposals:        emptyProposalsArrayCid,
+		States:           emptyStatesArrayCid,
+		PendingProposals: emptyPendingProposalsMapCid,
+		EscrowTable:      emptyBalanceTableCid,
+		LockedTable:      emptyBalanceTableCid,
 		NextID:           abi.DealID(0),
-		DealOpsByEpoch:   emptyMSetCid,
+		DealOpsByEpoch:   emptyDealOpsHamtCid,
 		LastCron:         abi.ChainEpoch(-1),
 
 		TotalClientLockedCollateral:   abi.NewTokenAmount(0),

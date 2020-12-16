@@ -26,6 +26,14 @@ var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_SPEC
 // DealMaxLabelSize is the maximum size of a deal label.
 const DealMaxLabelSize = 256
 
+// Bitwidth of proposals AMT determined empirically from mutation patterns and
+// projections of mainnet data.
+const ProposalsAmtBitwidth = 5
+
+// Bitwidth of states AMT determined empirically from mutation patterns and
+// projections of mainnet data.
+const StatesAmtBitwidth = 6
+
 // Bounds (inclusive) on deal duration
 func DealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
 	return DealMinDuration, DealMaxDuration

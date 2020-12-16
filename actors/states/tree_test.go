@@ -175,7 +175,7 @@ func TestStateTreeConsistency(t *testing.T) {
 	require.NoError(t, err)
 
 	fmt.Println("root is: ", root)
-	if root.String() != "bafy2bzaceb2bhqw75pqp44efoxvlnm73lnctq6djair56bfn5x3gw56epcxbi" {
+	if root.String() != "bafy2bzacea3yrl2k3dyaifdkpign5muvfjavxntzt2mwl6golpwlz5sa4mpy2" {
 		t.Fatal("MISMATCH!")
 	}
 }

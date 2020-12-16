@@ -876,10 +876,9 @@ func TestDeadlines(t *testing.T) {
 }
 
 func emptyDeadline(t *testing.T, store adt.Store) *miner.Deadline {
-	root, err := adt.MakeEmptyArray(store).Root()
+	dl, err := miner.ConstructDeadline(store)
 	require.NoError(t, err)
-
-	return miner.ConstructDeadline(root)
+	return dl
 }
 
 // Helper type for validating deadline state.

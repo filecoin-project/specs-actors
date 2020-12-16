@@ -5,8 +5,10 @@ go 1.13
 require (
 	github.com/filecoin-project/go-address v0.0.3
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0
+	github.com/filecoin-project/go-amt-ipld/v3 v3.0.0-20201124192204-2b387ce1bab7
 	github.com/filecoin-project/go-bitfield v0.2.0
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0
+	github.com/filecoin-project/go-hamt-ipld/v3 v3.0.0-20201203140949-5cdbb5191437
 	github.com/filecoin-project/go-state-types v0.0.0-20201102161440-c8033295a1fc
 	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/filecoin-project/specs-actors/v2 v2.3.0
