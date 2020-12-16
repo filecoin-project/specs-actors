@@ -2280,7 +2280,7 @@ func challengeWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []
 	if err = rt.VerifyPoSt(pvInfo); err == nil {
 		rt.Abortf(exitcode.ErrIllegalArgument, "valid PoSt %+v", pvInfo)
 	} else {
-		rt.Log(rtt.WARN, "PoSt successfully challenged: %s", err)
+		rt.Log(rtt.INFO, "PoSt successfully challenged: %s", err)
 	}
 }
 
