@@ -439,7 +439,7 @@ func CheckPartitionStateInvariants(
 
 	// Validate the early termination queue.
 	earlyTerminationCount := 0
-	if earlyQ, err := LoadBitfieldQueue(store, partition.EarlyTerminated, NoQuantization, builtin.DefaultAmtBitwidth); err != nil {
+	if earlyQ, err := LoadBitfieldQueue(store, partition.EarlyTerminated, NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth); err != nil {
 		acc.Addf("error loading early termination queue: %v", err)
 	} else {
 		earlyTerminationCount = CheckEarlyTerminationQueue(earlyQ, partition.Terminated, acc)

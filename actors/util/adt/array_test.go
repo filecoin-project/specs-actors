@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/mock"
 )
@@ -15,7 +14,7 @@ import (
 func TestArrayNotFound(t *testing.T) {
 	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 	store := adt.AsStore(rt)
-	arr, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	arr, err := adt.MakeEmptyArray(store, 3)
 	require.NoError(t, err)
 
 	found, err := arr.Get(7, nil)

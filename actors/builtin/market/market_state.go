@@ -61,32 +61,24 @@ type State struct {
 }
 
 func ConstructState(store adt.Store) (*State, error) {
-	emptyProposalsArray, err := adt.MakeEmptyArray(store, ProposalsAmtBitwidth)
+	emptyProposalsArrayCid, err := adt.StoreEmptyArray(store, ProposalsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty array: %w", err)
 	}
-	emptyProposalsArrayCid, err := emptyProposalsArray.Root()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to persist empty array: %w", err)
-	}
-	emptyStatesArray, err := adt.MakeEmptyArray(store, StatesAmtBitwidth)
+	emptyStatesArrayCid, err := adt.StoreEmptyArray(store, StatesAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty states array: %w", err)
 	}
-	emptyStatesArrayCid, err := emptyStatesArray.Root()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to persist empty states array: %w", err)
-	}
 
-	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyPendingProposalsMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyMSetCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyDealOpsHamtCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
 	}
-	emptyBalanceTableCid, err := adt.MakeEmptyMap(store, adt.BalanceTableBitwidth).Root()
+	emptyBalanceTableCid, err := adt.StoreEmptyMap(store, adt.BalanceTableBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty balance table: %w", err)
 	}
@@ -94,11 +86,11 @@ func ConstructState(store adt.Store) (*State, error) {
 	return &State{
 		Proposals:        emptyProposalsArrayCid,
 		States:           emptyStatesArrayCid,
-		PendingProposals: emptyMapCid,
+		PendingProposals: emptyPendingProposalsMapCid,
 		EscrowTable:      emptyBalanceTableCid,
 		LockedTable:      emptyBalanceTableCid,
 		NextID:           abi.DealID(0),
-		DealOpsByEpoch:   emptyMSetCid,
+		DealOpsByEpoch:   emptyDealOpsHamtCid,
 		LastCron:         abi.ChainEpoch(-1),
 
 		TotalClientLockedCollateral:   abi.NewTokenAmount(0),

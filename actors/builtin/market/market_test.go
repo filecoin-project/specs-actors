@@ -82,22 +82,16 @@ func TestMarketActor(t *testing.T) {
 
 		store := adt.AsStore(rt)
 
-		emptyBalanceTable, err := adt.MakeEmptyMap(store, adt.BalanceTableBitwidth).Root()
+		emptyBalanceTable, err := adt.StoreEmptyMap(store, adt.BalanceTableBitwidth)
 		assert.NoError(t, err)
 
-		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+		emptyMap, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 		assert.NoError(t, err)
 
-		emptyProposalsArray, err := adt.MakeEmptyArray(store, market.ProposalsAmtBitwidth)
+		emptyProposalsArrayCid, err := adt.StoreEmptyArray(store, market.ProposalsAmtBitwidth)
 		assert.NoError(t, err)
 
-		emptyProposalsArrayCid, err := emptyProposalsArray.Root()
-		assert.NoError(t, err)
-
-		emptyStatesArray, err := adt.MakeEmptyArray(store, market.StatesAmtBitwidth)
-		assert.NoError(t, err)
-
-		emptyStatesArrayCid, err := emptyStatesArray.Root()
+		emptyStatesArrayCid, err := adt.StoreEmptyArray(store, market.StatesAmtBitwidth)
 		assert.NoError(t, err)
 
 		emptyMultiMap, err := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()

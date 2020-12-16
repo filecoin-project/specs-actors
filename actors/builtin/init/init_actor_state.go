@@ -18,13 +18,13 @@ type State struct {
 }
 
 func ConstructState(store adt.Store, networkName string) (*State, error) {
-	emptyMapCid, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyAddressMapCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
 
 	return &State{
-		AddressMap:  emptyMapCid,
+		AddressMap:  emptyAddressMapCid,
 		NextID:      abi.ActorID(builtin.FirstNonSingletonActorId),
 		NetworkName: networkName,
 	}, nil

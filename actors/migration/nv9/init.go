@@ -8,7 +8,6 @@ import (
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	init3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/init"
-	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type initMigrator struct{}
@@ -19,7 +18,7 @@ func (m initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in
 		return nil, err
 	}
 
-	addressMapOut, err := migrateHAMTRaw(ctx, store, inState.AddressMap, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	addressMapOut, err := migrateHAMTRaw(ctx, store, inState.AddressMap, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}

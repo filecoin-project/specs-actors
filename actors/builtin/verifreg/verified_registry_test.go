@@ -40,7 +40,7 @@ func TestConstruction(t *testing.T) {
 		actor := verifRegActorTestHarness{t: t, rootkey: raddr}
 		actor.constructAndVerify(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth).Root()
+		emptyMap, err := adt.StoreEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth)
 		require.NoError(t, err)
 
 		state := actor.state(rt)
@@ -60,7 +60,7 @@ func TestConstruction(t *testing.T) {
 		actor := verifRegActorTestHarness{t: t, rootkey: raddr}
 		actor.constructAndVerify(rt)
 
-		emptyMap, err := adt.MakeEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth).Root()
+		emptyMap, err := adt.StoreEmptyMap(rt.AdtStore(), builtin.DefaultHamtBitwidth)
 		require.NoError(t, err)
 
 		var state verifreg.State

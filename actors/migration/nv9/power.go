@@ -3,15 +3,12 @@ package nv9
 import (
 	"context"
 
-	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
-	hamt3 "github.com/filecoin-project/go-hamt-ipld/v3"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	power3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
-	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	smoothing3 "github.com/filecoin-project/specs-actors/v3/actors/util/smoothing"
 )
 
@@ -25,22 +22,19 @@ func (m powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 
 	var proofValidationBatchOut *cid.Cid
 	if inState.ProofValidationBatch != nil {
-		proofValidationBatchAmtOpts := append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(power3.ProofValidationBatchAmtBitwidth))
-		proofValidationBatchOutCID, err := migrateHAMTAMTRaw(ctx, store, *inState.ProofValidationBatch, adt3.DefaultHamtOptionsWithDefaultBitwidth, proofValidationBatchAmtOpts)
+		proofValidationBatchOutCID, err := migrateHAMTAMTRaw(ctx, store, *inState.ProofValidationBatch, builtin3.DefaultHamtBitwidth, power3.ProofValidationBatchAmtBitwidth)
 		if err != nil {
 			return nil, err
 		}
 		proofValidationBatchOut = &proofValidationBatchOutCID
 	}
 
-	claimsOut, err := migrateHAMTRaw(ctx, store, inState.Claims, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	claimsOut, err := migrateHAMTRaw(ctx, store, inState.Claims, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
 
-	cronEventQueueHamtOpts := append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(power3.CronQueueHamtBitwidth))
-	cronEventQueueAmtOpts := append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(power3.CronQueueAmtBitwidth))
-	cronEventQueueOut, err := migrateHAMTAMTRaw(ctx, store, inState.CronEventQueue, cronEventQueueHamtOpts, cronEventQueueAmtOpts)
+	cronEventQueueOut, err := migrateHAMTAMTRaw(ctx, store, inState.CronEventQueue, power3.CronQueueHamtBitwidth, power3.CronQueueAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}

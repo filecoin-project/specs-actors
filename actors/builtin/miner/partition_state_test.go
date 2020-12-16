@@ -449,7 +449,7 @@ func TestPartitions(t *testing.T) {
 		})
 
 		// sectors should be added to early termination bitfield queue
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, builtin.DefaultAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		ExpectBQ().
@@ -542,7 +542,7 @@ func TestPartitions(t *testing.T) {
 		})
 
 		// sectors should be added to early termination bitfield queue
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, builtin.DefaultAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		// only early termination appears in bitfield queue
@@ -663,7 +663,7 @@ func TestPartitions(t *testing.T) {
 		assert.True(t, hasMore)
 
 		// expect terminations to still contain 3 and 5
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, builtin.DefaultAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		// only early termination appears in bitfield queue
@@ -682,7 +682,7 @@ func TestPartitions(t *testing.T) {
 		assert.False(t, hasMore)
 
 		// expect early terminations to be empty
-		queue, err = miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, builtin.DefaultAmtBitwidth)
+		queue, err = miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 		ExpectBQ().Equals(t, queue)
 	})
@@ -923,17 +923,9 @@ func selectSectors(t *testing.T, sectors []*miner.SectorOnChainInfo, field bitfi
 }
 
 func emptyPartition(t *testing.T, store adt.Store) *miner.Partition {
-	emptyExpirationArray, err := adt.MakeEmptyArray(store, miner.PartitionExpirationAmtBitwidth)
+	p, err := miner.ConstructPartition(store)
 	require.NoError(t, err)
-	expirationRoot, err := emptyExpirationArray.Root()
-	require.NoError(t, err)
-
-	emptyEarlyTerminationArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
-	require.NoError(t, err)
-	earlyTerminationRoot, err := emptyEarlyTerminationArray.Root()
-	require.NoError(t, err)
-
-	return miner.ConstructPartition(expirationRoot, earlyTerminationRoot)
+	return p
 }
 
 func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.SectorOnChainInfo, filter bitfield.BitField) []*miner.SectorOnChainInfo {

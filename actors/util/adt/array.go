@@ -34,7 +34,7 @@ func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
 	}, nil
 }
 
-// Creates a new map backed by an empty HAMT and flushes it to the store.
+// Creates a new array backed by an empty AMT.
 func MakeEmptyArray(s Store, bitwidth int) (*Array, error) {
 	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(bitwidth))
 	root, err := amt.NewAMT(s, options...)
@@ -45,6 +45,15 @@ func MakeEmptyArray(s Store, bitwidth int) (*Array, error) {
 		root:  root,
 		store: s,
 	}, nil
+}
+
+// Writes a new empty array to the store, returning its CID.
+func StoreEmptyArray(s Store, bitwidth int) (cid.Cid, error) {
+	arr, err := MakeEmptyArray(s, bitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
+	return arr.Root()
 }
 
 // Returns the root CID of the underlying AMT.

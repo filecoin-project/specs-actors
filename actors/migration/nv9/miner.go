@@ -3,17 +3,15 @@ package nv9
 import (
 	"context"
 
-	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
-	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
-
+	cid "github.com/ipfs/go-cid"
+	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
-	cid "github.com/ipfs/go-cid"
-	cbor "github.com/ipfs/go-ipld-cbor"
 )
 
 type minerMigrator struct{}
@@ -24,15 +22,15 @@ func (m minerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 		return nil, err
 	}
 
-	preCommittedSectorsOut, err := migrateHAMTRaw(ctx, store, inState.PreCommittedSectors, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	preCommittedSectorsOut, err := migrateHAMTRaw(ctx, store, inState.PreCommittedSectors, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	preCommittedSectorsExpiryOut, err := migrateAMTRaw(ctx, store, inState.PreCommittedSectorsExpiry, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.PrecommitExpiryAmtBitwidth)))
+	preCommittedSectorsExpiryOut, err := migrateAMTRaw(ctx, store, inState.PreCommittedSectorsExpiry, miner3.PrecommitExpiryAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.SectorsAmtBitwidth)))
+	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, miner3.SectorsAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +88,7 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 			return cid.Undef, xerrors.Errorf("partitions: %w", err)
 		}
 
-		expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.DeadlineExpirationAmtBitwidth)))
+		expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, miner3.DeadlineExpirationAmtBitwidth)
 		if err != nil {
 			return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 		}
@@ -121,19 +119,19 @@ func (m *minerMigrator) migratePartitions(ctx context.Context, store cbor.IpldSt
 	if err != nil {
 		return cid.Undef, err
 	}
-	outArray, err := adt3.MakeEmptyArray(adt2.WrapStore(ctx, store), builtin3.DefaultAmtBitwidth)
+	outArray, err := adt3.MakeEmptyArray(adt2.WrapStore(ctx, store), miner3.DeadlinePartitionsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
 	var inPartition miner2.Partition
 	if err = inArray.ForEach(&inPartition, func(i int64) error {
-		expirationEpochs, err := migrateAMTRaw(ctx, store, inPartition.ExpirationsEpochs, append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(miner3.PartitionExpirationAmtBitwidth)))
+		expirationEpochs, err := migrateAMTRaw(ctx, store, inPartition.ExpirationsEpochs, miner3.PartitionExpirationAmtBitwidth)
 		if err != nil {
 			return xerrors.Errorf("expiration queue: %w", err)
 		}
 
-		earlyTerminated, err := migrateAMTRaw(ctx, store, inPartition.EarlyTerminated, adt3.DefaultAmtOptions)
+		earlyTerminated, err := migrateAMTRaw(ctx, store, inPartition.EarlyTerminated, miner3.PartitionEarlyTerminationArrayAmtBitwidth)
 		if err != nil {
 			return xerrors.Errorf("early termination queue: %w", err)
 		}

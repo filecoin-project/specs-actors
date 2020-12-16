@@ -8,7 +8,6 @@ import (
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	paych3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/paych"
-	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type paychMigrator struct{}
@@ -19,7 +18,7 @@ func (m paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 		return nil, err
 	}
 
-	laneStatesOut, err := migrateAMTRaw(ctx, store, inState.LaneStates, adt3.DefaultAmtOptions)
+	laneStatesOut, err := migrateAMTRaw(ctx, store, inState.LaneStates, paych3.LaneStatesAmtBitwidth)
 	if err != nil {
 		return nil, err
 	}

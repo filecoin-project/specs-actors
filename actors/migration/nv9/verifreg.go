@@ -8,7 +8,6 @@ import (
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	verifreg3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/verifreg"
-	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type verifregMigrator struct{}
@@ -19,11 +18,11 @@ func (m verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore
 		return nil, err
 	}
 
-	verifiersCIDOut, err := migrateHAMTRaw(ctx, store, inState.Verifiers, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	verifiersCIDOut, err := migrateHAMTRaw(ctx, store, inState.Verifiers, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
-	verifiedClientsCIDOut, err := migrateHAMTRaw(ctx, store, inState.Verifiers, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	verifiedClientsCIDOut, err := migrateHAMTRaw(ctx, store, inState.Verifiers, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}

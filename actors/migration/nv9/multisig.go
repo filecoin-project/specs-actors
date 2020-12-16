@@ -8,7 +8,6 @@ import (
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	multisig3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/multisig"
-	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
 type multisigMigrator struct{}
@@ -19,7 +18,7 @@ func (m multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore
 		return nil, err
 	}
 
-	pendingTxnsOut, err := migrateHAMTRaw(ctx, store, inState.PendingTxns, adt3.DefaultHamtOptionsWithDefaultBitwidth)
+	pendingTxnsOut, err := migrateHAMTRaw(ctx, store, inState.PendingTxns, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}

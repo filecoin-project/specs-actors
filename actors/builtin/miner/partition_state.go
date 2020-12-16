@@ -10,7 +10,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -55,6 +54,8 @@ type Partition struct {
 // patterns and projections of mainnet data.
 const PartitionExpirationAmtBitwidth = 4
 
+const PartitionEarlyTerminationArrayAmtBitwidth = 3
+
 // Value type for a pair of raw and QA power.
 type PowerPair struct {
 	Raw abi.StoragePower
@@ -62,20 +63,29 @@ type PowerPair struct {
 }
 
 // A set of sectors associated with a given epoch.
-func ConstructPartition(emptyExpirationArray, emptyEarlyTerminationArray cid.Cid) *Partition {
+func ConstructPartition(store adt.Store) (*Partition, error) {
+	emptyExpirationArrayRoot, err := adt.StoreEmptyArray(store, PartitionExpirationAmtBitwidth)
+	if err != nil {
+		return nil, err
+	}
+	emptyEarlyTerminationArrayRoot, err := adt.StoreEmptyArray(store, PartitionEarlyTerminationArrayAmtBitwidth)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Partition{
 		Sectors:           bitfield.New(),
 		Unproven:          bitfield.New(),
 		Faults:            bitfield.New(),
 		Recoveries:        bitfield.New(),
 		Terminated:        bitfield.New(),
-		ExpirationsEpochs: emptyExpirationArray,
-		EarlyTerminated:   emptyEarlyTerminationArray,
+		ExpirationsEpochs: emptyExpirationArrayRoot,
+		EarlyTerminated:   emptyEarlyTerminationArrayRoot,
 		LivePower:         NewPowerPairZero(),
 		UnprovenPower:     NewPowerPairZero(),
 		FaultyPower:       NewPowerPairZero(),
 		RecoveringPower:   NewPowerPairZero(),
-	}
+	}, nil
 }
 
 // Live sectors are those that are not terminated (but may be faulty).
@@ -513,7 +523,7 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 
 // Record the epoch of any sectors expiring early, for termination fee calculation later.
 func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch, sectors bitfield.BitField) error {
-	etQueue, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, builtin.DefaultAmtBitwidth)
+	etQueue, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load early termination queue: %w", err)
 	}
@@ -738,7 +748,7 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 	stopErr := errors.New("stop iter")
 
 	// Load early terminations.
-	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, builtin.DefaultAmtBitwidth)
+	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
 	if err != nil {
 		return TerminationResult{}, false, err
 	}

@@ -12,7 +12,6 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -57,6 +56,7 @@ type Deadline struct {
 	FaultyPower PowerPair
 }
 
+const DeadlinePartitionsAmtBitwidth = 3
 const DeadlineExpirationAmtBitwidth = 5
 
 //
@@ -119,20 +119,29 @@ func (d *Deadlines) UpdateDeadline(store adt.Store, dlIdx uint64, deadline *Dead
 // Deadline (singular)
 //
 
-func ConstructDeadline(emptyPartitionsArrayCid, emptyDeadlineExpirationCid cid.Cid) *Deadline {
+func ConstructDeadline(store adt.Store) (*Deadline, error) {
+	emptyPartitionsArrayCid, err := adt.StoreEmptyArray(store, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty partitions array: %w", err)
+	}
+	emptyDeadlineExpirationArrayCid, err := adt.StoreEmptyArray(store, DeadlineExpirationAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
+	}
+
 	return &Deadline{
 		Partitions:        emptyPartitionsArrayCid,
-		ExpirationsEpochs: emptyDeadlineExpirationCid,
+		ExpirationsEpochs: emptyDeadlineExpirationArrayCid,
 		PostSubmissions:   bitfield.New(),
 		EarlyTerminations: bitfield.New(),
 		LiveSectors:       0,
 		TotalSectors:      0,
 		FaultyPower:       NewPowerPairZero(),
-	}
+	}, nil
 }
 
 func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
-	arr, err := adt.AsArray(store, d.Partitions, builtin.DefaultAmtBitwidth)
+	arr, err := adt.AsArray(store, d.Partitions, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
 		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
 	}
@@ -299,26 +308,11 @@ func (dl *Deadline) AddSectors(
 				return NewPowerPairZero(), err
 			} else if !found {
 				// This case will usually happen zero times.
-				// It would require adding more than a full partition in one go
-				// to happen more than once.
-				emptyExpirationArray, err := adt.MakeEmptyArray(store, PartitionExpirationAmtBitwidth)
+				// It would require adding more than a full partition in one go to happen more than once.
+				partition, err = ConstructPartition(store)
 				if err != nil {
 					return NewPowerPairZero(), err
 				}
-				emptyExpirationArrayRoot, err := emptyExpirationArray.Root()
-				if err != nil {
-					return NewPowerPairZero(), err
-				}
-
-				emptyEarlyTerminationArray, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
-				if err != nil {
-					return NewPowerPairZero(), err
-				}
-				emptyEarlyTerminationArrayRoot, err := emptyEarlyTerminationArray.Root()
-				if err != nil {
-					return NewPowerPairZero(), err
-				}
-				partition = ConstructPartition(emptyExpirationArrayRoot, emptyEarlyTerminationArrayRoot)
 			}
 
 			// Figure out which (if any) sectors we want to add to this partition.
@@ -585,7 +579,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("cannot remove partitions from deadline with early terminations: %w", err)
 	}
 
-	newPartitions, err := adt.MakeEmptyArray(store, builtin.DefaultAmtBitwidth)
+	newPartitions, err := adt.MakeEmptyArray(store, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
 		return bitfield.BitField{}, bitfield.BitField{}, NewPowerPairZero(), xerrors.Errorf("failed to create empty array for initializing partitions: %w", err)
 	}
