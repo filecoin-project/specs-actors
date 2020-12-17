@@ -3397,8 +3397,8 @@ func TestCompactPartitions(t *testing.T) {
 		sectors := bitfield.NewFromSet([]uint64{uint64(sector1)})
 		actor.terminateSectors(rt, sectors, expectedFee)
 
-		// Wait Finality epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.ChainFinality)
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
 
 		// compacting partition will remove sector1 but retain sector 2, 3 and 4.
 		partId := uint64(0)
@@ -3427,8 +3427,8 @@ func TestCompactPartitions(t *testing.T) {
 		// fault sector1
 		actor.declareFaults(rt, info[0])
 
-		// Wait Finality epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.ChainFinality)
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -3453,8 +3453,8 @@ func TestCompactPartitions(t *testing.T) {
 		// create 2 sectors in partition 0
 		actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
 
-		// Wait Finality epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, deadlineEpoch+miner.ChainFinality)
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
