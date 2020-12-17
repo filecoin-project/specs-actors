@@ -199,7 +199,7 @@ const ConsensusFaultIneligibilityDuration = ChainFinality
 // PoStChallengePeriod is the period after a challenge window ends during which
 // PoSts submitted during that period may be challenged.
 // TODO: this name can easily be confused with WPoStChallengeWindow.
-const WPoStProofChallengePeriod = ChainFinality // PARAM_TODO
+const WPoStProofChallengePeriod = 2 * ChainFinality // PARAM_TODO
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
 // Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.
