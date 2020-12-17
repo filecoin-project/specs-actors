@@ -530,6 +530,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 				allSectors = append(allSectors, partitionSnapshot.Sectors)
 				allIgnored = append(allIgnored, partitionSnapshot.Faults)
 				allIgnored = append(allIgnored, partitionSnapshot.Terminated)
+				allIgnored = append(allIgnored, partitionSnapshot.Unproven)
 
 				// Record active sectors for marking faults.
 				active, err := partitionSnapshot.ActiveSectors()
