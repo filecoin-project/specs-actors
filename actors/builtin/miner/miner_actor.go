@@ -613,6 +613,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 
 		// Penalties.
 		{
+			// TODO(PARAM): consider applying a multiplier on the penalty
 			penaltyTarget := PledgePenaltyForContinuedFault(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
