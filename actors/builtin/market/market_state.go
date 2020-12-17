@@ -30,6 +30,10 @@ const (
 	ProviderCollateral
 )
 
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
+const ProposalsAmtBitwidth = 5
+const StatesAmtBitwidth = 6
+
 type State struct {
 	Proposals cid.Cid // AMT[DealID]DealProposal
 	States    cid.Cid // AMT[DealID]DealState

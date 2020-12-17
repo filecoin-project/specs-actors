@@ -56,7 +56,8 @@ type Deadline struct {
 	FaultyPower PowerPair
 }
 
-const DeadlinePartitionsAmtBitwidth = 3
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
+const DeadlinePartitionsAmtBitwidth = 3 // Usually a small array
 const DeadlineExpirationAmtBitwidth = 5
 
 //
