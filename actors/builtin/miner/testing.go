@@ -210,7 +210,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		}
 
 		expectedPoSts := deadline.PartitionsPoSted
-		proofs, err := adt.AsArray(store, deadline.PoStSubmissions)
+		proofs, err := adt.AsArray(store, deadline.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth)
 		acc.RequireNoError(err, "failed to load proofs")
 		var post WindowedPoSt
 		err = proofs.ForEach(&post, func(idx int64) error {

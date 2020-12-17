@@ -93,7 +93,7 @@ type WindowedPoSt struct {
 
 const DeadlinePartitionsAmtBitwidth = 3
 const DeadlineExpirationAmtBitwidth = 5
-const DeadlineProofsAmtBitwidth = 5
+const DeadlinePoStSubmissionsAmtBitwidth = 5
 
 //
 // Deadlines (plural)
@@ -165,7 +165,7 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
 	}
 
-	emptyProofsArrayCid, err := adt.StoreEmptyArray(store, DeadlineProofsAmtBitwidth)
+	emptyPoStSubmissionsArrayCid, err := adt.StoreEmptyArray(store, DeadlinePoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
 	}
@@ -183,10 +183,10 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		TotalSectors:            0,
 		FaultyPower:             NewPowerPairZero(),
 		PartitionsPoSted:        bitfield.New(),
-		PoStSubmissions:         emptyProofsArrayCid,
+		PoStSubmissions:         emptyPoStSubmissionsArrayCid,
 		PartitionsSnapshot:      emptyPartitionsArrayCid,
 		SectorsSnapshot:         emptySectorsArrayCid,
-		PoStSubmissionsSnapshot: emptyProofsArrayCid,
+		PoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
 	}, nil
 }
 
@@ -919,7 +919,7 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
 	dl.PoStSubmissionsSnapshot = dl.PoStSubmissions
-	dl.PoStSubmissions, err = adt.MakeEmptyArray(store).Root()
+	dl.PoStSubmissions, err = adt.StoreEmptyArray(store, DeadlinePoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 	}
@@ -1054,7 +1054,7 @@ func (dl *Deadline) RecordProvenSectors(
 	}
 
 	// Save proof.
-	if proofArr, err := adt.AsArray(store, dl.PoStSubmissions); err != nil {
+	if proofArr, err := adt.AsArray(store, dl.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth); err != nil {
 		return nil, xerrors.Errorf("failed to load proofs: %w", err)
 	} else if err := proofArr.AppendContinuous(&WindowedPoSt{
 		Partitions: partitionIndexes,

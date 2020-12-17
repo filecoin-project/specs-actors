@@ -503,10 +503,10 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			dlCurrent, err := deadlinesCurrent.LoadDeadline(store, params.Deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline")
 
-			proofsSnapshot, err := adt.AsArray(store, dlCurrent.PoStSubmissionsSnapshot)
+			proofsSnapshot, err := adt.AsArray(store, dlCurrent.PoStSubmissionsSnapshot, DeadlinePoStSubmissionsAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
 
-			partitionsSnapshot, err := adt.AsArray(store, dlCurrent.PartitionsSnapshot)
+			partitionsSnapshot, err := adt.AsArray(store, dlCurrent.PartitionsSnapshot, DeadlinePoStSubmissionsAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
 
 			// Load the target proof.
