@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
@@ -143,4 +144,25 @@ func assertEqual(t *testing.T, a, b big.Int) {
 	if !(a.IsZero() && b.IsZero()) {
 		assert.Equal(t, a, b)
 	}
+}
+
+func TestPoStTimeConstraints(t *testing.T) {
+	// period during which a deadline is "immutable"
+	immutablePeriod := 2 * miner.WPoStChallengeWindow
+
+	// If we have less than finality, an attacker could try a very long
+	// (almost finality) fork and leave no time to challenge.
+	require.True(t, miner.WPoStProofChallengePeriod >= miner.ChainFinality,
+		"the proof challenge period must exceed finality")
+
+	// This is an arbitrary constraint, but we should ensure we leave _some_
+	// time for compaction.
+	compactionPeriod := miner.WPoStProvingPeriod - (immutablePeriod + miner.WPoStProofChallengePeriod)
+	require.True(t, compactionPeriod > 3*builtin.EpochsInHour,
+		"there must be at least a 3 hour window for partition compaction")
+
+	// If this constraint breaks, the challenge lookback may be _before_ the
+	// immutability period starts.
+	require.True(t, miner.WPoStChallengeLookback < immutablePeriod-miner.WPoStChallengeWindow,
+		"the challenge lookback must be inside the immutability period")
 }
