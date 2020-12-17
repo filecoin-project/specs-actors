@@ -70,10 +70,7 @@ func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentE
 func deadlineAvailableForChallenge(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
 	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
 
-	// We can challenge a proof in a deadline:
-	// 1. After it closes.
-	// 2.
-	return currentEpoch >= dlInfo.Close && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStProofChallengePeriod
+	return !dlInfo.IsOpen() && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStProofChallengePeriod
 }
 
 func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
