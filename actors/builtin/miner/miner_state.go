@@ -77,8 +77,9 @@ type State struct {
 	EarlyTerminations bitfield.BitField
 }
 
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
 const PrecommitExpiryAmtBitwidth = 6
-const SectorsAmtBitwidth = 6
+const SectorsAmtBitwidth = 5
 
 type MinerInfo struct {
 	// Account that owns this miner.
