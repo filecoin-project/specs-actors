@@ -50,10 +50,8 @@ type Partition struct {
 	RecoveringPower PowerPair
 }
 
-// Bitwidth of partition expiration AMT determined empirically from mutation
-// patterns and projections of mainnet data.
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
 const PartitionExpirationAmtBitwidth = 4
-
 const PartitionEarlyTerminationArrayAmtBitwidth = 3
 
 // Value type for a pair of raw and QA power.

@@ -88,7 +88,8 @@ type WindowedPoSt struct {
 	Proofs []proof.PoStProof
 }
 
-const DeadlinePartitionsAmtBitwidth = 3
+// Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
+const DeadlinePartitionsAmtBitwidth = 3 // Usually a small array
 const DeadlineExpirationAmtBitwidth = 5
 const DeadlinePoStSubmissionsAmtBitwidth = 5
 
