@@ -1151,12 +1151,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
 
-		// Setup snapshots for challenges.
-		// TODO: we should probably put this into ProcessDeadlineEnd but
-		// then we'd need to pass the sectors in? Another reason to not
-		// snapshot the sector set.
-		deadline.SectorsSnapshot = st.Sectors
-
 		// Capture deadline's faulty power after new faults have been detected, but before it is
 		// dropped along with faulty sectors expiring this round.
 		totalFaultyPower = deadline.FaultyPower

@@ -484,8 +484,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 	powerDelta := NewPowerPairZero()
 	var st State
 	rt.StateTransaction(&st, func() {
-		if st.CurrentDeadline == params.Deadline {
-			// TODO: blank out the previous deadline as well?
+		if !deadlineAvailableForChallenge(st.ProvingPeriodStart, params.Deadline, currEpoch) {
 			rt.Abortf(exitcode.ErrForbidden, "cannot challenge a window post for an open deadline")
 		}
 
@@ -559,10 +558,10 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge fault bitfields")
 
-			// Load sectors as seen at the end of the last proving period.
-			sectorsSnapshot, err := LoadSectors(store, dlCurrent.SectorsSnapshot)
+			// Load sectors.
+			sectors, err := LoadSectors(store, st.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
-			sectorInfos, err := sectorsSnapshot.LoadForProof(allSectorsNos, allIgnoredNos)
+			sectorInfos, err := sectors.LoadForProof(allSectorsNos, allIgnoredNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post challenge")
 
 			// Find the proving period start for the deadline in question.
@@ -576,25 +575,12 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			// Fails if validation succeeds.
 			challengeWindowedPost(rt, targetDeadline.Challenge, sectorInfos, post.Proofs)
 
-			// Ok, so, here's the tricky part. Now we need to mark these all as _bad_. However, compaction could have
-			// happened, so the sectors could have moved.
+			// Ok, now we record faults. This always works because
+			// we don't allow compaction/moving sectors during the
+			// challenge window.
 			//
-			// We've addressed this in two ways:
-			//
-			// 1. Compaction cannot be done for Finality epochs after a challenge window.
-			// 2. Successful challenges will always penalize, even if we can't find the target sectors and mark them faulty.
-			//    You can run but you can't hide.
-
-			// Load sectors. We can't use the snapshot as a sector
-			// with an extended expiration could end up being
-			// scheduled to expire at the wrong time.
-			//
-			// Unfortunately, this means we'll need to load all
-			// sector infos twice (once for the proof, once to mark
-			// faulty). We can't use memoized power info because
-			// sectors may have been terminated.
-			sectors, err := LoadSectors(store, st.Sectors)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+			// However, some of these sectors may have been
+			// terminated. That's fine, we'll skip them.
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
 			powerDelta, err = dlCurrent.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, faults)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
@@ -1597,7 +1583,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 
 		if !deadlineAvailableForCompaction(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
-				"cannot compact deadline %d during its challenge window, or the prior challenge window, or before %d epochs have passed since its last challenge window ended", params.Deadline, ChainFinality)
+				"cannot compact deadline %d during its challenge window, or the prior challenge window, or before %d epochs have passed since its last challenge window ended", params.Deadline, WPoStProofChallengePeriod)
 		}
 
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)

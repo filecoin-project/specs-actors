@@ -67,13 +67,16 @@ func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentE
 	return currentEpoch < dlInfo.Open-WPoStChallengeWindow
 }
 
-func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+func deadlineAvailableForChallenge(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
 	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
 
-	// Make sure the current epoch is at least finality after the last
-	// window post to give the network time to challenge the sectors, and at
-	// least 1 window before the next window opens to avoid compacting an
-	// immutable deadline.
-	return currentEpoch >= (dlInfo.Close-WPoStProvingPeriod)+ChainFinality &&
-		currentEpoch < dlInfo.Open-WPoStChallengeWindow
+	// We can challenge a proof in a deadline:
+	// 1. After it closes.
+	// 2.
+	return currentEpoch >= dlInfo.Close && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStProofChallengePeriod
+}
+
+func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+	return deadlineIsMutable(provingPeriodStart, dlIdx, currentEpoch) &&
+		!deadlineAvailableForChallenge(provingPeriodStart, dlIdx, currentEpoch)
 }

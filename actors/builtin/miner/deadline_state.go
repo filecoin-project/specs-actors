@@ -76,9 +76,6 @@ type Deadline struct {
 	// Snapshot of the proofs submitted by the end of the previous challenge
 	// window for this deadline.
 	PoStSubmissionsSnapshot cid.Cid
-	// Snapshot of the miner's sectors at the end of the previous challenge
-	// window for this deadline.
-	SectorsSnapshot cid.Cid
 }
 
 type WindowedPoSt struct {
@@ -170,11 +167,6 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
 	}
 
-	emptySectorsArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to construct empty sectors array: %w", err)
-	}
-
 	return &Deadline{
 		Partitions:              emptyPartitionsArrayCid,
 		ExpirationsEpochs:       emptyDeadlineExpirationArrayCid,
@@ -185,7 +177,6 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		PartitionsPoSted:        bitfield.New(),
 		PoStSubmissions:         emptyPoStSubmissionsArrayCid,
 		PartitionsSnapshot:      emptyPartitionsArrayCid,
-		SectorsSnapshot:         emptySectorsArrayCid,
 		PoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
 	}, nil
 }
