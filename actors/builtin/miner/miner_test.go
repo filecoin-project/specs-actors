@@ -1871,7 +1871,7 @@ func TestWindowPost(t *testing.T) {
 		WithEpoch(precommitEpoch).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("test proof", func(t *testing.T) {
+	testBasicPoSt := func(proofs []proof.PoStProof) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
@@ -1892,7 +1892,7 @@ func TestWindowPost(t *testing.T) {
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
-		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
+		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
 			expectedPowerDelta: pwr,
 		})
 
@@ -1919,6 +1919,18 @@ func TestWindowPost(t *testing.T) {
 
 		// Proofs should exist in snapshot.
 		require.Equal(t, deadline.PoStSubmissionsSnapshot, postsCid)
+	}
+
+	t.Run("test proof", func(t *testing.T) {
+		testBasicPoSt(makePoStProofs(actor.postProofType))
+	})
+
+	t.Run("test bad proof accepted", func(t *testing.T) {
+		proofs := makePoStProofs(actor.postProofType)
+		for i := range proofs {
+			proofs[i].ProofBytes[0] = 'X'
+		}
+		testBasicPoSt(proofs)
 	})
 
 	t.Run("test duplicate proof rejected", func(t *testing.T) {
@@ -5208,13 +5220,16 @@ func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Inf
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
+	h.submitWindowPoStRaw(rt, deadline, partitions, infos, makePoStProofs(h.postProofType), poStCfg)
+}
+
+func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, proofs []proof.PoStProof, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
-	proofs := makePoStProofs(h.postProofType)
 	if poStCfg != nil {
 		// expect power update
 		if !poStCfg.expectedPowerDelta.IsZero() {
