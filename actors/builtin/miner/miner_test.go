@@ -1900,11 +1900,25 @@ func TestWindowPost(t *testing.T) {
 		deadline := actor.getDeadline(rt, dlIdx)
 		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
 
+		postsCid := deadline.PoStSubmissions
+
+		posts, err := adt.AsArray(store, postsCid, miner.DeadlinePoStSubmissionsAmtBitwidth)
+		require.NoError(t, err)
+		require.EqualValues(t, posts.Length(), 1)
+		var post miner.WindowedPoSt
+		found, err := posts.Get(0, &post)
+		require.NoError(t, err)
+		require.True(t, found)
+		assertBitfieldEquals(t, post.Partitions, pIdx)
+
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
 		actor.checkState(rt)
 
-		// Proof should exist in state.
+		deadline = actor.getDeadline(rt, dlIdx)
+
+		// Proofs should exist in snapshot.
+		require.Equal(t, deadline.PoStSubmissionsSnapshot, postsCid)
 	})
 
 	t.Run("test duplicate proof rejected", func(t *testing.T) {
