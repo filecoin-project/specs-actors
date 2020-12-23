@@ -12,7 +12,7 @@ import (
 
 type initMigrator struct{}
 
-func (m initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in StateMigrationInput) (*StateMigrationResult, error) {
+func (m initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState init2.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func (m initMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in
 		NetworkName: inState.NetworkName,
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return &StateMigrationResult{
+	return &actorMigrationResult{
 		NewCodeCID: builtin3.InitActorCodeID,
 		NewHead:    newHead,
 	}, err
