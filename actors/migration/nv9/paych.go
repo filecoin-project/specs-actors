@@ -12,7 +12,7 @@ import (
 
 type paychMigrator struct{}
 
-func (m paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in StateMigrationInput) (*StateMigrationResult, error) {
+func (m paychMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState paych2.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -32,8 +32,8 @@ func (m paychMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 		LaneStates:      laneStatesOut,
 	}
 	newHead, err := store.Put(ctx, &outState)
-	return &StateMigrationResult{
-		NewCodeCID: builtin3.PaymentChannelActorCodeID,
-		NewHead:    newHead,
+	return &actorMigrationResult{
+		newCodeCID: builtin3.PaymentChannelActorCodeID,
+		newHead:    newHead,
 	}, err
 }

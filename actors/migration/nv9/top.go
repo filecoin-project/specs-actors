@@ -25,36 +25,6 @@ type Config struct {
 	MaxWorkers int
 }
 
-type StateMigrationInput struct {
-	address    address.Address // actor's address
-	balance    abi.TokenAmount // actor's balance
-	head       cid.Cid         // actor's state head CID
-	priorEpoch abi.ChainEpoch  // epoch of last state transition prior to migration
-}
-
-type StateMigrationResult struct {
-	NewCodeCID cid.Cid
-	NewHead    cid.Cid
-}
-
-type StateMigration interface {
-	// Loads an actor's state from an input store and writes new state to an output store.
-	// Returns the new state head CID.
-	MigrateState(ctx context.Context, store cbor.IpldStore, input StateMigrationInput) (result *StateMigrationResult, err error)
-}
-
-// Migrator which preserves the head CID and provides a fixed result code CID.
-type nilMigrator struct {
-	OutCodeCID cid.Cid
-}
-
-func (n nilMigrator) MigrateState(_ context.Context, _ cbor.IpldStore, in StateMigrationInput) (*StateMigrationResult, error) {
-	return &StateMigrationResult{
-		NewCodeCID: n.OutCodeCID,
-		NewHead:    in.head,
-	}, nil
-}
-
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config) (cid.Cid, error) {
 	if cfg.MaxWorkers <= 0 {
@@ -62,7 +32,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	}
 
 	// Maps prior version code CIDs to migration functions.
-	var migrations = map[cid.Cid]StateMigration{
+	var migrations = map[cid.Cid]actorMigration{
 		builtin2.AccountActorCodeID:          nilMigrator{builtin3.AccountActorCodeID},
 		builtin2.CronActorCodeID:             nilMigrator{builtin3.CronActorCodeID},
 		builtin2.InitActorCodeID:             initMigrator{},
@@ -96,23 +66,23 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 
 	// Setup synchronization
 	grp, ctx := errgroup.WithContext(ctx)
-	inputCh := make(chan *migrationInput)
-	resultCh := make(chan *migrationResult)
+	jobCh := make(chan *migrationJob)
+	jobResultCh := make(chan *migrationJobResult)
 
-	// Iterate all actors in old state root to generate migration inputs for each non-deferred actor.
+	// Iterate all actors in old state root to create migration jobs for each non-deferred actor.
 	grp.Go(func() error {
-		defer close(inputCh)
+		defer close(jobCh)
 		return actorsIn.ForEach(func(addr address.Address, actorIn *states2.Actor) error {
 			if _, ok := deferredCodeIDs[actorIn.Code]; ok {
 				return nil // Deferred for explicit migration later.
 			}
-			nextInput := &migrationInput{
+			nextInput := &migrationJob{
 				Address:        addr,
 				Actor:          *actorIn, // Must take a copy, the pointer is not stable.
-				StateMigration: migrations[actorIn.Code],
+				actorMigration: migrations[actorIn.Code],
 			}
 			select {
-			case inputCh <- nextInput:
+			case jobCh <- nextInput:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -120,19 +90,19 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		})
 	})
 
-	// Worker threads run migrations on inputs.
+	// Worker threads run jobs.
 	var workerWg sync.WaitGroup
 	for i := 0; i < cfg.MaxWorkers; i++ {
 		workerWg.Add(1)
 		grp.Go(func() error {
 			defer workerWg.Done()
-			for input := range inputCh {
-				result, err := migrateOneActor(ctx, store, input, priorEpoch)
+			for job := range jobCh {
+				result, err := job.run(ctx, store, priorEpoch)
 				if err != nil {
 					return err
 				}
 				select {
-				case resultCh <- result:
+				case jobResultCh <- result:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -144,13 +114,13 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	// Close output channel when workers are done.
 	grp.Go(func() error {
 		workerWg.Wait()
-		close(resultCh)
+		close(jobResultCh)
 		return nil
 	})
 
 	// Insert migrated records in output state tree and accumulators.
 	grp.Go(func() error {
-		for result := range resultCh {
+		for result := range jobResultCh {
 			if err := actorsOut.SetActor(result.Address, &result.Actor); err != nil {
 				return err
 			}
@@ -168,37 +138,66 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	return actorsOut.Flush()
 }
 
-type migrationInput struct {
+type actorMigrationInput struct {
+	address    address.Address // actor's address
+	balance    abi.TokenAmount // actor's balance
+	head       cid.Cid         // actor's state head CID
+	priorEpoch abi.ChainEpoch  // epoch of last state transition prior to migration
+}
+
+type actorMigrationResult struct {
+	newCodeCID cid.Cid
+	newHead    cid.Cid
+}
+
+type actorMigration interface {
+	// Loads an actor's state from an input store and writes new state to an output store.
+	// Returns the new state head CID.
+	migrateState(ctx context.Context, store cbor.IpldStore, input actorMigrationInput) (result *actorMigrationResult, err error)
+}
+
+type migrationJob struct {
 	address.Address
 	states2.Actor
-	StateMigration
+	actorMigration
 }
-type migrationResult struct {
+type migrationJobResult struct {
 	address.Address
 	states3.Actor
 }
 
-func migrateOneActor(ctx context.Context, store cbor.IpldStore, input *migrationInput, priorEpoch abi.ChainEpoch) (*migrationResult, error) {
-	actorIn := input.Actor
-	addr := input.Address
-	result, err := input.MigrateState(ctx, store, StateMigrationInput{
-		address:    addr,
-		balance:    actorIn.Balance,
-		head:       actorIn.Head,
+func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpoch abi.ChainEpoch) (*migrationJobResult, error) {
+	result, err := job.migrateState(ctx, store, actorMigrationInput{
+		address:    job.Address,
+		balance:    job.Actor.Balance,
+		head:       job.Actor.Head,
 		priorEpoch: priorEpoch,
 	})
 	if err != nil {
-		return nil, xerrors.Errorf("state migration failed for %s actor, addr %s: %w", builtin2.ActorNameByCode(actorIn.Code), addr, err)
+		return nil, xerrors.Errorf("state migration failed for %s actor, addr %s: %w",
+			builtin2.ActorNameByCode(job.Actor.Code), job.Address, err)
 	}
 
 	// Set up new actor record with the migrated state.
-	return &migrationResult{
-		addr, // Unchanged
+	return &migrationJobResult{
+		job.Address, // Unchanged
 		states3.Actor{
-			Code:       result.NewCodeCID,
-			Head:       result.NewHead,
-			CallSeqNum: actorIn.CallSeqNum, // Unchanged
-			Balance:    actorIn.Balance,    // Unchanged
+			Code:       result.newCodeCID,
+			Head:       result.newHead,
+			CallSeqNum: job.Actor.CallSeqNum, // Unchanged
+			Balance:    job.Actor.Balance,    // Unchanged
 		},
+	}, nil
+}
+
+// Migrator which preserves the head CID and provides a fixed result code CID.
+type nilMigrator struct {
+	OutCodeCID cid.Cid
+}
+
+func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+	return &actorMigrationResult{
+		newCodeCID: n.OutCodeCID,
+		newHead:    in.head,
 	}, nil
 }
