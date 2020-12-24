@@ -31,6 +31,7 @@ import (
 func TestParallelMigrationCalls(t *testing.T) {
 	// Construct simple prior state tree over a locking store
 	ctx := context.Background()
+	log := TestLogger{t}
 	syncStore := ipld2.NewSyncADTStore(ctx)
 	initializeActor := func(ctx context.Context, t *testing.T, actors *states2.Tree, state cbor.Marshaler, code cid.Cid, a addr.Address, balance abi.TokenAmount) {
 		stateCID, err := actors.Store.Put(ctx, state)
@@ -86,7 +87,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 
 	// Run migration
 
-	endRootSerial, err := nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 1})
+	endRootSerial, err := nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 1}, log)
 	require.NoError(t, err)
 
 	// Migrate in parallel
@@ -94,12 +95,12 @@ func TestParallelMigrationCalls(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
 		var err1 error
-		endRootParallel1, err1 = nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2})
+		endRootParallel1, err1 = nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log)
 		return err1
 	})
 	grp.Go(func() error {
 		var err2 error
-		endRootParallel2, err2 = nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2})
+		endRootParallel2, err2 = nv9.MigrateStateTree(ctx, syncStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log)
 		return err2
 	})
 	require.NoError(t, grp.Wait())

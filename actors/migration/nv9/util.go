@@ -3,6 +3,7 @@ package nv9
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
@@ -121,4 +122,23 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 		return cid.Undef, err
 	}
 	return store.Put(ctx, outRootNodeOuter)
+}
+
+// Guards an unsychronized store with a mutex.
+// Useful for migrating the store created by a scenario VM (which is unsynchronized).
+type SyncStore struct {
+	store cbor.IpldStore
+	mu sync.Mutex
+}
+
+func (ss *SyncStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.store.Get(ctx, c, out)
+}
+
+func (ss *SyncStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.store.Put(ctx, v)
 }
