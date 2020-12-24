@@ -146,14 +146,14 @@ type actorMigrationInput struct {
 }
 
 type actorMigrationResult struct {
-	NewCodeCID cid.Cid
-	NewHead    cid.Cid
+	newCodeCID cid.Cid
+	newHead    cid.Cid
 }
 
 type actorMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
 	// Returns the new state head CID.
-	MigrateState(ctx context.Context, store cbor.IpldStore, input actorMigrationInput) (result *actorMigrationResult, err error)
+	migrateState(ctx context.Context, store cbor.IpldStore, input actorMigrationInput) (result *actorMigrationResult, err error)
 }
 
 type migrationJob struct {
@@ -167,7 +167,7 @@ type migrationJobResult struct {
 }
 
 func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpoch abi.ChainEpoch) (*migrationJobResult, error) {
-	result, err := job.MigrateState(ctx, store, actorMigrationInput{
+	result, err := job.migrateState(ctx, store, actorMigrationInput{
 		address:    job.Address,
 		balance:    job.Actor.Balance,
 		head:       job.Actor.Head,
@@ -182,8 +182,8 @@ func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpo
 	return &migrationJobResult{
 		job.Address, // Unchanged
 		states3.Actor{
-			Code:       result.NewCodeCID,
-			Head:       result.NewHead,
+			Code:       result.newCodeCID,
+			Head:       result.newHead,
 			CallSeqNum: job.Actor.CallSeqNum, // Unchanged
 			Balance:    job.Actor.Balance,    // Unchanged
 		},
@@ -195,9 +195,9 @@ type nilMigrator struct {
 	OutCodeCID cid.Cid
 }
 
-func (n nilMigrator) MigrateState(_ context.Context, _ cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	return &actorMigrationResult{
-		NewCodeCID: n.OutCodeCID,
-		NewHead:    in.head,
+		newCodeCID: n.OutCodeCID,
+		newHead:    in.head,
 	}, nil
 }

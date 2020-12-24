@@ -14,7 +14,7 @@ import (
 
 type powerMigrator struct{}
 
-func (m powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+func (m powerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState power2.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func (m powerMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		NewCodeCID: builtin3.StoragePowerActorCodeID,
-		NewHead:    newHead,
+		newCodeCID: builtin3.StoragePowerActorCodeID,
+		newHead:    newHead,
 	}, err
 }

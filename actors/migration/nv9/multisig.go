@@ -12,7 +12,7 @@ import (
 
 type multisigMigrator struct{}
 
-func (m multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+func (m multisigMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState multisig2.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func (m multisigMigrator) MigrateState(ctx context.Context, store cbor.IpldStore
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		NewCodeCID: builtin3.MultisigActorCodeID,
-		NewHead:    newHead,
+		newCodeCID: builtin3.MultisigActorCodeID,
+		newHead:    newHead,
 	}, err
 }
