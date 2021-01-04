@@ -422,12 +422,11 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// While we could perform _all_ operations at the end of challenge window, we do as we can here to avoid
 		// overloading cron.
 		faultExpiration := currDeadline.Last() + FaultMaxAge
-		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions, params.Proofs)
+		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
 		// Make sure we actually proved something.
 
-		// TODO: refactor RecordProvenSectors to return what we actually need.
 		provenSectors, err := bitfield.SubtractBitField(postResult.Sectors, postResult.IgnoredSectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine proven sectors for deadline %d", params.Deadline)
 
@@ -439,6 +438,18 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			// since that will just cause them to pay a penalty at deadline end that would otherwise be zero
 			// if they had *not* declared them.
 			rt.Abortf(exitcode.ErrIllegalArgument, "cannot prove partitions with no active sectors")
+		}
+
+		// If we're not recovering power, record the proof for optimistic verification.
+		if postResult.RecoveredPower.IsZero() {
+			err = deadline.RecordPoStProofs(store, postResult.Partitions, params.Proofs)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to record proof for optimistic verification", params.Deadline)
+		} else {
+			// otherwise, check the proof
+			sectorInfos, err := sectors.LoadForProof(postResult.Sectors, postResult.IgnoredSectors)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post verification")
+
+			verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs, false)
 		}
 
 		err = deadlines.UpdateDeadline(store, params.Deadline, deadline)
@@ -574,7 +585,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			targetDeadline := NewDeadlineInfo(ppStart, params.Deadline, currEpoch)
 
 			// Fails if validation succeeds.
-			challengeWindowedPost(rt, targetDeadline.Challenge, sectorInfos, post.Proofs)
+			verifyWindowedPost(rt, targetDeadline.Challenge, sectorInfos, post.Proofs, true)
 
 			// Ok, now we record faults. This always works because
 			// we don't allow compaction/moving sectors during the
@@ -2236,7 +2247,7 @@ func havePendingEarlyTerminations(rt Runtime, st *State) bool {
 	return !noEarlyTerminations
 }
 
-func challengeWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof) {
+func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, proofs []proof.PoStProof, expectFail bool) {
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided bad receiver address %v", rt.Receiver())
 
@@ -2265,10 +2276,16 @@ func challengeWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []
 	}
 
 	// Verify the PoSt Proof
-	if err = rt.VerifyPoSt(pvInfo); err == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "valid PoSt %+v", pvInfo)
+	err = rt.VerifyPoSt(pvInfo)
+
+	if expectFail {
+		if err == nil {
+			rt.Abortf(exitcode.ErrIllegalArgument, "failed to challenge valid post %+v", pvInfo)
+			return
+		}
+		rt.Log(rtt.INFO, "post successfully challenged %+v: %s", pvInfo, err)
 	} else {
-		rt.Log(rtt.INFO, "PoSt successfully challenged: %s", err)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid PoSt %+v", pvInfo)
 	}
 }
 

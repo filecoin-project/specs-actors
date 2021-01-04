@@ -5119,7 +5119,7 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 
 type poStConfig struct {
 	expectedPowerDelta miner.PowerPair
-	//verificationError  error
+	verificationError  error
 }
 
 func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
@@ -5229,6 +5229,79 @@ func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Inf
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+
+	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
+
+	// only sectors that are not skipped and not existing non-recovered faults will be verified
+	allIgnored := bf()
+	allRecovered := bf()
+	dln := h.getDeadline(rt, deadline.Index)
+
+	for _, p := range partitions {
+		partition := h.getPartition(rt, dln, p.Index)
+		expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
+		require.NoError(h.t, err)
+		allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
+		require.NoError(h.t, err)
+		recovered, err := bitfield.SubtractBitField(partition.Recoveries, p.Skipped)
+		require.NoError(h.t, err)
+		allRecovered, err = bitfield.MergeBitFields(allRecovered, recovered)
+		require.NoError(h.t, err)
+	}
+	optimistic, err := allRecovered.IsEmpty()
+	require.NoError(h.t, err)
+
+	// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
+	var goodInfo *miner.SectorOnChainInfo
+	for _, ci := range infos {
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if !contains {
+			goodInfo = ci
+			break
+		}
+	}
+
+	// goodInfo == nil indicates all the sectors have been skipped and should PoSt verification should not occur
+	if !optimistic && goodInfo != nil {
+		var buf bytes.Buffer
+		receiver := rt.Receiver()
+		err := receiver.MarshalCBOR(&buf)
+		require.NoError(h.t, err)
+
+		rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
+
+		actorId, err := addr.IDFromAddress(h.receiver)
+		require.NoError(h.t, err)
+
+		// if not all sectors are skipped
+		proofInfos := make([]proof.SectorInfo, len(infos))
+		for i, ci := range infos {
+			si := ci
+			contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+			require.NoError(h.t, err)
+			if contains {
+				si = goodInfo
+			}
+			proofInfos[i] = proof.SectorInfo{
+				SealProof:    si.SealProof,
+				SectorNumber: si.SectorNumber,
+				SealedCID:    si.SealedCID,
+			}
+		}
+
+		vi := proof.WindowPoStVerifyInfo{
+			Randomness:        abi.PoStRandomness(challengeRand),
+			Proofs:            proofs,
+			ChallengedSectors: proofInfos,
+			Prover:            abi.ActorID(actorId),
+		}
+		var verifResult error
+		if poStCfg != nil {
+			verifResult = poStCfg.verificationError
+		}
+		rt.ExpectVerifyPoSt(vi, verifResult)
+	}
 
 	if poStCfg != nil {
 		// expect power update

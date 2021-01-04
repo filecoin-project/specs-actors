@@ -928,11 +928,8 @@ type PoStResult struct {
 	Sectors bitfield.BitField
 	// IgnoredSectors is a subset of Sectors that should be ignored.
 	IgnoredSectors bitfield.BitField
-}
-
-// PenaltyPower is the power from this PoSt that should be penalized.
-func (p *PoStResult) PenaltyPower() PowerPair {
-	return p.NewFaultyPower.Add(p.RetractedRecoveryPower)
+	// Bitfield of partitions that were proven.
+	Partitions bitfield.BitField
 }
 
 // RecordProvenSectors processes a series of posts, recording proven partitions
@@ -947,7 +944,6 @@ func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
 	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,
 	postPartitions []PoStPartition,
-	proofs []proof.PoStProof,
 ) (*PoStResult, error) {
 
 	partitionIndexes := bitfield.New()
@@ -1045,18 +1041,6 @@ func (dl *Deadline) RecordProvenSectors(
 		return nil, xc.ErrIllegalState.Wrapf("failed to persist partitions: %w", err)
 	}
 
-	// Save proof.
-	if proofArr, err := adt.AsArray(store, dl.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth); err != nil {
-		return nil, xerrors.Errorf("failed to load proofs: %w", err)
-	} else if err := proofArr.AppendContinuous(&WindowedPoSt{
-		Partitions: partitionIndexes,
-		Proofs:     proofs,
-	}); err != nil {
-		return nil, xerrors.Errorf("failed to store proof: %w", err)
-	} else if dl.PoStSubmissions, err = proofArr.Root(); err != nil {
-		return nil, xerrors.Errorf("failed to save proofs: %w", err)
-	}
-
 	// Collect all sectors, faults, and recoveries for proof verification.
 	allSectorNos, err := bitfield.MultiMerge(allSectors...)
 	if err != nil {
@@ -1074,7 +1058,30 @@ func (dl *Deadline) RecordProvenSectors(
 		NewFaultyPower:         newFaultyPowerTotal,
 		RecoveredPower:         recoveredPowerTotal,
 		RetractedRecoveryPower: retractedRecoveryPowerTotal,
+		Partitions:             partitionIndexes,
 	}, nil
+}
+
+func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
+	// Save proof.
+	proofArr, err := adt.AsArray(store, dl.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	err = proofArr.AppendContinuous(&WindowedPoSt{
+		Partitions: partitions,
+		Proofs:     proofs,
+	})
+	if err != nil {
+		return xerrors.Errorf("failed to store proof: %w", err)
+	}
+
+	root, err := proofArr.Root()
+	if err != nil {
+		return xerrors.Errorf("failed to save proofs: %w", err)
+	}
+	dl.PoStSubmissions = root
+	return nil
 }
 
 // RescheduleSectorExpirations reschedules the expirations of the given sectors

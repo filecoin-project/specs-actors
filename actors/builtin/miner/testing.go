@@ -201,34 +201,6 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions")
 
-	// Check PoSt submissions
-	if postSubmissions, err := deadline.PartitionsPoSted.All(1 << 20); err != nil {
-		acc.Addf("error expanding post submissions: %v", err)
-	} else {
-		for _, p := range postSubmissions {
-			acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
-		}
-
-		expectedPoSts := deadline.PartitionsPoSted
-		proofs, err := adt.AsArray(store, deadline.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth)
-		acc.RequireNoError(err, "failed to load proofs")
-		var post WindowedPoSt
-		err = proofs.ForEach(&post, func(idx int64) error {
-			// This is allowed to be 0 for testing.
-			//acc.Require(len(post.Proofs) == 0, "invalid number of proofs")
-			contains, err := util.BitFieldContainsAll(expectedPoSts, post.Partitions)
-			acc.RequireNoError(err, "failed to check if posts were expected")
-			acc.Require(contains, "unexpected post")
-			expectedPoSts, err = bitfield.SubtractBitField(expectedPoSts, post.Partitions)
-			acc.RequireNoError(err, "failed to subtract found posts from expected posts")
-			return nil
-		})
-		acc.RequireNoError(err, "failed to iterate over proofs")
-		missingPoSts, err := expectedPoSts.All(1 << 20)
-		acc.RequireNoError(err, "failed to expand missing posts")
-		acc.Require(len(missingPoSts) == 0, "missing posts for partitions: %v", missingPoSts)
-	}
-
 	// Check memoized sector and power values.
 	live, err := bitfield.MultiMerge(allLiveSectors...)
 	if err != nil {
