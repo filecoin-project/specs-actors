@@ -3,7 +3,6 @@ package nv9
 import (
 	"bytes"
 	"context"
-	"sync"
 
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
@@ -17,8 +16,7 @@ import (
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
-// Migrates a HAMT from v2 to v3 without re-encoding keys or values. The new hamt
-// configuration is specified by newOpts.
+// Migrates a HAMT from v2 to v3 without re-encoding keys or values.
 func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newBitwidth int) (cid.Cid, error) {
 	inRootNode, err := hamt2.LoadNode(ctx, store, root, adt2.HamtOptions...)
 	if err != nil {
@@ -41,7 +39,7 @@ func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, new
 	return store.Put(ctx, outRootNode)
 }
 
-// Migrates an AMT from v2 to v3 without re-encoding values. The new amt configuration is specified by newOpts
+// Migrates an AMT from v2 to v3 without re-encoding values.
 func migrateAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newBitwidth int) (cid.Cid, error) {
 	inRootNode, err := amt2.LoadAMT(ctx, store, root)
 	if err != nil {
@@ -64,8 +62,6 @@ func migrateAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newB
 }
 
 // Migrates a HAMT of HAMTs from v2 to v3 without re-encoding leaf keys or values.
-// The new outer hamt configurion is newOptsOuter, the new inner hamt configuration
-// is newOptsInner.
 func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newOuterBitwidth, newInnerBitwidth int) (cid.Cid, error) {
 	inRootNodeOuter, err := hamt2.LoadNode(ctx, store, root)
 	if err != nil {
@@ -97,8 +93,6 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid,
 }
 
 // Migrates a HAMT of AMTs from v2 to v3 without re-encoding values.
-// The new outer hamt configuraTIon is newOptsOuter, the new inner amt configuration
-// is newOptsInner
 func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newOuterBitwidth, newInnerBitwidth int) (cid.Cid, error) {
 	inRootNodeOuter, err := hamt2.LoadNode(ctx, store, root)
 	if err != nil {
@@ -122,23 +116,4 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 		return cid.Undef, err
 	}
 	return store.Put(ctx, outRootNodeOuter)
-}
-
-// Guards an unsychronized store with a mutex.
-// Useful for migrating the store created by a scenario VM (which is unsynchronized).
-type SyncStore struct {
-	store cbor.IpldStore
-	mu sync.Mutex
-}
-
-func (ss *SyncStore) Get(ctx context.Context, c cid.Cid, out interface{}) error {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	return ss.store.Get(ctx, c, out)
-}
-
-func (ss *SyncStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	return ss.store.Put(ctx, v)
 }
