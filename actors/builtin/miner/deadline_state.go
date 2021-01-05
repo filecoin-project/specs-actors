@@ -190,8 +190,32 @@ func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 	return arr, nil
 }
 
+func (d *Deadline) PartitionsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.PartitionsSnapshot, DeadlinePartitionsAmtBitwidth)
+	if err != nil {
+		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+	}
+	return arr, nil
+}
+
 func (d *Deadline) LoadPartition(store adt.Store, partIdx uint64) (*Partition, error) {
 	partitions, err := d.PartitionsArray(store)
+	if err != nil {
+		return nil, err
+	}
+	var partition Partition
+	found, err := partitions.Get(partIdx, &partition)
+	if err != nil {
+		return nil, xc.ErrIllegalState.Wrapf("failed to lookup partition %d: %w", partIdx, err)
+	}
+	if !found {
+		return nil, xc.ErrNotFound.Wrapf("no partition %d", partIdx)
+	}
+	return &partition, nil
+}
+
+func (d *Deadline) LoadPartitionSnapshot(store adt.Store, partIdx uint64) (*Partition, error) {
+	partitions, err := d.PartitionsSnapshotArray(store)
 	if err != nil {
 		return nil, err
 	}

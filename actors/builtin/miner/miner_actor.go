@@ -516,7 +516,7 @@ func (a Actor) ChallengeWindowedPoSt(rt Runtime, params *ChallengeWindowedPoStPa
 			proofsSnapshot, err := adt.AsArray(store, dlCurrent.PoStSubmissionsSnapshot, DeadlinePoStSubmissionsAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
 
-			partitionsSnapshot, err := adt.AsArray(store, dlCurrent.PartitionsSnapshot, DeadlinePoStSubmissionsAmtBitwidth)
+			partitionsSnapshot, err := dlCurrent.PartitionsSnapshotArray(store)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
 
 			// Load the target proof.
