@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
-	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
@@ -61,15 +60,17 @@ var _ runtime.VMActor = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
-// type MinerConstructorParams struct {
-// 	OwnerAddr     addr.Address
-// 	WorkerAddr    addr.Address
-// 	ControlAddrs  []addr.Address
-// 	SealProofType abi.RegisteredSealProof
-// 	PeerId        abi.PeerID
-// 	Multiaddrs    []abi.Multiaddrs
-// }
-type MinerConstructorParams = power2.MinerConstructorParams
+// Changed since v2:
+// - Seal proof type replaced with PoSt proof types
+type MinerConstructorParams struct {
+	OwnerAddr            addr.Address
+	WorkerAddr           addr.Address
+	ControlAddrs         []addr.Address
+	WindowPoStProofType  abi.RegisteredPoStProof
+	WinningPoStProofType abi.RegisteredPoStProof
+	PeerId               abi.PeerID
+	Multiaddrs           []abi.Multiaddrs
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
@@ -84,14 +85,16 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
-//type CreateMinerParams struct {
-//	Owner         addr.Address
-//	Worker        addr.Address
-//	SealProofType abi.RegisteredSealProof
-//	Peer          abi.PeerID
-//	Multiaddrs    []abi.Multiaddrs
-//}
-type CreateMinerParams = power0.CreateMinerParams
+// Changed since v2:
+// - Seal proof type replaced with PoSt proof types
+type CreateMinerParams struct {
+	Owner                addr.Address
+	Worker               addr.Address
+	WindowPoStProofType  abi.RegisteredPoStProof
+	WinningPoStProofType abi.RegisteredPoStProof
+	Peer                 abi.PeerID
+	Multiaddrs           []abi.Multiaddrs
+}
 
 //type CreateMinerReturn struct {
 //	IDAddress     addr.Address // The canonical ID-based address for the actor.
@@ -103,9 +106,10 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	ctorParams := MinerConstructorParams{
-		OwnerAddr:     params.Owner,
-		WorkerAddr:    params.Worker,
-		SealProofType: params.SealProofType,
+		OwnerAddr:  params.Owner,
+		WorkerAddr: params.Worker,
+		WindowPoStProofType: params.WindowPoStProofType,
+		WinningPoStProofType: params.WinningPoStProofType,
 		PeerId:        params.Peer,
 		Multiaddrs:    params.Multiaddrs,
 	}
@@ -131,13 +135,13 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-		err = setClaim(claims, addresses.IDAddress, &Claim{params.SealProofType, abi.NewStoragePower(0), abi.NewStoragePower(0)})
+		err = setClaim(claims, addresses.IDAddress, &Claim{params.WindowPoStProofType, abi.NewStoragePower(0), abi.NewStoragePower(0)})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner")
 
 		st.MinerCount += 1
 
 		// Ensure new claim updates all power stats
-		err = st.updateStatsForNewMiner(params.SealProofType)
+		err = st.updateStatsForNewMiner(params.WindowPoStProofType)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed update power stats for new miner %v", addresses.IDAddress)
 
 		st.Claims, err = claims.Root()

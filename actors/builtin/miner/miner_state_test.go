@@ -892,12 +892,13 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	owner := tutils.NewBLSAddr(t, 1)
 	worker := tutils.NewBLSAddr(t, 2)
 
-	testSealProofType := abi.RegisteredSealProof_StackedDrg2KiBV1_1
+	testWindowPoStProofType := abi.RegisteredPoStProof_StackedDrgWindow2KiBV1
+	testWinningPoStProofType := abi.RegisteredPoStProof_StackedDrgWinning2KiBV1
 
-	sectorSize, err := testSealProofType.SectorSize()
+	sectorSize, err := testWindowPoStProofType.SectorSize()
 	require.NoError(t, err)
 
-	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(testSealProofType)
+	partitionSectors, err := builtin.PoStProofWindowPoStPartitionSectors(testWindowPoStProofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
@@ -906,7 +907,8 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 		PendingWorkerKey:           nil,
 		PeerId:                     abi.PeerID("peer"),
 		Multiaddrs:                 testMultiaddrs,
-		SealProofType:              testSealProofType,
+		WindowPoStProofType:        testWindowPoStProofType,
+		WinningPoStProofType:       testWinningPoStProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 	}

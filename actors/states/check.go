@@ -167,8 +167,8 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 			claimPower := miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
 			acc.Require(minerSummary.ActivePower.Equals(claimPower),
 				"miner %v computed active power %v does not match claim %v", addr, minerSummary.ActivePower, claimPower)
-			acc.Require(minerSummary.SealProofType == claim.SealProofType,
-				"miner seal proof type %d does not match claim proof type %d", minerSummary.SealProofType, claim.SealProofType)
+			acc.Require(minerSummary.WindowPoStProofType == claim.WindowPoStProofType,
+				"miner seal proof type %d does not match claim proof type %d", minerSummary.WindowPoStProofType, claim.WindowPoStProofType)
 		}
 
 		// check crons

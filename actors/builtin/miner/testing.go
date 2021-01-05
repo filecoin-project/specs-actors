@@ -17,11 +17,12 @@ type DealSummary struct {
 }
 
 type StateSummary struct {
-	LivePower     PowerPair
-	ActivePower   PowerPair
-	FaultyPower   PowerPair
-	Deals         map[abi.DealID]DealSummary
-	SealProofType abi.RegisteredSealProof
+	LivePower            PowerPair
+	ActivePower          PowerPair
+	FaultyPower          PowerPair
+	Deals                map[abi.DealID]DealSummary
+	WindowPoStProofType  abi.RegisteredPoStProof
+	WinningPoStProofType abi.RegisteredPoStProof
 }
 
 // Checks internal invariants of init state.
@@ -29,10 +30,11 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	acc := &builtin.MessageAccumulator{}
 	sectorSize := abi.SectorSize(0)
 	minerSummary := &StateSummary{
-		LivePower:     NewPowerPairZero(),
-		ActivePower:   NewPowerPairZero(),
-		FaultyPower:   NewPowerPairZero(),
-		SealProofType: 0,
+		LivePower:            NewPowerPairZero(),
+		ActivePower:          NewPowerPairZero(),
+		FaultyPower:          NewPowerPairZero(),
+		WindowPoStProofType:  0,
+		WinningPoStProofType: 0,
 	}
 
 	// Load data from linked structures.
@@ -41,7 +43,8 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		// Stop here, it's too hard to make other useful checks.
 		return minerSummary, acc
 	} else {
-		minerSummary.SealProofType = info.SealProofType
+		minerSummary.WindowPoStProofType = info.WindowPoStProofType
+		minerSummary.WinningPoStProofType = info.WinningPoStProofType
 		sectorSize = info.SectorSize
 		CheckMinerInfo(info, acc)
 	}
@@ -657,19 +660,26 @@ func CheckMinerInfo(info *MinerInfo, acc *builtin.MessageAccumulator) {
 			"pending owner address %v is same as existing owner %v", info.PendingOwnerAddress, info.Owner)
 	}
 
-	sealProofInfo, found := abi.SealProofInfos[info.SealProofType]
-	acc.Require(found, "miner has unrecognized seal proof type %d", info.SealProofType)
+	windowPoStProofInfo, found := abi.PoStProofInfos[info.WindowPoStProofType]
+	acc.Require(found, "miner has unrecognized Window PoSt proof type %d", info.WindowPoStProofType)
 	if found {
-		acc.Require(sealProofInfo.SectorSize == info.SectorSize,
-			"sector size %d is wrong for seal proof type %d: %d", info.SectorSize, info.SealProofType, sealProofInfo.SectorSize)
+		acc.Require(windowPoStProofInfo.SectorSize == info.SectorSize,
+			"sector size %d is wrong for Window PoSt proof type %d: %d", info.SectorSize, info.WindowPoStProofType, windowPoStProofInfo.SectorSize)
 	}
-	windowPoStProof := sealProofInfo.WindowPoStProof
-	poStProofPolicy, found := builtin.PoStProofPolicies[windowPoStProof]
-	acc.Require(found, "no seal proof policy exists for proof type %d", info.SealProofType)
+
+	winningPoStProofInfo, found := abi.PoStProofInfos[info.WinningPoStProofType]
+	acc.Require(found, "miner has unrecognized Window PoSt proof type %d", info.WinningPoStProofType)
+	if found {
+		acc.Require(winningPoStProofInfo.SectorSize == info.SectorSize,
+			"sector size %d is wrong for Winning PoSt proof type %d: %d", info.SectorSize, info.WinningPoStProofType, winningPoStProofInfo.SectorSize)
+	}
+
+	poStProofPolicy, found := builtin.PoStProofPolicies[info.WindowPoStProofType]
+	acc.Require(found, "no PoSt proof policy exists for proof type %d", info.WindowPoStProofType)
 	if found {
 		acc.Require(poStProofPolicy.WindowPoStPartitionSectors == info.WindowPoStPartitionSectors,
-			"miner partition sectors %d does not match partition sectors %d for seal proof type %d",
-			info.WindowPoStPartitionSectors, poStProofPolicy.WindowPoStPartitionSectors, info.SealProofType)
+			"miner partition sectors %d does not match partition sectors %d for PoSt proof type %d",
+			info.WindowPoStPartitionSectors, poStProofPolicy.WindowPoStPartitionSectors, info.WindowPoStProofType)
 	}
 }
 

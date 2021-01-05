@@ -22,6 +22,10 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 		return nil, err
 	}
 
+	infoOut, err := m.migrateInfo(ctx, store, inState.Info)
+	if err != nil {
+		return nil, err
+	}
 	preCommittedSectorsOut, err := migrateHAMTRaw(ctx, store, inState.PreCommittedSectors, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
@@ -44,7 +48,7 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 
 	outState := miner3.State{
-		Info:                      inState.Info,
+		Info:                      infoOut,
 		PreCommitDeposits:         inState.PreCommitDeposits,
 		LockedFunds:               inState.LockedFunds,
 		VestingFunds:              inState.VestingFunds,
@@ -68,6 +72,47 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 
 func (m minerMigrator) migratedCodeCID() cid.Cid {
 	return builtin3.StorageMinerActorCodeID
+}
+
+func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c cid.Cid) (cid.Cid, error) {
+	var oldInfo miner2.MinerInfo
+	err := store.Get(ctx, c, &oldInfo)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	var newWorkerKeyChange *miner3.WorkerKeyChange
+	if oldInfo.PendingWorkerKey != nil {
+		newWorkerKeyChange = &miner3.WorkerKeyChange{
+			NewWorker:   oldInfo.PendingWorkerKey.NewWorker,
+			EffectiveAt: oldInfo.PendingWorkerKey.EffectiveAt,
+		}
+	}
+
+	windowPoStProof, err := oldInfo.SealProofType.RegisteredWindowPoStProof()
+	if err != nil {
+		return cid.Undef, err
+	}
+	winningPoStProof, err := oldInfo.SealProofType.RegisteredWinningPoStProof()
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	newInfo := miner3.MinerInfo{
+		Owner:                      oldInfo.Owner,
+		Worker:                     oldInfo.Worker,
+		ControlAddresses:           oldInfo.ControlAddresses,
+		PendingWorkerKey:           newWorkerKeyChange,
+		PeerId:                     oldInfo.PeerId,
+		Multiaddrs:                 oldInfo.Multiaddrs,
+		WindowPoStProofType:        windowPoStProof,
+		WinningPoStProofType:       winningPoStProof,
+		SectorSize:                 oldInfo.SectorSize,
+		WindowPoStPartitionSectors: oldInfo.WindowPoStPartitionSectors,
+		ConsensusFaultElapsed:      oldInfo.ConsensusFaultElapsed,
+		PendingOwnerAddress:        oldInfo.PendingOwnerAddress,
+	}
+	return store.Put(ctx, &newInfo)
 }
 
 func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, cache MigrationCache, deadlines cid.Cid) (cid.Cid, error) {
