@@ -201,6 +201,52 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions")
 
+	// Check partitions snapshot
+	snapshotSectors := bitfield.New()
+	partitionSnapshotCount := uint64(0)
+	partitionsSnapshot, err := deadline.PartitionsSnapshotArray(store)
+	acc.RequireNoError(err, "error loading partitions snapshot")
+	err = partitionsSnapshot.ForEach(&partition, func(i int64) error {
+		pIdx := uint64(i)
+		// Common partition checks.
+		acc.Require(pIdx == partitionSnapshotCount, "Non-sequential partitions, expected index %d, found %d", partitionSnapshotCount, pIdx)
+		partitionSnapshotCount++
+
+		acc := acc.WithPrefix("partition snapshot %d: ", pIdx) // Shadow
+		summary := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors, acc)
+
+		if contains, err := util.BitFieldContainsAny(snapshotSectors, summary.AllSectors); err != nil {
+			acc.Addf("error checking bitfield contains: %v", err)
+		} else {
+			acc.Require(!contains, "duplicate sector in partition %d", pIdx)
+		}
+
+		snapshotSectors, err = bitfield.MergeBitFields(snapshotSectors, summary.AllSectors)
+		if err != nil {
+			acc.Addf("error merging partition sector numbers with all: %v", err)
+			snapshotSectors = bitfield.New()
+		}
+
+		// We can't really check the power here. But we _can_ make sure there are no declared recoveries, etc in the snapshots.
+
+		acc.Require(partition.RecoveringPower.IsZero(), "snapshot partition has recovering power")
+		if noRecoveries, err := partition.Recoveries.IsEmpty(); err != nil {
+			acc.Addf("error counting recoveries: %v", err)
+		} else {
+			acc.Require(noRecoveries, "snapshot partition has pending recoveries")
+		}
+
+		acc.Require(partition.UnprovenPower.IsZero(), "snapshot partition has unproven power")
+		if noUnproven, err := partition.Unproven.IsEmpty(); err != nil {
+			acc.Addf("error counting unproven: %v", err)
+		} else {
+			acc.Require(noUnproven, "snapshot partition has unproven sectors")
+		}
+
+		return nil
+	})
+	acc.RequireNoError(err, "error iterating partitions snapshot")
+
 	// Check memoized sector and power values.
 	live, err := bitfield.MultiMerge(allLiveSectors...)
 	if err != nil {
