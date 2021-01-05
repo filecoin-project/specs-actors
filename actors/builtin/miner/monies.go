@@ -118,6 +118,13 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 				big.Mul(big.NewInt(builtin.EpochsInDay), TerminationRewardFactor.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
+// The penalty for a sector continuing faulty for another proving period.
+// It is a projection of the expected reward earned by the sector.
+// TODO(PARAM): consider applying a multiplier on the penalty
+func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower)
+}
+
 // Computes the PreCommit deposit given sector qa weight and current network conditions.
 // PreCommit Deposit = BR(PreCommitDepositProjectionPeriod)
 func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
