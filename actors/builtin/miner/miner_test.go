@@ -2446,8 +2446,9 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
-		st.ProvingPeriodStart = expirationPeriod
+		remainingEpochs := expiration - st.ProvingPeriodStart
+		remainingPeriods := remainingEpochs/miner.WPoStProvingPeriod + 1
+		st.ProvingPeriodStart += remainingPeriods * miner.WPoStProvingPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
@@ -2479,8 +2480,9 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
-		st.ProvingPeriodStart = expirationPeriod
+		remainingEpochs := expiration - st.ProvingPeriodStart
+		remainingPeriods := remainingEpochs/miner.WPoStProvingPeriod + 1
+		st.ProvingPeriodStart += remainingPeriods * miner.WPoStProvingPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
