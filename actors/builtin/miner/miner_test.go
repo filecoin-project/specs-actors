@@ -1871,7 +1871,9 @@ func TestWindowPost(t *testing.T) {
 		WithEpoch(precommitEpoch).
 		WithBalance(bigBalance, big.Zero())
 
-	testBasicPoSt := func(proofs []proof.PoStProof) {
+	testBasicPoSt := func(challengeSucceed bool) {
+		proofs := makePoStProofs(actor.postProofType)
+
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
@@ -1919,18 +1921,25 @@ func TestWindowPost(t *testing.T) {
 
 		// Proofs should exist in snapshot.
 		require.Equal(t, deadline.PoStSubmissionsSnapshot, postsCid)
+
+		var result *poStChallengeResult
+		if challengeSucceed {
+			expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+			result = &poStChallengeResult{
+				expectedPowerDelta:  pwr.Neg(),
+				expectedPenalty:     expectedFee,
+				expectedPledgeDelta: big.Zero(),
+			}
+		}
+		actor.challengeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
 	}
 
 	t.Run("test proof", func(t *testing.T) {
-		testBasicPoSt(makePoStProofs(actor.postProofType))
+		testBasicPoSt(true)
 	})
 
-	t.Run("test bad proof accepted", func(t *testing.T) {
-		proofs := makePoStProofs(actor.postProofType)
-		for i := range proofs {
-			proofs[i].ProofBytes[0] = 'X'
-		}
-		testBasicPoSt(proofs)
+	t.Run("test bad proof accepted and challenged", func(t *testing.T) {
+		testBasicPoSt(false)
 	})
 
 	t.Run("test duplicate proof rejected", func(t *testing.T) {
@@ -4638,6 +4647,22 @@ func (h *actorHarness) getPartition(rt *mock.Runtime, deadline *miner.Deadline, 
 	return partition
 }
 
+func (h *actorHarness) getPartitionSnapshot(rt *mock.Runtime, deadline *miner.Deadline, idx uint64) *miner.Partition {
+	partition, err := deadline.LoadPartitionSnapshot(rt.AdtStore(), idx)
+	require.NoError(h.t, err)
+	return partition
+}
+
+func (h *actorHarness) getSubmittedProof(rt *mock.Runtime, deadline *miner.Deadline, idx uint64) *miner.WindowedPoSt {
+	proofs, err := adt.AsArray(rt.AdtStore(), deadline.PoStSubmissionsSnapshot, miner.DeadlinePoStSubmissionsAmtBitwidth)
+	require.NoError(h.t, err)
+	var post miner.WindowedPoSt
+	found, err := proofs.Get(idx, &post)
+	require.NoError(h.t, err)
+	require.True(h.t, found)
+	return &post
+}
+
 func (h *actorHarness) getDeadlineAndPartition(rt *mock.Runtime, dlIdx, pIdx uint64) (*miner.Deadline, *miner.Partition) {
 	deadline := h.getDeadline(rt, dlIdx)
 	partition := h.getPartition(rt, deadline, pIdx)
@@ -5117,106 +5142,142 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
-type poStConfig struct {
-	expectedPowerDelta miner.PowerPair
-	verificationError  error
+type poStChallengeResult struct {
+	expectedPowerDelta  miner.PowerPair
+	expectedPledgeDelta abi.TokenAmount
+	expectedPenalty     abi.TokenAmount
 }
 
-func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
+func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, proofIndex uint64, infos []*miner.SectorOnChainInfo, expectSuccess *poStChallengeResult) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAny()
 
-	// TODO: adapt this to verify post on challenge, instead of on submit.
-	/*
-		proofs := makePoStProofs(h.postProofType)
-		challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
+	currentReward := reward.ThisEpochRewardReturn{
+		ThisEpochBaselinePower:  h.baselinePower,
+		ThisEpochRewardSmoothed: h.epochRewardSmooth,
+	}
+	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
 
-		// only sectors that are not skipped and not existing non-recovered faults will be verified
-		allIgnored := bf()
-		dln := h.getDeadline(rt, deadline.Index)
+	networkPower := big.NewIntUnsigned(1 << 50)
+	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
+		&power.CurrentTotalPowerReturn{
+			RawBytePower:            networkPower,
+			QualityAdjPower:         networkPower,
+			PledgeCollateral:        h.networkPledge,
+			QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
+		},
+		exitcode.Ok)
 
-		for _, p := range partitions {
-			partition := h.getPartition(rt, dln, p.Index)
-			expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
-			require.NoError(h.t, err)
-			allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
-			require.NoError(h.t, err)
+	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
+
+	// only sectors that are not skipped and not existing non-recovered faults will be verified
+	allIgnored := bf()
+	dln := h.getDeadline(rt, deadline.Index)
+
+	post := h.getSubmittedProof(rt, dln, proofIndex)
+
+	var err error
+	err = post.Partitions.ForEach(func(idx uint64) error {
+		partition := h.getPartitionSnapshot(rt, dln, idx)
+		allIgnored, err = bitfield.MergeBitFields(allIgnored, partition.Faults)
+		require.NoError(h.t, err)
+		noRecoveries, err := partition.Recoveries.IsEmpty()
+		require.NoError(h.t, err)
+		require.True(h.t, noRecoveries)
+		return nil
+	})
+	require.NoError(h.t, err)
+
+	// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
+	var goodInfo *miner.SectorOnChainInfo
+	for _, ci := range infos {
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if !contains {
+			goodInfo = ci
+			break
+		}
+	}
+	require.NotNil(h.t, goodInfo, "stored proof should prove at least one sector")
+
+	var buf bytes.Buffer
+	receiver := rt.Receiver()
+	err = receiver.MarshalCBOR(&buf)
+	require.NoError(h.t, err)
+
+	rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
+
+	actorId, err := addr.IDFromAddress(h.receiver)
+	require.NoError(h.t, err)
+
+	// if not all sectors are skipped
+	proofInfos := make([]proof.SectorInfo, len(infos))
+	for i, ci := range infos {
+		si := ci
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if contains {
+			si = goodInfo
+		}
+		proofInfos[i] = proof.SectorInfo{
+			SealProof:    si.SealProof,
+			SectorNumber: si.SectorNumber,
+			SealedCID:    si.SealedCID,
+		}
+	}
+
+	vi := proof.WindowPoStVerifyInfo{
+		Randomness:        abi.PoStRandomness(challengeRand),
+		Proofs:            post.Proofs,
+		ChallengedSectors: proofInfos,
+		Prover:            abi.ActorID(actorId),
+	}
+	var verifResult error
+	if expectSuccess != nil {
+		// if we succeed at challenging, proof verification needs to fail.
+		verifResult = fmt.Errorf("invalid post")
+	}
+	rt.ExpectVerifyPoSt(vi, verifResult)
+
+	if expectSuccess != nil {
+		// expect power update
+		if !expectSuccess.expectedPowerDelta.IsZero() {
+			claim := &power.UpdateClaimedPowerParams{
+				RawByteDelta:         expectSuccess.expectedPowerDelta.Raw,
+				QualityAdjustedDelta: expectSuccess.expectedPowerDelta.QA,
+			}
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
+				nil, exitcode.Ok)
+		}
+		// expect pledge update
+		if !expectSuccess.expectedPledgeDelta.IsZero() {
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal,
+				&expectSuccess.expectedPledgeDelta, abi.NewTokenAmount(0), nil, exitcode.Ok)
 		}
 
-		// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
-		var goodInfo *miner.SectorOnChainInfo
-		for _, ci := range infos {
-			contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
-			require.NoError(h.t, err)
-			if !contains {
-				goodInfo = ci
-				break
-			}
+		// expect penalty
+		if !expectSuccess.expectedPenalty.IsZero() {
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectSuccess.expectedPenalty, nil, exitcode.Ok)
 		}
+	}
 
-		// goodInfo == nil indicates all the sectors have been skipped and should PoSt verification should not occur
-		if goodInfo != nil {
-			var buf bytes.Buffer
-			receiver := rt.Receiver()
-			err := receiver.MarshalCBOR(&buf)
-			require.NoError(h.t, err)
+	params := miner.ChallengeWindowedPoStParams{
+		Deadline:   deadline.Index,
+		ProofIndex: proofIndex,
+	}
+	if expectSuccess == nil {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to challenge valid post", func() {
+			rt.Call(h.a.ChallengeWindowedPoSt, &params)
+		})
+	} else {
+		rt.Call(h.a.ChallengeWindowedPoSt, &params)
+	}
+	rt.Verify()
+}
 
-			rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
-
-			actorId, err := addr.IDFromAddress(h.receiver)
-			require.NoError(h.t, err)
-
-			// if not all sectors are skipped
-			proofInfos := make([]proof.SectorInfo, len(infos))
-			for i, ci := range infos {
-				si := ci
-				contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
-				require.NoError(h.t, err)
-				if contains {
-					si = goodInfo
-				}
-				proofInfos[i] = proof.SectorInfo{
-					SealProof:    si.SealProof,
-					SectorNumber: si.SectorNumber,
-					SealedCID:    si.SealedCID,
-				}
-			}
-
-			vi := proof.WindowPoStVerifyInfo{
-				Randomness:        abi.PoStRandomness(challengeRand),
-				Proofs:            proofs,
-				ChallengedSectors: proofInfos,
-				Prover:            abi.ActorID(actorId),
-			}
-			var verifResult error
-			if poStCfg != nil {
-				verifResult = poStCfg.verificationError
-			}
-			rt.ExpectVerifyPoSt(vi, verifResult)
-		}
-		if poStCfg != nil {
-			// expect power update
-			if !poStCfg.expectedPowerDelta.IsZero() {
-				claim := &power.UpdateClaimedPowerParams{
-					RawByteDelta:         poStCfg.expectedPowerDelta.Raw,
-					QualityAdjustedDelta: poStCfg.expectedPowerDelta.QA,
-				}
-				rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
-					nil, exitcode.Ok)
-			}
-		}
-
-		params := miner.SubmitWindowedPoStParams{
-			Deadline:         deadline.Index,
-			Partitions:       partitions,
-			Proofs:           proofs,
-			ChainCommitEpoch: deadline.Challenge,
-			ChainCommitRand:  commitRand,
-		}
-
-		rt.Call(h.a.SubmitWindowedPoSt, &params)
-		rt.Verify()
-	*/
+type poStConfig struct {
+	expectedPowerDelta miner.PowerPair
+	verificationError  error
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
