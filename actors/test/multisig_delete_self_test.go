@@ -5,23 +5,23 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v2/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
 func TestV5MultisigDeleteSigner1Of2(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -68,7 +68,7 @@ func TestV5MultisigDeleteSigner1Of2(t *testing.T) {
 
 func TestV5MultisigDeleteSelf2Of3RemovedIsProposer(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 3, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -121,7 +121,7 @@ func TestV5MultisigDeleteSelf2Of3RemovedIsProposer(t *testing.T) {
 
 func TestV5MultisigDeleteSelf2Of3RemovedIsApprover(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 3, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -174,7 +174,7 @@ func TestV5MultisigDeleteSelf2Of3RemovedIsApprover(t *testing.T) {
 
 func TestV5MultisigDeleteSelf2Of2(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -225,7 +225,7 @@ func TestV5MultisigDeleteSelf2Of2(t *testing.T) {
 
 func TestV5MultisigSwapsSelf1Of2(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 3, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -277,7 +277,7 @@ func TestV5MultisigSwapsSelf1Of2(t *testing.T) {
 
 func TestV5MultisigSwapsSelf2Of3(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	v, err := v.WithNetworkVersion(network.Version5)
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 4, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -356,7 +356,7 @@ func TestV5MultisigSwapsSelf2Of3(t *testing.T) {
 
 func TestMultisigDeleteSigner1Of2(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	multisigParams := multisig.ConstructorParams{
@@ -398,7 +398,7 @@ func TestMultisigDeleteSigner1Of2(t *testing.T) {
 
 func TestMultisigSwapsSelf1Of2(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 3, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 	alice := addrs[0]
 	bob := addrs[1]

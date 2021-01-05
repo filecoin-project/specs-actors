@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,7 +32,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/smoothing"
-	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	actor_testing "github.com/filecoin-project/specs-actors/v2/support/testing"
 )
 
@@ -51,18 +51,13 @@ func init() {
 //
 
 // Creates a new VM and initializes all singleton actors plus a root verifier account.
-func NewVMWithSingletons(ctx context.Context, t *testing.T) *VM {
-	store := ipld.NewADTStore(ctx)
-	return NewCustomStoreVMWithSingletons(ctx, store, t)
-}
-
-// Creates a new VM and initializes all singleton actors plus a root verifier account.
-func NewCustomStoreVMWithSingletons(ctx context.Context, store adt.Store, t testing.TB) *VM {
+func NewVMWithSingletons(ctx context.Context, t testing.TB, bs ipldcbor.IpldBlockstore) *VM {
 	lookup := map[cid.Cid]runtime.VMActor{}
 	for _, ba := range exported.BuiltinActors() {
 		lookup[ba.Code()] = ba
 	}
 
+	store := adt.WrapStore(ctx, ipldcbor.NewCborStore(bs))
 	vm := NewVM(ctx, lookup, store)
 
 	emptyMapCID, err := adt.MakeEmptyMap(vm.store).Root()
