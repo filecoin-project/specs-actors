@@ -201,33 +201,12 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions")
 
-	// Check partitions snapshot
-	snapshotSectors := bitfield.New()
-	partitionSnapshotCount := uint64(0)
+	// Check partitions snapshot to make sure we take the snapshot after
+	// dealing with recovering power and unproven power.
 	partitionsSnapshot, err := deadline.PartitionsSnapshotArray(store)
 	acc.RequireNoError(err, "error loading partitions snapshot")
 	err = partitionsSnapshot.ForEach(&partition, func(i int64) error {
-		pIdx := uint64(i)
-		// Common partition checks.
-		acc.Require(pIdx == partitionSnapshotCount, "Non-sequential partitions, expected index %d, found %d", partitionSnapshotCount, pIdx)
-		partitionSnapshotCount++
-
-		acc := acc.WithPrefix("partition snapshot %d: ", pIdx) // Shadow
-		summary := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors, acc)
-
-		if contains, err := util.BitFieldContainsAny(snapshotSectors, summary.AllSectors); err != nil {
-			acc.Addf("error checking bitfield contains: %v", err)
-		} else {
-			acc.Require(!contains, "duplicate sector in partition %d", pIdx)
-		}
-
-		snapshotSectors, err = bitfield.MergeBitFields(snapshotSectors, summary.AllSectors)
-		if err != nil {
-			acc.Addf("error merging partition sector numbers with all: %v", err)
-			snapshotSectors = bitfield.New()
-		}
-
-		// We can't really check the power here. But we _can_ make sure there are no declared recoveries, etc in the snapshots.
+		acc := acc.WithPrefix("partition snapshot %d: ", i) // Shadow
 
 		acc.Require(partition.RecoveringPower.IsZero(), "snapshot partition has recovering power")
 		if noRecoveries, err := partition.Recoveries.IsEmpty(); err != nil {
