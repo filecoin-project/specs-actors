@@ -1,4 +1,4 @@
-package test
+package test_test
 
 import (
 	"context"
@@ -33,6 +33,7 @@ import (
 
 func TestUpdatePendingDealsMigration(t *testing.T) {
 	ctx := context.Background()
+	log := TestLogger{t}
 	v := vm2.NewVMWithSingletons(ctx, t)
 	addrs := vm2.CreateAccounts(ctx, t, v, 10, big.Mul(big.NewInt(100_000), vm2.FIL), 93837778)
 	worker := addrs[0]
@@ -71,7 +72,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	}
 
 	// run migration
-	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1})
+	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1}, log)
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]rt.VMActor{}
