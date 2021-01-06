@@ -41,6 +41,31 @@ func init() {
 	if abi.ChainEpoch(WPoStPeriodDeadlines)*WPoStChallengeWindow != WPoStProvingPeriod {
 		panic(fmt.Sprintf("incompatible proving period %d and challenge window %d", WPoStProvingPeriod, WPoStChallengeWindow))
 	}
+
+	// Check to make sure the dispute window is longer than finality so there's always some time to dispute bad proofs.
+	if WPoStDisputeWindow <= ChainFinality {
+		panic(fmt.Sprintf("the proof dispute period %d must exceed finality %d", WPoStDisputeWindow, ChainFinality))
+	}
+
+	// A deadline becomes immutable one challenge window before it's challenge window opens.
+	// The challenge lookback must fall within this immutability period.
+	if WPoStChallengeLookback > WPoStChallengeWindow {
+		panic(fmt.Sprintf("the challenge lookback cannot exceed one challenge window"))
+	}
+
+	// Deadlines are immutable when the challenge window is open, and during
+	// the previous challenge window.
+	immutableWindow := 2 * WPoStChallengeWindow
+
+	// We want to reserve at least one deadline's worth of time to compact a
+	// deadline.
+	minCompactionWindow := WPoStChallengeWindow
+
+	// Make sure we have enough time in the proving period to do everything we need.
+	if (minCompactionWindow + immutableWindow + WPoStDisputeWindow) <= WPoStProvingPeriod {
+		panic(fmt.Sprintf("together, the minimum compaction window (%d) immutability window (%d) and the dispute window (%d) exceed the proving period (%d)",
+			minCompactionWindow, immutableWindow, WPoStDisputeWindow, WPoStProvingPeriod))
+	}
 }
 
 // The maximum number of partitions that can be loaded in a single invocation.

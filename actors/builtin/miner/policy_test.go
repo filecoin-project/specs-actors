@@ -145,24 +145,3 @@ func assertEqual(t *testing.T, a, b big.Int) {
 		assert.Equal(t, a, b)
 	}
 }
-
-func TestPoStTimeConstraints(t *testing.T) {
-	// period during which a deadline is "immutable"
-	immutablePeriod := 2 * miner.WPoStChallengeWindow
-
-	// If we have less than finality, an attacker could try a very long
-	// (almost finality) fork and leave no time to dispute.
-	require.True(t, miner.WPoStDisputeWindow >= miner.ChainFinality,
-		"the proof dispute period must exceed finality")
-
-	// This is an arbitrary constraint, but we should ensure we leave _some_
-	// time for compaction.
-	compactionPeriod := miner.WPoStProvingPeriod - (immutablePeriod + miner.WPoStDisputeWindow)
-	require.True(t, compactionPeriod > 3*builtin.EpochsInHour,
-		"there must be at least a 3 hour window for partition compaction")
-
-	// If this constraint breaks, the challenge lookback may be _before_ the
-	// immutability period starts.
-	require.True(t, miner.WPoStChallengeLookback < immutablePeriod-miner.WPoStChallengeWindow,
-		"the challenge lookback must be inside the immutability period")
-}
