@@ -21,13 +21,14 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
+	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v2/support/testing"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
 func TestMigrationPowerAccountingIssue(t *testing.T) {
 	ctx := context.Background()
-	v, err := vm.NewVMWithSingletons(ctx, t).WithNetworkVersion(network.Version6)
+	v, err := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory()).WithNetworkVersion(network.Version6)
 	require.NoError(t, err)
 
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), vm.FIL), 93837778)

@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -59,8 +60,8 @@ type SimConfig struct {
 	CreateMinerProbability float32
 }
 
-func NewSim(ctx context.Context, t testing.TB, store adt.Store, config SimConfig) *Sim {
-	v := vm.NewCustomStoreVMWithSingletons(ctx, store, t)
+func NewSim(ctx context.Context, t testing.TB, bs ipldcbor.IpldBlockstore, config SimConfig) *Sim {
+	v := vm.NewVMWithSingletons(ctx, t, bs)
 	return &Sim{
 		Config: config,
 		Agents: []Agent{},

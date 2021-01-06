@@ -9,14 +9,12 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
-	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v2/support/agent"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	"github.com/filecoin-project/specs-actors/v2/support/vm"
@@ -29,7 +27,7 @@ func TestCreate20Miners(t *testing.T) {
 
 	rnd := rand.New(rand.NewSource(42))
 
-	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+	sim := agent.NewSim(ctx, t, ipld.NewBlockStoreInMemory(), agent.SimConfig{Seed: rnd.Int63()})
 	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
@@ -70,7 +68,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	minerCount := 1
 
 	rnd := rand.New(rand.NewSource(42))
-	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+	sim := agent.NewSim(ctx, t, ipld.NewBlockStoreInMemory(), agent.SimConfig{Seed: rnd.Int63()})
 	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
@@ -121,7 +119,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	cumulativeStats := make(vm_test.StatsByCall)
 
 	// configure simulation
-	store, storeMetrics := metricsADTStore(ctx)
+	store := ipld.NewMetricsStore(ipld.NewBlockStoreInMemory())
 	rnd := rand.New(rand.NewSource(42))
 	sim := agent.NewSim(ctx, t, store, agent.SimConfig{Seed: rnd.Int63()})
 	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
@@ -137,7 +135,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 		1.0, // create miner probibility of 1 means a new miner is created every tick
 		rnd.Int63(),
 	))
-	sim.GetVM().SetStatsSource(storeMetrics)
+	sim.GetVM().SetStatsSource(store)
 
 	var pwrSt power.State
 	for i := 0; i < 20_000; i++ {
@@ -147,7 +145,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 			require.NoError(t, sim.GetVM().GetState(builtin.StoragePowerActorAddr, &pwrSt))
 			fmt.Printf("Power at %d: raw: %v  qa: %v  cmtRaw: %v  cmtQa: %v  cnsMnrs: %d  puts: %d  gets: %d\n",
 				sim.GetVM().GetEpoch(), pwrSt.TotalRawBytePower, pwrSt.TotalQualityAdjPower, pwrSt.TotalBytesCommitted,
-				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, storeMetrics.Writes, storeMetrics.Reads)
+				pwrSt.TotalQABytesCommitted, pwrSt.MinerAboveMinPowerCount, store.Writes, store.Reads)
 		}
 
 		cumulativeStats.MergeAllStats(sim.GetCallStats())
@@ -173,9 +171,4 @@ func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent s
 	for m, s := range stats.SubStats {
 		printCallStats(m, s, indent+"  ")
 	}
-}
-
-func metricsADTStore(ctx context.Context) (adt.Store, *ipld.MetricsStore) { // nolint:unused
-	ms := ipld.NewMetricsStore(ipld.NewBlockStoreInMemory())
-	return adt.WrapStore(ctx, cbor.NewCborStore(ms)), ms
 }
