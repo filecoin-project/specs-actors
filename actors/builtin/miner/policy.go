@@ -62,7 +62,7 @@ func init() {
 	minCompactionWindow := WPoStChallengeWindow
 
 	// Make sure we have enough time in the proving period to do everything we need.
-	if (minCompactionWindow + immutableWindow + WPoStDisputeWindow) <= WPoStProvingPeriod {
+	if (minCompactionWindow + immutableWindow + WPoStDisputeWindow) > WPoStProvingPeriod {
 		panic(fmt.Sprintf("together, the minimum compaction window (%d) immutability window (%d) and the dispute window (%d) exceed the proving period (%d)",
 			minCompactionWindow, immutableWindow, WPoStDisputeWindow, WPoStProvingPeriod))
 	}
