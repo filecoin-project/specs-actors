@@ -10,12 +10,13 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
 
 func TestMarketWithdraw(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	initialBalance := big.Mul(big.NewInt(6), big.NewInt(1e18))
 	addrs := vm.CreateAccounts(ctx, t, v, 1, initialBalance, 93837778)
 	caller := addrs[0]

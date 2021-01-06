@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
@@ -23,7 +24,7 @@ import (
 // This scenario hits all Market Actor methods.
 func TestTerminateSectors(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 4, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
 	owner, verifier, unverifiedClient, verifiedClient := addrs[0], addrs[1], addrs[2], addrs[3]
 	worker := owner

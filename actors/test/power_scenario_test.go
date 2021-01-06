@@ -11,12 +11,13 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
 
 func TestCreateMiner(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	params := power.CreateMinerParams{
@@ -67,7 +68,7 @@ func TestCreateMiner(t *testing.T) {
 
 func TestOnEpochTickEnd(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
 	// create a miner
