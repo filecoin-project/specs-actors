@@ -44,9 +44,21 @@ type Logger interface {
 	Log(level rt.LogLevel, msg string, args ...interface{})
 }
 
+// MigrationCache ByAddress calls need not be threadsafe
+// It must be safe to operation on any two output PreMigrationAddressCache concurrently
+type MigrationCache interface {
+	ByAddress(addr address.Address) MigrationAddressCache
+}
+
+// MigrationAddressCache need not be threadsafe
+type MigrationAddressCache interface {
+	Write(oldCid, newCid cid.Cid) error
+	Read(oldCid cid.Cid) (bool, cid.Cid, error)
+}
+
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 // The store must support concurrent writes (even if the configured worker count is 1).
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config, log Logger) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config, log Logger, cache MigrationCache) (cid.Cid, error) {
 	if cfg.MaxWorkers <= 0 {
 		return cid.Undef, xerrors.Errorf("invalid migration config with %d workers", cfg.MaxWorkers)
 	}
@@ -55,15 +67,15 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	var migrations = map[cid.Cid]actorMigration{
 		builtin2.AccountActorCodeID:          nilMigrator{builtin3.AccountActorCodeID},
 		builtin2.CronActorCodeID:             nilMigrator{builtin3.CronActorCodeID},
-		builtin2.InitActorCodeID:             initMigrator{},
-		builtin2.MultisigActorCodeID:         multisigMigrator{},
-		builtin2.PaymentChannelActorCodeID:   paychMigrator{},
+		builtin2.InitActorCodeID:             cachedMigration(initMigrator{}),
+		builtin2.MultisigActorCodeID:         cachedMigration(multisigMigrator{}),
+		builtin2.PaymentChannelActorCodeID:   cachedMigration(paychMigrator{}),
 		builtin2.RewardActorCodeID:           nilMigrator{builtin3.RewardActorCodeID},
-		builtin2.StorageMarketActorCodeID:    marketMigrator{},
-		builtin2.StorageMinerActorCodeID:     minerMigrator{},
-		builtin2.StoragePowerActorCodeID:     powerMigrator{},
+		builtin2.StorageMarketActorCodeID:    cachedMigration(marketMigrator{}),
+		builtin2.StorageMinerActorCodeID:     cachedMigration(minerMigrator{}),
+		builtin2.StoragePowerActorCodeID:     cachedMigration(powerMigrator{}),
 		builtin2.SystemActorCodeID:           nilMigrator{builtin3.SystemActorCodeID},
-		builtin2.VerifiedRegistryActorCodeID: verifregMigrator{},
+		builtin2.VerifiedRegistryActorCodeID: cachedMigration(verifregMigrator{}),
 	}
 	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.
 	var deferredCodeIDs = map[cid.Cid]struct{}{
@@ -102,9 +114,11 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 			if _, ok := deferredCodeIDs[actorIn.Code]; ok {
 				return nil // Deferred for explicit migration later.
 			}
+			addrCache := cache.ByAddress(addr)
 			nextInput := &migrationJob{
 				Address:        addr,
 				Actor:          *actorIn, // Must take a copy, the pointer is not stable.
+				cache:          addrCache,
 				actorMigration: migrations[actorIn.Code],
 			}
 			select {
@@ -208,10 +222,11 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 }
 
 type actorMigrationInput struct {
-	address    address.Address // actor's address
-	balance    abi.TokenAmount // actor's balance
-	head       cid.Cid         // actor's state head CID
-	priorEpoch abi.ChainEpoch  // epoch of last state transition prior to migration
+	address    address.Address       // actor's address
+	balance    abi.TokenAmount       // actor's balance
+	head       cid.Cid               // actor's state head CID
+	priorEpoch abi.ChainEpoch        // epoch of last state transition prior to migration
+	cache      MigrationAddressCache // cache of existing cid -> cid migrations for this actor
 }
 
 type actorMigrationResult struct {
@@ -223,12 +238,14 @@ type actorMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
 	// Returns the new state head CID.
 	migrateState(ctx context.Context, store cbor.IpldStore, input actorMigrationInput) (result *actorMigrationResult, err error)
+	migratedCodeCID() cid.Cid
 }
 
 type migrationJob struct {
 	address.Address
 	states2.Actor
 	actorMigration
+	cache MigrationAddressCache
 }
 type migrationJobResult struct {
 	address.Address
@@ -241,9 +258,16 @@ func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpo
 		balance:    job.Actor.Balance,
 		head:       job.Actor.Head,
 		priorEpoch: priorEpoch,
+		cache:      job.cache,
 	})
 	if err != nil {
 		return nil, xerrors.Errorf("state migration failed for %s actor, addr %s: %w",
+			builtin2.ActorNameByCode(job.Actor.Code), job.Address, err)
+	}
+
+	// Write migration to cache
+	if err := job.cache.Write(job.Actor.Head, result.newHead); err != nil {
+		return nil, xerrors.Errorf("failed to write migration to cache for %s actor, addr %s: %w",
 			builtin2.ActorNameByCode(job.Actor.Code), job.Address, err)
 	}
 
@@ -269,4 +293,34 @@ func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorM
 		newCodeCID: n.OutCodeCID,
 		newHead:    in.head,
 	}, nil
+}
+
+func (n nilMigrator) migratedCodeCID() cid.Cid {
+	return n.OutCodeCID
+}
+
+// Migrator that uses cached transformation if it exists
+type cachedMigrator struct {
+	actorMigration
+}
+
+func (c cachedMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+	found, newHead, err := in.cache.Read(in.head)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return &actorMigrationResult{
+			newCodeCID: c.migratedCodeCID(),
+			newHead:    newHead,
+		}, nil
+	}
+
+	return c.actorMigration.migrateState(ctx, store, in)
+}
+
+func cachedMigration(m actorMigration) actorMigration {
+	return cachedMigrator{
+		actorMigration: m,
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 
+	address "github.com/filecoin-project/go-address"
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
 	hamt2 "github.com/filecoin-project/go-hamt-ipld/v2"
@@ -116,4 +117,41 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 		return cid.Undef, err
 	}
 	return store.Put(ctx, outRootNodeOuter)
+}
+
+type MemMigrationCache struct {
+	AddressToCache map[address.Address]MemAddressCache
+}
+
+func NewMemMigrationCache() MemMigrationCache {
+	return MemMigrationCache{
+		AddressToCache: make(map[address.Address]MemAddressCache),
+	}
+}
+
+func (m MemMigrationCache) ByAddress(addr address.Address) MigrationAddressCache {
+	_, ok := m.AddressToCache[addr]
+	if !ok {
+		m.AddressToCache[addr] = MemAddressCache{
+			Migration: make(map[cid.Cid]cid.Cid),
+		}
+	}
+	return m.AddressToCache[addr]
+}
+
+type MemAddressCache struct {
+	Migration map[cid.Cid]cid.Cid
+}
+
+func (m MemAddressCache) Write(oldCid, newCid cid.Cid) error {
+	m.Migration[oldCid] = newCid
+	return nil
+}
+
+func (m MemAddressCache) Read(oldCid cid.Cid) (bool, cid.Cid, error) {
+	newCid, found := m.Migration[oldCid]
+	if !found {
+		return false, cid.Undef, nil
+	}
+	return true, newCid, nil
 }

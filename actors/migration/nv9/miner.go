@@ -58,9 +58,13 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.StorageMinerActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
+}
+
+func (m minerMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.StorageMinerActorCodeID
 }
 
 func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {

@@ -27,7 +27,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 	// Run migration
 	adtStore := adt2.WrapStore(ctx, cbor.NewCborStore(bs))
 	startRoot := vm.StateRoot()
-	endRootSerial, err := nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 1}, log)
+	endRootSerial, err := nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 1}, log, nv9.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	// Migrate in parallel
@@ -35,12 +35,12 @@ func TestParallelMigrationCalls(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
 		var err1 error
-		endRootParallel1, err1 = nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log)
+		endRootParallel1, err1 = nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log, nv9.NewMemMigrationCache())
 		return err1
 	})
 	grp.Go(func() error {
 		var err2 error
-		endRootParallel2, err2 = nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log)
+		endRootParallel2, err2 = nv9.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv9.Config{MaxWorkers: 2}, log, nv9.NewMemMigrationCache())
 		return err2
 	})
 	require.NoError(t, grp.Wait())
