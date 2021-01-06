@@ -30,12 +30,25 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	if err != nil {
 		return nil, err
 	}
-	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, miner3.SectorsAmtBitwidth)
+
+	var sectorsOut cid.Cid
+	found, cachedSectorsOut, err := in.cache.Read(inState.Sectors)
 	if err != nil {
 		return nil, err
 	}
+	if found {
+		sectorsOut = cachedSectorsOut
+	} else {
+		sectorsOut, err = migrateAMTRaw(ctx, store, inState.Sectors, miner3.SectorsAmtBitwidth)
+		if err != nil {
+			return nil, err
+		}
+		if err := in.cache.Write(inState.Sectors, sectorsOut); err != nil {
+			return nil, err
+		}
+	}
 
-	deadlinesOut, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
+	deadlinesOut, err := m.migrateDeadlines(ctx, store, in.cache, inState.Deadlines)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +80,7 @@ func (m minerMigrator) migratedCodeCID() cid.Cid {
 	return builtin3.StorageMinerActorCodeID
 }
 
-func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {
+func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, cache MigrationAddressCache, deadlines cid.Cid) (cid.Cid, error) {
 	var inDeadlines miner2.Deadlines
 	err := store.Get(ctx, deadlines, &inDeadlines)
 	if err != nil {
@@ -82,6 +95,14 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 	outDeadlines := miner3.Deadlines{Due: [miner3.WPoStPeriodDeadlines]cid.Cid{}}
 
 	for i, c := range inDeadlines.Due {
+		found, cachedDlCid, err := cache.Read(c)
+		if err != nil {
+			return cid.Undef, err
+		}
+		if found {
+			outDeadlines.Due[i] = cachedDlCid
+			continue
+		}
 		var inDeadline miner2.Deadline
 		if err = store.Get(ctx, c, &inDeadline); err != nil {
 			return cid.Undef, err
@@ -112,6 +133,9 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 			return cid.Undef, err
 		}
 		outDeadlines.Due[i] = outDlCid
+		if err := cache.Write(c, outDlCid); err != nil {
+			return cid.Undef, err
+		}
 	}
 
 	return store.Put(ctx, &outDeadlines)
