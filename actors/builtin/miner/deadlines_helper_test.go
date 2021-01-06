@@ -21,10 +21,10 @@ func TestCompactionWindow(t *testing.T) {
 	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close),
 		"compaction is not possible immediately after the window")
 
-	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Last()+WPoStProofChallengePeriod),
+	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Last()+WPoStDisputeWindow),
 		"compaction is not possible before the proof challenge period has passed")
 
-	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close+WPoStProofChallengePeriod),
+	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close+WPoStDisputeWindow),
 		"compaction is possible after the proof challenge period has passed")
 
 	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+WPoStProvingPeriod-WPoStChallengeWindow-1),
@@ -36,12 +36,12 @@ func TestCompactionWindow(t *testing.T) {
 func TestChallengeWindow(t *testing.T) {
 	periodStart := abi.ChainEpoch(1024)
 	dlInfo := NewDeadlineInfo(periodStart, 0, 0)
-	assert.False(t, deadlineAvailableForChallenge(periodStart, 0, dlInfo.Open),
+	assert.False(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Open),
 		"proof challenge is not possible while the window is open")
-	assert.True(t, deadlineAvailableForChallenge(periodStart, 0, dlInfo.Close),
+	assert.True(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close),
 		"proof challenge is possible after the window is closes")
-	assert.True(t, deadlineAvailableForChallenge(periodStart, 0, dlInfo.Close+WPoStProofChallengePeriod-1),
+	assert.True(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow-1),
 		"proof challenge is possible until the proof challenge period has passed")
-	assert.False(t, deadlineAvailableForChallenge(periodStart, 0, dlInfo.Close+WPoStProofChallengePeriod),
+	assert.False(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow),
 		"proof challenge is not possible after the proof challenge period has passed")
 }

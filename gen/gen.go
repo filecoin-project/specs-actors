@@ -199,7 +199,7 @@ func main() {
 		//miner.CompactPartitionsParams{}, // Aliased from v0
 		//miner.CompactSectorNumbersParams{}, // Aliased from v0
 		//miner.CronEventPayload{}, // Aliased from v0
-		miner.ChallengeWindowedPoStParams{},
+		miner.DisputeWindowedPoStParams{},
 		// other types
 		//miner.FaultDeclaration{}, // Aliased from v0
 		//miner.RecoveryDeclaration{}, // Aliased from v0

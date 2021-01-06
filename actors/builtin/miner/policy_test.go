@@ -151,13 +151,13 @@ func TestPoStTimeConstraints(t *testing.T) {
 	immutablePeriod := 2 * miner.WPoStChallengeWindow
 
 	// If we have less than finality, an attacker could try a very long
-	// (almost finality) fork and leave no time to challenge.
-	require.True(t, miner.WPoStProofChallengePeriod >= miner.ChainFinality,
-		"the proof challenge period must exceed finality")
+	// (almost finality) fork and leave no time to dispute.
+	require.True(t, miner.WPoStDisputeWindow >= miner.ChainFinality,
+		"the proof dispute period must exceed finality")
 
 	// This is an arbitrary constraint, but we should ensure we leave _some_
 	// time for compaction.
-	compactionPeriod := miner.WPoStProvingPeriod - (immutablePeriod + miner.WPoStProofChallengePeriod)
+	compactionPeriod := miner.WPoStProvingPeriod - (immutablePeriod + miner.WPoStDisputeWindow)
 	require.True(t, compactionPeriod > 3*builtin.EpochsInHour,
 		"there must be at least a 3 hour window for partition compaction")
 

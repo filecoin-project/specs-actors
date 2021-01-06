@@ -1871,7 +1871,7 @@ func TestWindowPost(t *testing.T) {
 		WithEpoch(precommitEpoch).
 		WithBalance(bigBalance, big.Zero())
 
-	testBasicPoSt := func(challengeSucceed bool) {
+	testBasicPoSt := func(disputeSucceed bool) {
 		proofs := makePoStProofs(actor.postProofType)
 
 		rt := builder.Build(t)
@@ -1902,9 +1902,9 @@ func TestWindowPost(t *testing.T) {
 		deadline := actor.getDeadline(rt, dlIdx)
 		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
 
-		postsCid := deadline.PoStSubmissions
+		postsCid := deadline.OptimisticPoStSubmissions
 
-		posts, err := adt.AsArray(store, postsCid, miner.DeadlinePoStSubmissionsAmtBitwidth)
+		posts, err := adt.AsArray(store, postsCid, miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 		require.NoError(t, err)
 		require.EqualValues(t, posts.Length(), 1)
 		var post miner.WindowedPoSt
@@ -1920,25 +1920,25 @@ func TestWindowPost(t *testing.T) {
 		deadline = actor.getDeadline(rt, dlIdx)
 
 		// Proofs should exist in snapshot.
-		require.Equal(t, deadline.PoStSubmissionsSnapshot, postsCid)
+		require.Equal(t, deadline.OptimisticPoStSubmissionsSnapshot, postsCid)
 
-		var result *poStChallengeResult
-		if challengeSucceed {
+		var result *poStDisputeResult
+		if disputeSucceed {
 			expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
-			result = &poStChallengeResult{
+			result = &poStDisputeResult{
 				expectedPowerDelta:  pwr.Neg(),
 				expectedPenalty:     expectedFee,
 				expectedPledgeDelta: big.Zero(),
 			}
 		}
-		actor.challengeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
+		actor.disputeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
 	}
 
 	t.Run("test proof", func(t *testing.T) {
 		testBasicPoSt(true)
 	})
 
-	t.Run("test bad proof accepted and challenged", func(t *testing.T) {
+	t.Run("test bad proof accepted and disputed", func(t *testing.T) {
 		testBasicPoSt(false)
 	})
 
@@ -3435,7 +3435,7 @@ func TestCompactPartitions(t *testing.T) {
 		actor.terminateSectors(rt, sectors, expectedFee)
 
 		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
 
 		// compacting partition will remove sector1 but retain sector 2, 3 and 4.
 		partId := uint64(0)
@@ -3465,7 +3465,7 @@ func TestCompactPartitions(t *testing.T) {
 		actor.declareFaults(rt, info[0])
 
 		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -3491,7 +3491,7 @@ func TestCompactPartitions(t *testing.T) {
 		actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
 
 		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
-		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStProofChallengePeriod)
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -4656,7 +4656,7 @@ func (h *actorHarness) getPartitionSnapshot(rt *mock.Runtime, deadline *miner.De
 }
 
 func (h *actorHarness) getSubmittedProof(rt *mock.Runtime, deadline *miner.Deadline, idx uint64) *miner.WindowedPoSt {
-	proofs, err := adt.AsArray(rt.AdtStore(), deadline.PoStSubmissionsSnapshot, miner.DeadlinePoStSubmissionsAmtBitwidth)
+	proofs, err := adt.AsArray(rt.AdtStore(), deadline.OptimisticPoStSubmissionsSnapshot, miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	require.NoError(h.t, err)
 	var post miner.WindowedPoSt
 	found, err := proofs.Get(idx, &post)
@@ -5144,15 +5144,15 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
-type poStChallengeResult struct {
+type poStDisputeResult struct {
 	expectedPowerDelta  miner.PowerPair
 	expectedPledgeDelta abi.TokenAmount
 	expectedPenalty     abi.TokenAmount
 }
 
-func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, proofIndex uint64, infos []*miner.SectorOnChainInfo, expectSuccess *poStChallengeResult) {
+func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, proofIndex uint64, infos []*miner.SectorOnChainInfo, expectSuccess *poStDisputeResult) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAny()
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochBaselinePower:  h.baselinePower,
@@ -5263,16 +5263,16 @@ func (h *actorHarness) challengeWindowPoSt(rt *mock.Runtime, deadline *dline.Inf
 		}
 	}
 
-	params := miner.ChallengeWindowedPoStParams{
-		Deadline:   deadline.Index,
-		ProofIndex: proofIndex,
+	params := miner.DisputeWindowedPoStParams{
+		Deadline:  deadline.Index,
+		PoStIndex: proofIndex,
 	}
 	if expectSuccess == nil {
-		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to challenge valid post", func() {
-			rt.Call(h.a.ChallengeWindowedPoSt, &params)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to dispute valid post", func() {
+			rt.Call(h.a.DisputeWindowedPoSt, &params)
 		})
 	} else {
-		rt.Call(h.a.ChallengeWindowedPoSt, &params)
+		rt.Call(h.a.DisputeWindowedPoSt, &params)
 	}
 	rt.Verify()
 }

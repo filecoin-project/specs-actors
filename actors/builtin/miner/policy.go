@@ -196,10 +196,9 @@ const DealLimitDenominator = 134217728 // PARAM_SPEC
 // for permissioned actor methods and winning block elections.
 const ConsensusFaultIneligibilityDuration = ChainFinality
 
-// PoStChallengePeriod is the period after a challenge window ends during which
-// PoSts submitted during that period may be challenged.
-// TODO: this name can easily be confused with WPoStChallengeWindow.
-const WPoStProofChallengePeriod = 2 * ChainFinality // PARAM_TODO
+// WPoStDisputeWindow is the period after a challenge window ends during which
+// PoSts submitted during that period may be disputed.
+const WPoStDisputeWindow = 2 * ChainFinality // PARAM_TODO
 
 // DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
 // Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.

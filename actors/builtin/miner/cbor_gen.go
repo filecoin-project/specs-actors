@@ -779,6 +779,11 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.ExpirationsEpochs: %w", err)
 	}
 
+	// t.PartitionsPoSted (bitfield.BitField) (struct)
+	if err := t.PartitionsPoSted.MarshalCBOR(w); err != nil {
+		return err
+	}
+
 	// t.EarlyTerminations (bitfield.BitField) (struct)
 	if err := t.EarlyTerminations.MarshalCBOR(w); err != nil {
 		return err
@@ -801,15 +806,10 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.PartitionsPoSted (bitfield.BitField) (struct)
-	if err := t.PartitionsPoSted.MarshalCBOR(w); err != nil {
-		return err
-	}
+	// t.OptimisticPoStSubmissions (cid.Cid) (struct)
 
-	// t.PoStSubmissions (cid.Cid) (struct)
-
-	if err := cbg.WriteCidBuf(scratch, w, t.PoStSubmissions); err != nil {
-		return xerrors.Errorf("failed to write cid field t.PoStSubmissions: %w", err)
+	if err := cbg.WriteCidBuf(scratch, w, t.OptimisticPoStSubmissions); err != nil {
+		return xerrors.Errorf("failed to write cid field t.OptimisticPoStSubmissions: %w", err)
 	}
 
 	// t.PartitionsSnapshot (cid.Cid) (struct)
@@ -818,10 +818,10 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.PartitionsSnapshot: %w", err)
 	}
 
-	// t.PoStSubmissionsSnapshot (cid.Cid) (struct)
+	// t.OptimisticPoStSubmissionsSnapshot (cid.Cid) (struct)
 
-	if err := cbg.WriteCidBuf(scratch, w, t.PoStSubmissionsSnapshot); err != nil {
-		return xerrors.Errorf("failed to write cid field t.PoStSubmissionsSnapshot: %w", err)
+	if err := cbg.WriteCidBuf(scratch, w, t.OptimisticPoStSubmissionsSnapshot); err != nil {
+		return xerrors.Errorf("failed to write cid field t.OptimisticPoStSubmissionsSnapshot: %w", err)
 	}
 
 	return nil
@@ -867,6 +867,15 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.ExpirationsEpochs = c
+
+	}
+	// t.PartitionsPoSted (bitfield.BitField) (struct)
+
+	{
+
+		if err := t.PartitionsPoSted.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.PartitionsPoSted: %w", err)
+		}
 
 	}
 	// t.EarlyTerminations (bitfield.BitField) (struct)
@@ -915,25 +924,16 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.PartitionsPoSted (bitfield.BitField) (struct)
-
-	{
-
-		if err := t.PartitionsPoSted.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PartitionsPoSted: %w", err)
-		}
-
-	}
-	// t.PoStSubmissions (cid.Cid) (struct)
+	// t.OptimisticPoStSubmissions (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.PoStSubmissions: %w", err)
+			return xerrors.Errorf("failed to read cid field t.OptimisticPoStSubmissions: %w", err)
 		}
 
-		t.PoStSubmissions = c
+		t.OptimisticPoStSubmissions = c
 
 	}
 	// t.PartitionsSnapshot (cid.Cid) (struct)
@@ -948,16 +948,16 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		t.PartitionsSnapshot = c
 
 	}
-	// t.PoStSubmissionsSnapshot (cid.Cid) (struct)
+	// t.OptimisticPoStSubmissionsSnapshot (cid.Cid) (struct)
 
 	{
 
 		c, err := cbg.ReadCid(br)
 		if err != nil {
-			return xerrors.Errorf("failed to read cid field t.PoStSubmissionsSnapshot: %w", err)
+			return xerrors.Errorf("failed to read cid field t.OptimisticPoStSubmissionsSnapshot: %w", err)
 		}
 
-		t.PoStSubmissionsSnapshot = c
+		t.OptimisticPoStSubmissionsSnapshot = c
 
 	}
 	return nil
@@ -2460,14 +2460,14 @@ func (t *WindowedPoSt) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufChallengeWindowedPoStParams = []byte{130}
+var lengthBufDisputeWindowedPoStParams = []byte{130}
 
-func (t *ChallengeWindowedPoStParams) MarshalCBOR(w io.Writer) error {
+func (t *DisputeWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write(lengthBufChallengeWindowedPoStParams); err != nil {
+	if _, err := w.Write(lengthBufDisputeWindowedPoStParams); err != nil {
 		return err
 	}
 
@@ -2479,17 +2479,17 @@ func (t *ChallengeWindowedPoStParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ProofIndex (uint64) (uint64)
+	// t.PoStIndex (uint64) (uint64)
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ProofIndex)); err != nil {
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.PoStIndex)); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (t *ChallengeWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
-	*t = ChallengeWindowedPoStParams{}
+func (t *DisputeWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
+	*t = DisputeWindowedPoStParams{}
 
 	br := cbg.GetPeeker(r)
 	scratch := make([]byte, 8)
@@ -2520,7 +2520,7 @@ func (t *ChallengeWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		t.Deadline = uint64(extra)
 
 	}
-	// t.ProofIndex (uint64) (uint64)
+	// t.PoStIndex (uint64) (uint64)
 
 	{
 
@@ -2531,7 +2531,7 @@ func (t *ChallengeWindowedPoStParams) UnmarshalCBOR(r io.Reader) error {
 		if maj != cbg.MajUnsignedInt {
 			return fmt.Errorf("wrong type for uint64 field")
 		}
-		t.ProofIndex = uint64(extra)
+		t.PoStIndex = uint64(extra)
 
 	}
 	return nil

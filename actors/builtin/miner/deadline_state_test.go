@@ -726,6 +726,28 @@ func TestDeadlines(t *testing.T) {
 		require.Contains(t, err.Error(), "no such partition")
 	})
 
+	t.Run("post partition twice", func(t *testing.T) {
+		store := ipld.NewADTStore(context.Background())
+
+		dl := emptyDeadline(t, store)
+		addSectors(t, store, dl, true)
+
+		// add an inactive sector
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		require.NoError(t, err)
+		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		assert.True(t, expectedPower.Equals(power))
+
+		sectorArr := sectorsArr(t, store, allSectors)
+
+		_, err = dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 13, []miner.PoStPartition{
+			{Index: 0, Skipped: bf()},
+			{Index: 0, Skipped: bf()},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate partitions proven")
+	})
+
 	t.Run("retract recoveries", func(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		dl := emptyDeadline(t, store)

@@ -41,6 +41,10 @@ type Deadline struct {
 	// recovered, and this queue will not be updated at that time.
 	ExpirationsEpochs cid.Cid // AMT[ChainEpoch]BitField
 
+	// Partitions that have been proved by window PoSts so far during the
+	// current challenge window.
+	PartitionsPoSted bitfield.BitField
+
 	// Partitions with sectors that terminated early.
 	EarlyTerminations bitfield.BitField
 
@@ -53,29 +57,21 @@ type Deadline struct {
 	// Memoized sum of faulty power in partitions.
 	FaultyPower PowerPair
 
-	// Partitions that have been proved by window PoSts so far during the
-	// current challenge window.
-	//
-	// Except during the challenge window immediately following the actors
-	// v3 upgrade, all partitions marked in this bitfield must also be
-	// marked in one of the "Partitions" bitfields in the Proofs AMT. This
-	// bitfield exists so we can efficiently determine which partitions have
-	// been proven, while the per-proof bitfields exist so that proofs can
-	// be challenged later.
-	PartitionsPoSted bitfield.BitField
-
-	// AMT of WindowPoSt proofs.
-	// TODO: this AMT could be inefficient. The proof will be ~200 bytes so
-	// we could end up writing ~1600 bytes to update this AMT.
-	// We could also mis-estimate gas, so we need to be very careful here.
-	PoStSubmissions cid.Cid // AMT[]WindowedPoSt
+	// AMT of optimistically accepted WindowPoSt proofs, submitted during
+	// the current challenge window. At the end of the challenge window,
+	// this AMT will be moved to PoStSubmissionsSnapshot. WindowPoSt proofs
+	// verified on-chain do not appear in this AMT.
+	OptimisticPoStSubmissions cid.Cid // AMT[]WindowedPoSt
 
 	// Snapshot of partition state at the end of the previous challenge
 	// window for this deadline.
 	PartitionsSnapshot cid.Cid
 	// Snapshot of the proofs submitted by the end of the previous challenge
 	// window for this deadline.
-	PoStSubmissionsSnapshot cid.Cid
+	//
+	// These proofs may be disputed via DisputeWindowedPoSt. Successfully
+	// disputed window PoSts are removed from the snapshot.
+	OptimisticPoStSubmissionsSnapshot cid.Cid
 }
 
 type WindowedPoSt struct {
@@ -91,7 +87,10 @@ type WindowedPoSt struct {
 // Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
 const DeadlinePartitionsAmtBitwidth = 3 // Usually a small array
 const DeadlineExpirationAmtBitwidth = 5
-const DeadlinePoStSubmissionsAmtBitwidth = 5
+
+// Given that 4 partitions can be proven in one post, this AMT's height will
+// only exceed the partition AMT's height at ~0.75EiB of storage.
+const DeadlineOptimisticPoStSubmissionsAmtBitwidth = 2
 
 //
 // Deadlines (plural)
@@ -163,22 +162,22 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
 	}
 
-	emptyPoStSubmissionsArrayCid, err := adt.StoreEmptyArray(store, DeadlinePoStSubmissionsAmtBitwidth)
+	emptyPoStSubmissionsArrayCid, err := adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
 	}
 
 	return &Deadline{
-		Partitions:              emptyPartitionsArrayCid,
-		ExpirationsEpochs:       emptyDeadlineExpirationArrayCid,
-		EarlyTerminations:       bitfield.New(),
-		LiveSectors:             0,
-		TotalSectors:            0,
-		FaultyPower:             NewPowerPairZero(),
-		PartitionsPoSted:        bitfield.New(),
-		PoStSubmissions:         emptyPoStSubmissionsArrayCid,
-		PartitionsSnapshot:      emptyPartitionsArrayCid,
-		PoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
+		Partitions:                        emptyPartitionsArrayCid,
+		ExpirationsEpochs:                 emptyDeadlineExpirationArrayCid,
+		EarlyTerminations:                 bitfield.New(),
+		LiveSectors:                       0,
+		TotalSectors:                      0,
+		FaultyPower:                       NewPowerPairZero(),
+		PartitionsPoSted:                  bitfield.New(),
+		OptimisticPoStSubmissions:         emptyPoStSubmissionsArrayCid,
+		PartitionsSnapshot:                emptyPartitionsArrayCid,
+		OptimisticPoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
 	}, nil
 }
 
@@ -193,7 +192,7 @@ func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 func (d *Deadline) PartitionsSnapshotArray(store adt.Store) (*adt.Array, error) {
 	arr, err := adt.AsArray(store, d.PartitionsSnapshot, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
-		return nil, xc.ErrIllegalState.Wrapf("failed to load partitions: %w", err)
+		return nil, xerrors.Errorf("failed to load partitions: %w", err)
 	}
 	return arr, nil
 }
@@ -222,7 +221,7 @@ func (d *Deadline) LoadPartitionSnapshot(store adt.Store, partIdx uint64) (*Part
 	var partition Partition
 	found, err := partitions.Get(partIdx, &partition)
 	if err != nil {
-		return nil, xc.ErrIllegalState.Wrapf("failed to lookup partition %d: %w", partIdx, err)
+		return nil, xerrors.Errorf("failed to lookup partition %d: %w", partIdx, err)
 	}
 	if !found {
 		return nil, xc.ErrNotFound.Wrapf("no partition %d", partIdx)
@@ -934,15 +933,14 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultEx
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
-	dl.PoStSubmissionsSnapshot = dl.PoStSubmissions
-	dl.PoStSubmissions, err = adt.StoreEmptyArray(store, DeadlinePoStSubmissionsAmtBitwidth)
+	dl.OptimisticPoStSubmissionsSnapshot = dl.OptimisticPoStSubmissions
+	dl.OptimisticPoStSubmissions, err = adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 	}
 	return powerDelta, penalizedPower, nil
 }
 
-// TODO: We're only using PowerDelta at this point. We should simplify.
 type PoStResult struct {
 	// Power activated or deactivated (positive or negative).
 	PowerDelta PowerPair
@@ -973,6 +971,11 @@ func (dl *Deadline) RecordProvenSectors(
 	partitionIndexes := bitfield.New()
 	for _, partition := range postPartitions {
 		partitionIndexes.Set(partition.Index)
+	}
+	if numPartitions, err := partitionIndexes.Count(); err != nil {
+		return nil, xerrors.Errorf("failed to count posted partitions: %w", err)
+	} else if numPartitions != uint64(len(postPartitions)) {
+		return nil, xc.ErrIllegalArgument.Wrapf("duplicate partitions proven")
 	}
 
 	// First check to see if we're proving any already proven partitions.
@@ -1088,7 +1091,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
 	// Save proof.
-	proofArr, err := adt.AsArray(store, dl.PoStSubmissions, DeadlinePoStSubmissionsAmtBitwidth)
+	proofArr, err := adt.AsArray(store, dl.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load proofs: %w", err)
 	}
@@ -1104,7 +1107,7 @@ func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitFie
 	if err != nil {
 		return xerrors.Errorf("failed to save proofs: %w", err)
 	}
-	dl.PoStSubmissions = root
+	dl.OptimisticPoStSubmissions = root
 	return nil
 }
 
