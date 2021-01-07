@@ -529,6 +529,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 			// Load the partition info we need for the dispute.
 			disputeInfo, err := dlCurrent.LoadPartitionsForDispute(store, partitions)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition info for dispute")
 			disputedPower = disputeInfo.DisputedPower
 
 			// Load sectors for the dispute.

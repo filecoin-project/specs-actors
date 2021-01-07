@@ -1256,7 +1256,7 @@ func (dl *Deadline) LoadPartitionsForDispute(store adt.Store, partitions bitfiel
 		return nil
 	})
 	if err != nil {
-		return nil, xerrors.Errorf("when challenging post %d: %w", err)
+		return nil, xerrors.Errorf("when disputing post: %w", err)
 	}
 
 	allSectorsNos, err := bitfield.MultiMerge(allSectors...)

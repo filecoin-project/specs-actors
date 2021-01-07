@@ -50,7 +50,7 @@ func init() {
 	// A deadline becomes immutable one challenge window before it's challenge window opens.
 	// The challenge lookback must fall within this immutability period.
 	if WPoStChallengeLookback > WPoStChallengeWindow {
-		panic(fmt.Sprintf("the challenge lookback cannot exceed one challenge window"))
+		panic("the challenge lookback cannot exceed one challenge window")
 	}
 
 	// Deadlines are immutable when the challenge window is open, and during
