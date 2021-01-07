@@ -129,7 +129,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 				cache:          cache,
 				actorMigration: migrations[actorIn.Code],
 			}
-			fmt.Printf("creating job on %s\n", addr)
 			select {
 			case jobCh <- nextInput:
 			case <-ctx.Done():
@@ -152,7 +151,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		grp.Go(func() error {
 			defer workerWg.Done()
 			for job := range jobCh {
-				fmt.Printf("running job on %s\n", job.Address)
 				result, err := job.run(ctx, store, priorEpoch)
 				if err != nil {
 					return err
