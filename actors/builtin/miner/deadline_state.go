@@ -1089,8 +1089,9 @@ func (dl *Deadline) RecordProvenSectors(
 	}, nil
 }
 
+// RecordPoStProofs records a set of optimistically accepted PoSt proofs
+// (usually one), associating them with the given partitions.
 func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
-	// Save proof.
 	proofArr, err := adt.AsArray(store, dl.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load proofs: %w", err)
@@ -1109,6 +1110,34 @@ func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitFie
 	}
 	dl.OptimisticPoStSubmissions = root
 	return nil
+}
+
+// TakePoStProofs removes and returns a PoSt proof by index, along with the
+// associated partitions. This method takes the PoSt from the PoSt submissions
+// snapshot.
+func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitfield.BitField, proofs []proof.PoStProof, err error) {
+	proofArr, err := adt.AsArray(store, dl.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	var post WindowedPoSt
+	found, err := proofArr.Get(idx, &post)
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to retrieve proof %d: %w", idx, err)
+	} else if !found {
+		return bitfield.New(), nil, xc.ErrIllegalArgument.Wrapf("proof %d not found", idx)
+	}
+	err = proofArr.Delete(idx)
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to delete proof %d: %w", idx, err)
+	}
+
+	root, err := proofArr.Root()
+	if err != nil {
+		return bitfield.New(), nil, xerrors.Errorf("failed to save proofs: %w", err)
+	}
+	dl.OptimisticPoStSubmissionsSnapshot = root
+	return post.Partitions, post.Proofs, nil
 }
 
 // RescheduleSectorExpirations reschedules the expirations of the given sectors
@@ -1173,6 +1202,79 @@ func (dl *Deadline) RescheduleSectorExpirations(
 	}
 
 	return allReplaced, nil
+}
+
+// DisputeInfo includes all the information necessary to dispute a post to the
+// given partitions.
+type DisputeInfo struct {
+	AllSectorNos, IgnoredSectorNos bitfield.BitField
+	DisputedSectors                PartitionSectorMap
+	DisputedPower                  PowerPair
+}
+
+// LoadPartitionsForDispute
+func (dl *Deadline) LoadPartitionsForDispute(store adt.Store, partitions bitfield.BitField) (*DisputeInfo, error) {
+	partitionsSnapshot, err := dl.PartitionsSnapshotArray(store)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load partitions: %w", err)
+	}
+
+	var allSectors, allIgnored []bitfield.BitField
+	disputedSectors := make(PartitionSectorMap)
+	disputedPower := NewPowerPairZero()
+	err = partitions.ForEach(func(partIdx uint64) error {
+		var partitionSnapshot Partition
+		if found, err := partitionsSnapshot.Get(partIdx, &partitionSnapshot); err != nil {
+			return err
+		} else if !found {
+			return xerrors.Errorf("failed to find partition %d", partIdx)
+		}
+
+		// Record sectors for proof verification
+		allSectors = append(allSectors, partitionSnapshot.Sectors)
+		allIgnored = append(allIgnored, partitionSnapshot.Faults)
+		allIgnored = append(allIgnored, partitionSnapshot.Terminated)
+		allIgnored = append(allIgnored, partitionSnapshot.Unproven)
+
+		// Record active sectors for marking faults.
+		active, err := partitionSnapshot.ActiveSectors()
+		if err != nil {
+			return err
+		}
+		err = disputedSectors.Add(partIdx, active)
+		if err != nil {
+			return err
+		}
+
+		// Record disputed power for penalties.
+		//
+		// NOTE: This also includes power that was
+		// activated at the end of the last challenge
+		// window, and power from sectors that have since
+		// expired.
+		disputedPower = disputedPower.Add(partitionSnapshot.ActivePower())
+		return nil
+	})
+	if err != nil {
+		return nil, xerrors.Errorf("when challenging post %d: %w", err)
+	}
+
+	allSectorsNos, err := bitfield.MultiMerge(allSectors...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to merge sector bitfields: %w", err)
+	}
+
+	allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to merge fault bitfields: %w", err)
+	}
+
+	return &DisputeInfo{
+		AllSectorNos:     allSectorsNos,
+		IgnoredSectorNos: allIgnoredNos,
+		DisputedSectors:  disputedSectors,
+		DisputedPower:    disputedPower,
+	}, nil
 }
 
 func (d *Deadline) ValidateState() error {

@@ -505,88 +505,41 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 		store := adt.AsStore(rt)
 
 		// Check proof
-		// TODO: move into deadline state function.
 		{
-			// Load the target state.
+			// Find the proving period start for the deadline in question.
+			ppStart := st.ProvingPeriodStart
+			if st.CurrentDeadline < params.Deadline {
+				ppStart -= WPoStProvingPeriod
+			}
+			targetDeadline := NewDeadlineInfo(ppStart, params.Deadline, currEpoch)
+
+			// Load the target deadline.
 			deadlinesCurrent, err := st.LoadDeadlines(store)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 			dlCurrent, err := deadlinesCurrent.LoadDeadline(store, params.Deadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline")
 
-			proofsSnapshot, err := adt.AsArray(store, dlCurrent.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs")
+			// Take the post from the snapshot for dispute.
+			// This operation REMOVES the PoSt from the snapshot so
+			// it can't be disputed again. If this method fails,
+			// this operation must be rolled back.
+			partitions, proofs, err := dlCurrent.TakePoStProofs(store, params.PoStIndex)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof for dispute")
 
-			partitionsSnapshot, err := dlCurrent.PartitionsSnapshotArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
+			// Load the partition info we need for the dispute.
+			disputeInfo, err := dlCurrent.LoadPartitionsForDispute(store, partitions)
+			disputedPower = disputeInfo.DisputedPower
 
-			// Load the target proof.
-			var post WindowedPoSt
-			found, err := proofsSnapshot.Get(params.PoStIndex, &post)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof %d", params.PoStIndex)
-			if !found {
-				rt.Abortf(exitcode.ErrIllegalArgument, "failed to find post %d", params.PoStIndex)
-			}
-
-			var allSectors, allIgnored []bitfield.BitField
-			disputedSectors := make(PartitionSectorMap)
-			err = post.Partitions.ForEach(func(partIdx uint64) error {
-				var partitionSnapshot Partition
-				if found, err := partitionsSnapshot.Get(partIdx, &partitionSnapshot); err != nil {
-					return err
-				} else if !found {
-					return exitcode.ErrIllegalState.Wrapf("failed to find partition when challenging proof %d", params.PoStIndex)
-				}
-
-				// Record sectors for proof verification
-				allSectors = append(allSectors, partitionSnapshot.Sectors)
-				allIgnored = append(allIgnored, partitionSnapshot.Faults)
-				allIgnored = append(allIgnored, partitionSnapshot.Terminated)
-				allIgnored = append(allIgnored, partitionSnapshot.Unproven)
-
-				// Record active sectors for marking faults.
-				active, err := partitionSnapshot.ActiveSectors()
-				if err != nil {
-					return err
-				}
-				err = disputedSectors.Add(partIdx, active)
-				if err != nil {
-					return err
-				}
-
-				// Record disputed power for penalties.
-				//
-				// NOTE: This also includes power that was
-				// activated at the end of the last challenge
-				// window, and power from sectors that have since
-				// expired.
-				disputedPower = disputedPower.Add(partitionSnapshot.ActivePower())
-				return nil
-			})
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions")
-
-			allSectorsNos, err := bitfield.MultiMerge(allSectors...)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge sector bitfields")
-
-			allIgnoredNos, err := bitfield.MultiMerge(allIgnored...)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to merge fault bitfields")
-
-			// Load sectors.
+			// Load sectors for the dispute.
 			sectors, err := LoadSectors(store, st.Sectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
-			sectorInfos, err := sectors.LoadForProof(allSectorsNos, allIgnoredNos)
+
+			sectorInfos, err := sectors.LoadForProof(disputeInfo.AllSectorNos, disputeInfo.IgnoredSectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors to dispute window post")
 
-			// Find the proving period start for the deadline in question.
-			ppStart := st.ProvingPeriodStart
-			if st.CurrentDeadline < params.Deadline {
-				ppStart -= WPoStProvingPeriod
-			}
-
-			targetDeadline := NewDeadlineInfo(ppStart, params.Deadline, currEpoch)
-
-			// Fails if validation succeeds.
-			err = verifyWindowedPost(rt, targetDeadline.Challenge, sectorInfos, post.Proofs)
+			// Check proof, we fail if validation succeeds.
+			err = verifyWindowedPost(rt, targetDeadline.Challenge, sectorInfos, proofs)
 			if err == nil {
 				rt.Abortf(exitcode.ErrIllegalArgument, "failed to dispute valid post")
 				return
@@ -600,14 +553,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			// However, some of these sectors may have been
 			// terminated. That's fine, we'll skip them.
 			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
-			powerDelta, err = dlCurrent.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, disputedSectors)
+			powerDelta, err = dlCurrent.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, disputeInfo.DisputedSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
-
-			// Delete disputed proof so it can't be charged multiple times.
-			err = proofsSnapshot.Delete(params.PoStIndex)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete disputed proof")
-			dlCurrent.OptimisticPoStSubmissionsSnapshot, err = proofsSnapshot.Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update proofs")
 
 			err = deadlinesCurrent.UpdateDeadline(store, params.Deadline, dlCurrent)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update deadline %d", params.Deadline)
