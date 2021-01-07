@@ -3506,21 +3506,72 @@ func TestCompactPartitions(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline 48", func() {
 			actor.compactPartitions(rt, miner.WPoStPeriodDeadlines, bitfield.New())
 		})
 		actor.checkState(rt)
 	})
 
-	t.Run("fails if deadline is not mutable", func(t *testing.T) {
+	t.Run("fails if deadline is open for challenging", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		epoch := abi.ChainEpoch(200)
-		rt.SetEpoch(epoch)
+		rt.SetEpoch(periodOffset)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 0, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("fails if deadline is next up to be challenged", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.compactPartitions(rt, 1, bitfield.New())
 		})
+		actor.checkState(rt)
+	})
+
+	t.Run("the deadline after the next deadline should still be open for compaction", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
+		actor.compactPartitions(rt, 3, bitfield.New())
+		actor.checkState(rt)
+	})
+
+	t.Run("deadlines challenged last proving period should still be in the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 47, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	disputeEnd := periodOffset + miner.WPoStChallengeWindow + miner.WPoStDisputeWindow - 1
+	t.Run("compaction should be forbidden during the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(disputeEnd)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 0, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("compaction should be allowed following the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(disputeEnd + 1)
+		actor.compactPartitions(rt, 0, bitfield.New())
 		actor.checkState(rt)
 	})
 
