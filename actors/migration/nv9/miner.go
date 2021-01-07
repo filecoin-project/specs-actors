@@ -11,7 +11,6 @@ import (
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
 
@@ -79,7 +78,7 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 	outDeadlines := miner3.Deadlines{Due: [miner3.WPoStPeriodDeadlines]cid.Cid{}}
 
 	// Start from an empty template to zero-initialize new fields.
-	deadlineTemplate, err := miner3.ConstructDeadline(adt.WrapStore(ctx, store))
+	deadlineTemplate, err := miner3.ConstructDeadline(adt3.WrapStore(ctx, store))
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to construct new deadline template")
 	}
