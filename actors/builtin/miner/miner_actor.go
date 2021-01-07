@@ -367,6 +367,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
 		} else if params.Proofs[0].PoStProof != windowPoStProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", params.Proofs[0], windowPoStProofType)
+		} else if len(params.Proofs[0].ProofBytes) > MaxPoStProofSize {
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof to be smaller than %d bytes", MaxPoStProofSize)
 		}
 
 		// Validate that the miner didn't try to prove too many partitions at once.
