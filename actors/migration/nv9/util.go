@@ -13,6 +13,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -120,45 +121,45 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 }
 
 type MemMigrationCache struct {
-	MigrationMap map[MigrationCacheKey]cid.Cid
-	mu           *sync.RWMutex
+	MigrationMap *sync.Map
 }
 
 func NewMemMigrationCache() MemMigrationCache {
 	return MemMigrationCache{
-		MigrationMap: make(map[MigrationCacheKey]cid.Cid),
-		mu:           new(sync.RWMutex),
+		MigrationMap: new(sync.Map),
 	}
 }
 
 func (m MemMigrationCache) Write(key MigrationCacheKey, c cid.Cid) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.MigrationMap[key] = c
+	m.MigrationMap.Store(key, c)
 	return nil
 }
 
 func (m MemMigrationCache) Read(key MigrationCacheKey) (bool, cid.Cid, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	c, found := m.MigrationMap[key]
+	val, found := m.MigrationMap.Load(key)
 	if !found {
 		return false, cid.Undef, nil
 	}
+	c, ok := val.(cid.Cid)
+	if !ok {
+		return false, cid.Undef, xerrors.Errorf("non cid value in cache")
+	}
+
 	return true, c, nil
 }
 
 func (m MemMigrationCache) Load(key MigrationCacheKey, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	c, found := m.MigrationMap[key]
-	if found {
-		return c, nil
-	}
-	c, err := loadFunc()
+	found, c, err := m.Read(key)
 	if err != nil {
 		return cid.Undef, err
 	}
-	m.MigrationMap[key] = c
+	if found {
+		return c, nil
+	}
+	c, err = loadFunc()
+	if err != nil {
+		return cid.Undef, err
+	}
+	m.MigrationMap.Store(key, c)
 	return c, nil
 }
