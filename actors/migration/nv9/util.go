@@ -3,8 +3,8 @@ package nv9
 import (
 	"bytes"
 	"context"
+	"sync"
 
-	address "github.com/filecoin-project/go-address"
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
 	hamt2 "github.com/filecoin-project/go-hamt-ipld/v2"
@@ -120,38 +120,45 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 }
 
 type MemMigrationCache struct {
-	AddressToCache map[address.Address]MemAddressCache
+	MigrationMap map[MigrationCacheKey]cid.Cid
+	mu           *sync.RWMutex
 }
 
 func NewMemMigrationCache() MemMigrationCache {
 	return MemMigrationCache{
-		AddressToCache: make(map[address.Address]MemAddressCache),
+		MigrationMap: make(map[MigrationCacheKey]cid.Cid),
+		mu:           new(sync.RWMutex),
 	}
 }
 
-func (m MemMigrationCache) ByAddress(addr address.Address) MigrationAddressCache {
-	_, ok := m.AddressToCache[addr]
-	if !ok {
-		m.AddressToCache[addr] = MemAddressCache{
-			Migration: make(map[cid.Cid]cid.Cid),
-		}
-	}
-	return m.AddressToCache[addr]
-}
-
-type MemAddressCache struct {
-	Migration map[cid.Cid]cid.Cid
-}
-
-func (m MemAddressCache) Write(oldCid, newCid cid.Cid) error {
-	m.Migration[oldCid] = newCid
+func (m MemMigrationCache) Write(key MigrationCacheKey, c cid.Cid) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.MigrationMap[key] = c
 	return nil
 }
 
-func (m MemAddressCache) Read(oldCid cid.Cid) (bool, cid.Cid, error) {
-	newCid, found := m.Migration[oldCid]
+func (m MemMigrationCache) Read(key MigrationCacheKey) (bool, cid.Cid, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	c, found := m.MigrationMap[key]
 	if !found {
 		return false, cid.Undef, nil
 	}
-	return true, newCid, nil
+	return true, c, nil
+}
+
+func (m MemMigrationCache) Load(key MigrationCacheKey, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, found := m.MigrationMap[key]
+	if found {
+		return c, nil
+	}
+	c, err := loadFunc()
+	if err != nil {
+		return cid.Undef, err
+	}
+	m.MigrationMap[key] = c
+	return c, nil
 }
