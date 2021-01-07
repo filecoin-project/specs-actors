@@ -223,6 +223,16 @@ func TestBitfieldQueue(t *testing.T) {
 			Equals(t, queue)
 	})
 
+	t.Run("adds empty bitfield to queue", func(t *testing.T) {
+		queue := emptyBitfieldQueue(t, testAmtBitwidth)
+
+		epoch := abi.ChainEpoch(42)
+		require.NoError(t, queue.AddToQueue(epoch, bf()))
+
+		// ensures we don't add an empty entry.
+		ExpectBQ().Equals(t, queue)
+	})
+
 }
 
 func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec, bitwidth int) miner.BitfieldQueue {

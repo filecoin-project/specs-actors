@@ -87,14 +87,17 @@ func (q BitfieldQueue) Cut(toCut bitfield.BitField) error {
 }
 
 func (q BitfieldQueue) AddManyToQueueValues(values map[abi.ChainEpoch][]uint64) error {
-	// Update each epoch in-order to be deterministic.
 	// Pre-quantize to reduce the number of updates.
 	quantizedValues := make(map[abi.ChainEpoch][]uint64, len(values))
-	updatedEpochs := make([]abi.ChainEpoch, 0, len(values))
 	for rawEpoch, entries := range values { // nolint:nomaprange // subsequently sorted
 		epoch := q.quant.QuantizeUp(rawEpoch)
-		updatedEpochs = append(updatedEpochs, epoch)
 		quantizedValues[epoch] = append(quantizedValues[epoch], entries...)
+	}
+
+	// Update each epoch in-order to be deterministic.
+	updatedEpochs := make([]abi.ChainEpoch, 0, len(quantizedValues))
+	for epoch := range quantizedValues { // nolint:nomaprange // subsequently sorted
+		updatedEpochs = append(updatedEpochs, epoch)
 	}
 
 	sort.Slice(updatedEpochs, func(i, j int) bool {

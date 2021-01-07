@@ -25,6 +25,11 @@ func WrapStore(ctx context.Context, store ipldcbor.IpldStore) Store {
 	}
 }
 
+// Adapts a block store as an ADT store.
+func WrapBlockStore(ctx context.Context, bs ipldcbor.IpldBlockstore) Store {
+	return WrapStore(ctx, ipldcbor.NewCborStore(bs))
+}
+
 type wstore struct {
 	ctx context.Context
 	ipldcbor.IpldStore

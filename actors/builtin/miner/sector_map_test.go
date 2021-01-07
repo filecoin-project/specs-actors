@@ -3,6 +3,7 @@ package miner_test
 import (
 	"errors"
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/filecoin-project/go-bitfield"
@@ -137,4 +138,26 @@ func TestPartitionSectorMapEmpty(t *testing.T) {
 		return nil
 	}))
 	require.Empty(t, pm.Partitions())
+}
+
+func TestDeadlineSectorMapSorted(t *testing.T) {
+	dm := make(miner.DeadlineSectorMap)
+	for i := uint64(47); i > 0; i-- {
+		require.NoError(t, dm.AddValues(i, 0, 0))
+	}
+	dls := dm.Deadlines()
+	require.True(t, sort.SliceIsSorted(dls, func(i, j int) bool {
+		return dls[i] < dls[j]
+	}))
+}
+
+func TestPartitionSectorMapSorted(t *testing.T) {
+	pm := make(miner.PartitionSectorMap)
+	for i := uint64(100); i > 0; i-- {
+		require.NoError(t, pm.AddValues(i, 0))
+	}
+	pms := pm.Partitions()
+	require.True(t, sort.SliceIsSorted(pms, func(i, j int) bool {
+		return pms[i] < pms[j]
+	}))
 }

@@ -12,7 +12,7 @@ import (
 
 type verifregMigrator struct{}
 
-func (m verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore, in StateMigrationInput) (*StateMigrationResult, error) {
+func (m verifregMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState verifreg2.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -34,8 +34,8 @@ func (m verifregMigrator) MigrateState(ctx context.Context, store cbor.IpldStore
 	}
 
 	newHead, err := store.Put(ctx, &outState)
-	return &StateMigrationResult{
-		NewCodeCID: builtin3.VerifiedRegistryActorCodeID,
-		NewHead:    newHead,
+	return &actorMigrationResult{
+		newCodeCID: builtin3.VerifiedRegistryActorCodeID,
+		newHead:    newHead,
 	}, err
 }

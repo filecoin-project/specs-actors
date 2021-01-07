@@ -14,6 +14,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v3/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v3/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
 )
@@ -22,7 +23,7 @@ var fakeChainRandomness = []byte("not really random")
 
 func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	ctx := context.Background()
-	v := vm.NewVMWithSingletons(ctx, t)
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
 	worker, unverifiedClient := addrs[0], addrs[1]
 

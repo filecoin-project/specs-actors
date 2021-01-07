@@ -12,7 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	cbor2 "github.com/ipfs/go-ipld-cbor"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
@@ -40,28 +40,30 @@ type Sim struct {
 	WinCount      uint64
 	MessageCount  uint64
 
-	v             *vm.VM
-	rnd           *rand.Rand
-	statsByMethod map[vm.MethodKey]*vm.CallStats
-	blkStore      cbor2.IpldBlockstore
-	ctx           context.Context
-	t             testing.TB
+	v               *vm.VM
+	rnd             *rand.Rand
+	statsByMethod   map[vm.MethodKey]*vm.CallStats
+	blkStore        ipldcbor.IpldBlockstore
+	blkStoreFactory func() ipldcbor.IpldBlockstore
+	ctx             context.Context
+	t               testing.TB
 }
 
-func NewSim(ctx context.Context, t testing.TB, config SimConfig) *Sim {
-	bs := ipld.NewBlockStoreInMemory()
-	metrics := ipld.NewMetricsStore(bs)
-	v := vm.NewCustomStoreVMWithSingletons(ctx, adt.WrapStore(ctx, cbor2.NewCborStore(metrics)), t)
+func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor.IpldBlockstore, config SimConfig) *Sim {
+	blkStore := blockstoreFactory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
 	v.SetStatsSource(metrics)
 	return &Sim{
-		Config:        config,
-		Agents:        []Agent{},
-		DealProviders: []DealProvider{},
-		v:             v,
-		rnd:           rand.New(rand.NewSource(config.Seed)),
-		blkStore:      bs,
-		ctx:           ctx,
-		t:             t,
+		Config:          config,
+		Agents:          []Agent{},
+		DealProviders:   []DealProvider{},
+		v:               v,
+		rnd:             rand.New(rand.NewSource(config.Seed)),
+		blkStore:        blkStore,
+		blkStoreFactory: blockstoreFactory,
+		ctx:             ctx,
+		t:               t,
 	}
 }
 
@@ -149,7 +151,7 @@ func (s *Sim) Tick() error {
 	// create next vm
 	nextEpoch := s.v.GetEpoch() + 1
 	if s.Config.CheckpointEpochs > 0 && uint64(nextEpoch)%s.Config.CheckpointEpochs == 0 {
-		nextStore := ipld.NewBlockStoreInMemory()
+		nextStore := s.blkStoreFactory()
 		blks, size, err := BlockstoreCopy(s.blkStore, nextStore, s.v.StateRoot())
 		if err != nil {
 			return err
@@ -157,8 +159,8 @@ func (s *Sim) Tick() error {
 		fmt.Printf("CHECKPOINT: state blocks: %d, state data size %d\n", blks, size)
 
 		s.blkStore = nextStore
-		metrics := ipld.NewMetricsStore(nextStore)
-		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapStore(s.ctx, cbor2.NewCborStore(metrics)), s.v.StateRoot(), nextEpoch)
+		metrics := ipld.NewMetricsBlockStore(nextStore)
+		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapBlockStore(s.ctx, metrics), s.v.StateRoot(), nextEpoch)
 		if err != nil {
 			return err
 		}
