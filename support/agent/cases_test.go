@@ -71,7 +71,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 	minerCount := 1
 
 	rnd := rand.New(rand.NewSource(42))
-	sim := agent.NewSim(ctx, t, newBlockStore(), agent.SimConfig{Seed: rnd.Int63()})
+	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
 	accounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
@@ -202,7 +202,6 @@ func TestCreateDeals(t *testing.T) {
 	clientCount := 9
 
 	// set up sim
-	store := ipld.NewMetricsStore(ipld.NewBlockStoreInMemory())
 	rnd := rand.New(rand.NewSource(42))
 	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
 
@@ -277,7 +276,7 @@ func TestCCUpgrades(t *testing.T) {
 
 	// set up sim
 	rnd := rand.New(rand.NewSource(42))
-	sim := agent.NewSim(ctx, t, agent.SimConfig{Seed: rnd.Int63()})
+	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
 
 	// create miners
 	workerAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
