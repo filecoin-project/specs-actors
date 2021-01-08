@@ -47,15 +47,15 @@ type Logger interface {
 type MigrationCacheKey string
 
 func ActorHeadKey(addr address.Address, head cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey(fmt.Sprintf("%s-h-%s", addr.String(), head.String()))
+	return MigrationCacheKey(addr.String() + "-h-" + head.String())
 }
 
 func DeadlineKey(dlCid cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey(fmt.Sprintf("d-%s", dlCid.String()))
+	return MigrationCacheKey("d-" + dlCid.String())
 }
 
 func SectorsRootKey(sCid cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey(fmt.Sprintf("s-%s", sCid))
+	return MigrationCacheKey("s-" + sCid.String())
 }
 
 // MigrationCache stores and loads cached data. Its implementation must be threadsafe
