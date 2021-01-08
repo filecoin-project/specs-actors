@@ -43,6 +43,9 @@ var ContinuedFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * Conti
 
 var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
 
+// FF + 2BR
+var InvalidWindowPoStProjectionPeriod = abi.ChainEpoch(ContinuedFaultProjectionPeriod + 2*builtin.EpochsInDay) // PARAM_SPEC
+
 // Fraction of assumed block reward penalized when a sector is terminated.
 var TerminationRewardFactor = builtin.BigFrac{ // PARAM_SPEC
 	Numerator:   big.NewInt(1),
@@ -118,11 +121,9 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 				big.Mul(big.NewInt(builtin.EpochsInDay), TerminationRewardFactor.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
-// The penalty for a sector continuing faulty for another proving period.
-// It is a projection of the expected reward earned by the sector.
-// TODO(PARAM): consider applying a multiplier on the penalty
+// The penalty for optimistically proving a sector with an invalid window PoSt.
 func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate, qaSectorPower)
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod)
 }
 
 // Computes the PreCommit deposit given sector qa weight and current network conditions.
