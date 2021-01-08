@@ -4,6 +4,7 @@ import (
 	"context"
 
 	verifreg2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/verifreg"
+	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
@@ -35,7 +36,11 @@ func (m verifregMigrator) migrateState(ctx context.Context, store cbor.IpldStore
 
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.VerifiedRegistryActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
+}
+
+func (m verifregMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.VerifiedRegistryActorCodeID
 }

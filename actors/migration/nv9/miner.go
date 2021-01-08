@@ -30,12 +30,15 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	if err != nil {
 		return nil, err
 	}
-	sectorsOut, err := migrateAMTRaw(ctx, store, inState.Sectors, miner3.SectorsAmtBitwidth)
+
+	sectorsOut, err := in.cache.Load(SectorsRootKey(inState.Sectors), func() (cid.Cid, error) {
+		return migrateAMTRaw(ctx, store, inState.Sectors, miner3.SectorsAmtBitwidth)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	deadlinesOut, err := m.migrateDeadlines(ctx, store, inState.Deadlines)
+	deadlinesOut, err := m.migrateDeadlines(ctx, store, in.cache, inState.Deadlines)
 	if err != nil {
 		return nil, err
 	}
@@ -58,12 +61,16 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.StorageMinerActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
 }
 
-func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, deadlines cid.Cid) (cid.Cid, error) {
+func (m minerMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.StorageMinerActorCodeID
+}
+
+func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldStore, cache MigrationCache, deadlines cid.Cid) (cid.Cid, error) {
 	var inDeadlines miner2.Deadlines
 	err := store.Get(ctx, deadlines, &inDeadlines)
 	if err != nil {
@@ -78,35 +85,38 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 	outDeadlines := miner3.Deadlines{Due: [miner3.WPoStPeriodDeadlines]cid.Cid{}}
 
 	for i, c := range inDeadlines.Due {
-		var inDeadline miner2.Deadline
-		if err = store.Get(ctx, c, &inDeadline); err != nil {
+		outDlCid, err := cache.Load(DeadlineKey(c), func() (cid.Cid, error) {
+			var inDeadline miner2.Deadline
+			if err = store.Get(ctx, c, &inDeadline); err != nil {
+				return cid.Undef, err
+			}
+
+			partitions, err := m.migratePartitions(ctx, store, inDeadline.Partitions)
+			if err != nil {
+				return cid.Undef, xerrors.Errorf("partitions: %w", err)
+			}
+
+			expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, miner3.DeadlineExpirationAmtBitwidth)
+			if err != nil {
+				return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
+			}
+
+			outDeadline := miner3.Deadline{
+				Partitions:        partitions,
+				ExpirationsEpochs: expirationEpochs,
+				PostSubmissions:   inDeadline.PostSubmissions,
+				EarlyTerminations: inDeadline.EarlyTerminations,
+				LiveSectors:       inDeadline.LiveSectors,
+				TotalSectors:      inDeadline.TotalSectors,
+				FaultyPower:       miner3.PowerPair(inDeadline.FaultyPower),
+			}
+
+			return store.Put(ctx, &outDeadline)
+		})
+		if err != nil {
 			return cid.Undef, err
 		}
 
-		partitions, err := m.migratePartitions(ctx, store, inDeadline.Partitions)
-		if err != nil {
-			return cid.Undef, xerrors.Errorf("partitions: %w", err)
-		}
-
-		expirationEpochs, err := migrateAMTRaw(ctx, store, inDeadline.ExpirationsEpochs, miner3.DeadlineExpirationAmtBitwidth)
-		if err != nil {
-			return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
-		}
-
-		outDeadline := miner3.Deadline{
-			Partitions:        partitions,
-			ExpirationsEpochs: expirationEpochs,
-			PostSubmissions:   inDeadline.PostSubmissions,
-			EarlyTerminations: inDeadline.EarlyTerminations,
-			LiveSectors:       inDeadline.LiveSectors,
-			TotalSectors:      inDeadline.TotalSectors,
-			FaultyPower:       miner3.PowerPair(inDeadline.FaultyPower),
-		}
-
-		outDlCid, err := store.Put(ctx, &outDeadline)
-		if err != nil {
-			return cid.Undef, err
-		}
 		outDeadlines.Due[i] = outDlCid
 	}
 

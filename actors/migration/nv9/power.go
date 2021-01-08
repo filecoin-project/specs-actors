@@ -58,7 +58,11 @@ func (m powerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.StoragePowerActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
+}
+
+func (m powerMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.StoragePowerActorCodeID
 }

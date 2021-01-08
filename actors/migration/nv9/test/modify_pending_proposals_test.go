@@ -74,7 +74,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	}
 
 	// run migration
-	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1}, log)
+	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1}, log, nv9.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]rt.VMActor{}
