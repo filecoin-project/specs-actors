@@ -76,7 +76,7 @@ func Test500Epochs(t *testing.T) {
 
 	// set up sim
 	rnd := rand.New(rand.NewSource(42))
-	sim := agent.NewSim(ctx, t, agent.SimConfig{
+	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{
 		Seed:             rnd.Int63(),
 		CheckpointEpochs: 1000,
 	})
