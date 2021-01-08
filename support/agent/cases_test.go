@@ -17,7 +17,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v2/actors/states"
 	"github.com/filecoin-project/specs-actors/v2/support/agent"
 	"github.com/filecoin-project/specs-actors/v2/support/ipld"
-	"github.com/filecoin-project/specs-actors/v2/support/vm"
+	vm_test "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
 func TestCreate20Miners(t *testing.T) {
@@ -173,8 +173,9 @@ func TestCreateDeals(t *testing.T) {
 	clientCount := 9
 
 	// set up sim
+	store := ipld.NewMetricsStore(ipld.NewBlockStoreInMemory())
 	rnd := rand.New(rand.NewSource(42))
-	sim := agent.NewSim(ctx, t, ipld.NewADTStore(ctx), agent.SimConfig{Seed: rnd.Int63()})
+	sim := agent.NewSim(ctx, t, store, agent.SimConfig{Seed: rnd.Int63()})
 
 	// create miners
 	workerAccounts := vm_test.CreateAccounts(ctx, t, sim.GetVM(), minerCount, initialBalance, rnd.Int63())
