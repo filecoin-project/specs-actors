@@ -345,3 +345,10 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, consensusFaultMaxReporterShare.Numerator),
 		consensusFaultMaxReporterShare.Denominator))
 }
+
+// The reward given for successfully disputing a window post.
+func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPower PowerPair) abi.TokenAmount {
+	// This is currently zero but may be raised at some point to
+	// ensure that disputing proofs rational.
+	return big.Zero()
+}

@@ -1928,6 +1928,7 @@ func TestWindowPost(t *testing.T) {
 			result = &poStDisputeResult{
 				expectedPowerDelta:  pwr.Neg(),
 				expectedPenalty:     expectedFee,
+				expectedReward:     big.Zero(),
 				expectedPledgeDelta: big.Zero(),
 			}
 		}
@@ -5199,6 +5200,7 @@ type poStDisputeResult struct {
 	expectedPowerDelta  miner.PowerPair
 	expectedPledgeDelta abi.TokenAmount
 	expectedPenalty     abi.TokenAmount
+	expectedReward      abi.TokenAmount
 }
 
 func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, proofIndex uint64, infos []*miner.SectorOnChainInfo, expectSuccess *poStDisputeResult) {
@@ -5302,15 +5304,18 @@ func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info,
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
 				nil, exitcode.Ok)
 		}
+		// expect reward
+		if !expectSuccess.expectedReward.IsZero() {
+			rt.ExpectSend(h.worker, builtin.MethodSend, nil, expectSuccess.expectedReward, nil, exitcode.Ok)
+		}
+		// expect penalty
+		if !expectSuccess.expectedPenalty.IsZero() {
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectSuccess.expectedPenalty, nil, exitcode.Ok)
+		}
 		// expect pledge update
 		if !expectSuccess.expectedPledgeDelta.IsZero() {
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal,
 				&expectSuccess.expectedPledgeDelta, abi.NewTokenAmount(0), nil, exitcode.Ok)
-		}
-
-		// expect penalty
-		if !expectSuccess.expectedPenalty.IsZero() {
-			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectSuccess.expectedPenalty, nil, exitcode.Ok)
 		}
 	}
 

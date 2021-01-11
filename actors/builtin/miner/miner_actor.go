@@ -482,6 +482,7 @@ type DisputeWindowedPoStParams struct {
 
 func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
+	reporter := rt.Caller()
 
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
@@ -494,6 +495,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 	pwrTotal := requestCurrentTotalPower(rt)
 
 	toBurn := abi.NewTokenAmount(0)
+	toReward := abi.NewTokenAmount(0)
 	pledgeDelta := abi.NewTokenAmount(0)
 	powerDelta := NewPowerPairZero()
 	var st State
@@ -567,24 +569,55 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 		// Penalties.
 		{
-			penaltyTarget := PledgePenaltyForInvalidWindowPoSt(
+			// Calculate the base penalty.
+			penaltyBase := PledgePenaltyForInvalidWindowPoSt(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
 				disputedPower.QA,
 			)
 
-			err := st.ApplyPenalty(penaltyTarget)
+			// Calculate the target reward.
+			postProofType, err := info.SealProofType.RegisteredWindowPoStProof()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine post proof type")
+			rewardTarget := RewardForDisputedWindowPoSt(postProofType, disputedPower)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute reward for disputed window post")
+
+			// Compute the target penalty by adding the
+			// base penalty to the target reward. We don't
+			// take reward out of the penalty as the miner
+			// could end up receiving a substantial
+			// portion of their fee back as a reward.
+			penaltyTarget := big.Add(penaltyBase, rewardTarget)
+
+			err = st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay debt")
 			toBurn = big.Add(penaltyFromVesting, penaltyFromBalance)
+
+			// Now, move as much of the target reward as
+			// we can from the burn to the reward.
+			toReward = big.Min(toBurn, rewardTarget)
+			toBurn = big.Sub(toBurn, toReward)
+
 			pledgeDelta = penaltyFromVesting.Neg()
 		}
 	})
 
 	requestUpdatePower(rt, powerDelta)
-	notifyPledgeChanged(rt, pledgeDelta)
+
+	if !toReward.IsZero() {
+		// Try to send the reward to the reporter.
+		code := rt.Send(reporter, builtin.MethodSend, nil, toReward, &builtin.Discard{})
+
+		// If we fail, log and burn the reward to make sure the balances remain correct.
+		if !code.IsSuccess() {
+			rt.Log(rtt.ERROR, "failed to send reward")
+			toBurn = big.Add(toBurn, toReward)
+		}
+	}
 	burnFunds(rt, toBurn)
+	notifyPledgeChanged(rt, pledgeDelta)
 	rt.StateReadonly(&st)
 
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
