@@ -8,17 +8,27 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/rt"
+	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	reward2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
+	cid "github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
+	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v3/actors/states"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v3/support/vm"
@@ -34,37 +44,81 @@ import (
 // * Messages will be shuffled to simulate network entropy.
 // * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
-	Config        SimConfig
-	Agents        []Agent
-	DealProviders []DealProvider
-	WinCount      uint64
-	MessageCount  uint64
+	Config            SimConfig
+	Agents            []Agent
+	DealProviders     []DealProvider
+	WinCount          uint64
+	MessageCount      uint64
+	ComputePowerTable func(SimVM, []Agent) (PowerTable, error)
 
-	v               *vm.VM
-	rnd             *rand.Rand
-	statsByMethod   map[vm.MethodKey]*vm.CallStats
-	blkStore        ipldcbor.IpldBlockstore
-	blkStoreFactory func() ipldcbor.IpldBlockstore
-	ctx             context.Context
-	t               testing.TB
+	v                 SimVM
+	vmFactory         VMFactoryFunc
+	minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error)
+	rnd               *rand.Rand
+	statsByMethod     map[vm.MethodKey]*vm.CallStats
+	blkStore          ipldcbor.IpldBlockstore
+	blkStoreFactory   func() ipldcbor.IpldBlockstore
+	ctx               context.Context
+	t                 testing.TB
 }
+
+type VMFactoryFunc func(context.Context, vm2.ActorImplLookup, adt.Store, cid.Cid, abi.ChainEpoch) (SimVM, error)
 
 func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor.IpldBlockstore, config SimConfig) *Sim {
 	blkStore := blockstoreFactory()
 	metrics := ipld.NewMetricsBlockStore(blkStore)
 	v := vm.NewVMWithSingletons(ctx, t, metrics)
-	v.SetStatsSource(metrics)
-	return &Sim{
-		Config:          config,
-		Agents:          []Agent{},
-		DealProviders:   []DealProvider{},
-		v:               v,
-		rnd:             rand.New(rand.NewSource(config.Seed)),
-		blkStore:        blkStore,
-		blkStoreFactory: blockstoreFactory,
-		ctx:             ctx,
-		t:               t,
+	vmFactory := func(ctx context.Context, impl vm2.ActorImplLookup, store adt.Store, stateRoot cid.Cid, epoch abi.ChainEpoch) (SimVM, error) {
+		return vm.NewVMAtEpoch(ctx, vm.ActorImplLookup(impl), store, stateRoot, epoch)
 	}
+	v.SetStatsSource(metrics)
+	minerStateFactory := func(ctx context.Context, root cid.Cid) (SimMinerState, error) {
+		return &MinerStateV2{
+			Ctx:  ctx,
+			Root: root,
+		}, nil
+	}
+	return &Sim{
+		Config:            config,
+		Agents:            []Agent{},
+		DealProviders:     []DealProvider{},
+		ComputePowerTable: ComputePowerTableV3,
+		v:                 v,
+		vmFactory:         vmFactory,
+		minerStateFactory: minerStateFactory,
+		rnd:               rand.New(rand.NewSource(config.Seed)),
+		blkStore:          blkStore,
+		blkStoreFactory:   blockstoreFactory,
+		ctx:               ctx,
+		t:                 t,
+	}
+}
+
+func NewSimWithVM(ctx context.Context, t testing.TB, v SimVM, vmFactory VMFactoryFunc, computePowerTable func(SimVM, []Agent) (PowerTable, error), blkStore ipldcbor.IpldBlockstore, blockstoreFactory func() ipldcbor.IpldBlockstore, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error), config SimConfig) *Sim {
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v.SetStatsSource(metrics)
+
+	return &Sim{
+		Config:            config,
+		Agents:            []Agent{},
+		DealProviders:     []DealProvider{},
+		ComputePowerTable: computePowerTable,
+		v:                 v,
+		vmFactory:         vmFactory,
+		minerStateFactory: minerStateFactory,
+		rnd:               rand.New(rand.NewSource(config.Seed)),
+		blkStore:          blkStore,
+		blkStoreFactory:   blockstoreFactory,
+		ctx:               ctx,
+		t:                 t,
+	}
+}
+
+func (s *Sim) SwapVM(v SimVM, vmFactory VMFactoryFunc, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error), computePowerTable func(SimVM, []Agent) (PowerTable, error)) {
+	s.v = v
+	s.vmFactory = vmFactory
+	s.minerStateFactory = minerStateFactory
+	s.ComputePowerTable = computePowerTable
 }
 
 //////////////////////////////////////////
@@ -76,9 +130,8 @@ func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor
 func (s *Sim) Tick() error {
 	var err error
 	var blockMessages []message
-
 	// compute power table before state transition to create block rewards at the end
-	powerTable, err := computePowerTable(s.v, s.Agents)
+	powerTable, err := s.ComputePowerTable(s.v, s.Agents)
 	if err != nil {
 		return err
 	}
@@ -118,7 +171,6 @@ func (s *Sim) Tick() error {
 		}
 	}
 	s.MessageCount += uint64(len(blockMessages))
-
 	// Apply block rewards
 	// Note that this differs from the specification in that it applies all reward messages at the end, whereas
 	// a real implementation would apply a reward messages at the end of each block in the tipset (thereby
@@ -160,14 +212,19 @@ func (s *Sim) Tick() error {
 
 		s.blkStore = nextStore
 		metrics := ipld.NewMetricsBlockStore(nextStore)
-		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapBlockStore(s.ctx, metrics), s.v.StateRoot(), nextEpoch)
+		s.v, err = s.vmFactory(s.ctx, s.v.GetActorImpls(), adt.WrapBlockStore(s.ctx, metrics), s.v.StateRoot(), nextEpoch)
 		if err != nil {
 			return err
 		}
 		s.v.SetStatsSource(metrics)
 
 	} else {
-		s.v, err = s.v.WithEpoch(nextEpoch)
+		statsSource := s.v.GetStatsSource()
+		s.v, err = s.vmFactory(s.ctx, s.v.GetActorImpls(), s.v.Store(), s.v.StateRoot(), nextEpoch)
+		if err != nil {
+			return err
+		}
+		s.v.SetStatsSource(statsSource)
 	}
 
 	return err
@@ -191,6 +248,17 @@ func (s *Sim) Store() adt.Store {
 	return s.v.Store()
 }
 
+func (s *Sim) MinerState(addr address.Address) (SimMinerState, error) {
+	act, found, err := s.v.GetActor(addr)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, xerrors.Errorf("miner %s not found", addr)
+	}
+	return s.minerStateFactory(s.ctx, act.Head)
+}
+
 func (s *Sim) AddAgent(a Agent) {
 	s.Agents = append(s.Agents, a)
 }
@@ -199,7 +267,7 @@ func (s *Sim) AddDealProvider(d DealProvider) {
 	s.DealProviders = append(s.DealProviders, d)
 }
 
-func (s *Sim) GetVM() *vm.VM {
+func (s *Sim) GetVM() SimVM {
 	return s.v
 }
 
@@ -242,18 +310,18 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 	return nil
 }
 
-func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
-	pt := powerTable{}
+func ComputePowerTableV3(v SimVM, agents []Agent) (PowerTable, error) {
+	pt := PowerTable{}
 
 	var rwst reward.State
 	if err := v.GetState(builtin.RewardActorAddr, &rwst); err != nil {
-		return powerTable{}, err
+		return PowerTable{}, err
 	}
 	pt.blockReward = rwst.ThisEpochReward
 
 	var st power.State
 	if err := v.GetState(builtin.StoragePowerActorAddr, &st); err != nil {
-		return powerTable{}, err
+		return PowerTable{}, err
 	}
 	pt.totalQAPower = st.TotalQualityAdjPower
 
@@ -273,7 +341,38 @@ func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	return pt, nil
 }
 
-func computeCircSupply(v *vm.VM) error {
+func ComputePowerTableV2(v SimVM, agents []Agent) (PowerTable, error) {
+	pt := PowerTable{}
+
+	var rwst reward2.State
+	if err := v.GetState(builtin.RewardActorAddr, &rwst); err != nil {
+		return PowerTable{}, err
+	}
+	pt.blockReward = rwst.ThisEpochReward
+
+	var st power2.State
+	if err := v.GetState(builtin.StoragePowerActorAddr, &st); err != nil {
+		return PowerTable{}, err
+	}
+	pt.totalQAPower = st.TotalQualityAdjPower
+
+	for _, agent := range agents {
+		if miner, ok := agent.(*MinerAgent); ok {
+			if claim, found, err := st.GetClaim(v.Store(), miner.IDAddress); err != nil {
+				return pt, err
+			} else if found {
+				if sufficient, err := st.MinerNominalPowerMeetsConsensusMinimum(v.Store(), miner.IDAddress); err != nil {
+					return pt, err
+				} else if sufficient {
+					pt.minerPower = append(pt.minerPower, minerPowerTable{miner.IDAddress, claim.QualityAdjPower})
+				}
+			}
+		}
+	}
+	return pt, nil
+}
+
+func computeCircSupply(v SimVM) error {
 	// disbursed + reward.State.TotalStoragePowerReward - burnt.Balance - power.State.TotalPledgeCollateral
 	var rewardSt reward.State
 	if err := v.GetState(builtin.RewardActorAddr, &rewardSt); err != nil {
@@ -310,6 +409,7 @@ type SimState interface {
 	AddAgent(a Agent)
 	AddDealProvider(d DealProvider)
 	NetworkCirculatingSupply() abi.TokenAmount
+	MinerState(addr address.Address) (SimMinerState, error)
 
 	// randomly select an agent capable of making deals.
 	// Returns nil if no providers exist.
@@ -351,8 +451,51 @@ type minerPowerTable struct {
 	qaPower abi.StoragePower
 }
 
-type powerTable struct {
+type PowerTable struct {
 	blockReward  abi.TokenAmount
 	totalQAPower abi.StoragePower
 	minerPower   []minerPowerTable
+}
+
+// VM interface allowing a simulation to operate over multiple VM versions
+type SimVM interface {
+	ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode)
+	GetCirculatingSupply() abi.TokenAmount
+	GetLogs() []string
+	GetState(addr address.Address, out cbor.Unmarshaler) error
+	SetStatsSource(stats vm2.StatsSource)
+	GetCallStats() map[vm2.MethodKey]*vm2.CallStats
+	GetEpoch() abi.ChainEpoch
+	Store() adt2.Store
+	GetActor(addr address.Address) (*states.Actor, bool, error)
+	SetCirculatingSupply(supply big.Int)
+	GetActorImpls() map[cid.Cid]rt.VMActor
+	StateRoot() cid.Cid
+	GetStatsSource() vm2.StatsSource
+	GetTotalActorBalance() (abi.TokenAmount, error)
+}
+
+var _ SimVM = (*vm.VM)(nil)
+var _ SimVM = (*vm2.VM)(nil)
+
+type SimMinerState interface {
+	HasSectorNo(adt.Store, abi.SectorNumber) (bool, error)
+	FindSector(adt.Store, abi.SectorNumber) (uint64, uint64, error)
+	ProvingPeriodStart(adt.Store) (abi.ChainEpoch, error)
+	LoadSectorInfo(adt.Store, uint64) (SimSectorInfo, error)
+	DeadlineInfo(adt.Store, abi.ChainEpoch) (*dline.Info, error)
+	FeeDebt(adt.Store) (abi.TokenAmount, error)
+	LoadDeadlineState(adt.Store, uint64) (SimDeadlineState, error)
+}
+
+type SimSectorInfo interface {
+	Expiration() abi.ChainEpoch
+}
+
+type SimDeadlineState interface {
+	LoadPartition(adt.Store, uint64) (SimPartitionState, error)
+}
+
+type SimPartitionState interface {
+	Terminated() bitfield.BitField
 }

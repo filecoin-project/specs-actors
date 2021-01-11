@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
+	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	"github.com/pkg/errors"
@@ -69,7 +70,7 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 		allowSideEffects: true,
 		callerValidated:  false,
 		stateUsedObjs:    map[cbor.Marshaler]cid.Cid{},
-		stats:            NewCallStats(topLevel.statsSource),
+		stats:            vm2.NewCallStats(topLevel.statsSource),
 	}
 }
 
