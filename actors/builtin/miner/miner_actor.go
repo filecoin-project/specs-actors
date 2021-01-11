@@ -622,8 +622,6 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
-
-	// TODO: Pay submitter some fee.
 	return nil
 }
 
