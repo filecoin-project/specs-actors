@@ -74,6 +74,10 @@ func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentE
 // 1. Optimistic PoSts may not be disputed while the challenge window is open.
 // 2. Optimistic PoSts may not be disputed after the miner could have compacted the deadline.
 func deadlineAvailableForOptimisticPoStDispute(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentEpoch abi.ChainEpoch) bool {
+	if provingPeriodStart > currentEpoch {
+		// We haven't started proving yet, there's nothing to dispute.
+		return false
+	}
 	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
 
 	return !dlInfo.IsOpen() && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStDisputeWindow
