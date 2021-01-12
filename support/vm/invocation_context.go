@@ -54,6 +54,7 @@ type topLevelContext struct {
 	originatorCallSeq       uint64          // Call sequence number of the top-level message.
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
 	statsSource             StatsSource     // optional source of external statistics that can be used to profile calls
+	circSupply              abi.TokenAmount // default or externally specified circulating FIL supply
 }
 
 func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
@@ -352,7 +353,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 // CreateActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
-	act, ok := ic.rt.actorImpls[codeID]
+	act, ok := ic.rt.ActorImpls[codeID]
 	if !ok {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only create built-in actors.")
 	}
@@ -408,7 +409,7 @@ func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
 }
 
 func (ic *invocationContext) TotalFilCircSupply() abi.TokenAmount {
-	return big.Mul(big.NewInt(1e9), big.NewInt(1e18))
+	return ic.topLevel.circSupply
 }
 
 func (ic *invocationContext) Context() context.Context {

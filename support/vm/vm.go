@@ -33,7 +33,7 @@ type VM struct {
 	currentEpoch   abi.ChainEpoch
 	networkVersion network.Version
 
-	actorImpls  ActorImplLookup
+	ActorImpls  ActorImplLookup
 	stateRoot   cid.Cid  // The last committed root.
 	actors      *adt.Map // The current (not necessarily committed) root node.
 	actorsDirty bool
@@ -47,6 +47,8 @@ type VM struct {
 
 	statsSource   StatsSource
 	statsByMethod StatsByCall
+
+	circSupply abi.TokenAmount
 }
 
 // VM types
@@ -83,7 +85,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 
 	return &VM{
 		ctx:            ctx,
-		actorImpls:     actorImpls,
+		ActorImpls:     actorImpls,
 		store:          store,
 		actors:         actors,
 		stateRoot:      actorRoot,
@@ -91,6 +93,7 @@ func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     big.Mul(big.NewInt(1e9), big.NewInt(1e18)),
 	}
 }
 
@@ -108,7 +111,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 
 	return &VM{
 		ctx:            ctx,
-		actorImpls:     actorImpls,
+		ActorImpls:     actorImpls,
 		currentEpoch:   epoch,
 		store:          store,
 		actors:         actors,
@@ -117,6 +120,7 @@ func NewVMAtEpoch(ctx context.Context, actorImpls ActorImplLookup, store adt.Sto
 		emptyObject:    emptyObject,
 		networkVersion: network.VersionMax,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     big.Mul(big.NewInt(1e9), big.NewInt(1e18)),
 	}, nil
 }
 
@@ -133,7 +137,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 
 	return &VM{
 		ctx:            vm.ctx,
-		actorImpls:     vm.actorImpls,
+		ActorImpls:     vm.ActorImpls,
 		store:          vm.store,
 		actors:         actors,
 		stateRoot:      vm.stateRoot,
@@ -143,6 +147,7 @@ func (vm *VM) WithEpoch(epoch abi.ChainEpoch) (*VM, error) {
 		networkVersion: vm.networkVersion,
 		statsSource:    vm.statsSource,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     vm.circSupply,
 	}, nil
 }
 
@@ -159,7 +164,7 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 
 	return &VM{
 		ctx:            vm.ctx,
-		actorImpls:     vm.actorImpls,
+		ActorImpls:     vm.ActorImpls,
 		store:          vm.store,
 		actors:         actors,
 		stateRoot:      vm.stateRoot,
@@ -169,11 +174,8 @@ func (vm *VM) WithNetworkVersion(nv network.Version) (*VM, error) {
 		networkVersion: nv,
 		statsSource:    vm.statsSource,
 		statsByMethod:  make(StatsByCall),
+		circSupply:     vm.circSupply,
 	}, nil
-}
-
-func (vm *VM) SetStatsSource(s StatsSource) {
-	vm.statsSource = s
 }
 
 func (vm *VM) rollback(root cid.Cid) error {
@@ -202,7 +204,7 @@ func (vm *VM) GetActor(a address.Address) (*states.Actor, bool, error) {
 // SetActor sets the the actor to the given value whether it previously existed or not.
 //
 // This method will not check if the actor previously existed, it will blindly overwrite it.
-func (vm *VM) setActor(ctx context.Context, key address.Address, a *states.Actor) error {
+func (vm *VM) setActor(_ context.Context, key address.Address, a *states.Actor) error {
 	if err := vm.actors.Put(abi.AddrKey(key), a); err != nil {
 		return errors.Wrap(err, "setting actor in state tree failed")
 	}
@@ -232,7 +234,7 @@ func (vm *VM) SetActorState(ctx context.Context, key address.Address, state cbor
 // This method will NOT return an error if the actor was not found.
 // This behaviour is based on a principle that some store implementations might not be able to determine
 // whether something exists before deleting it.
-func (vm *VM) deleteActor(ctx context.Context, key address.Address) error {
+func (vm *VM) deleteActor(_ context.Context, key address.Address) error {
 	err := vm.actors.Delete(abi.AddrKey(key))
 	vm.actorsDirty = true
 	if err == hamt.ErrNotFound {
@@ -322,6 +324,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		originatorCallSeq:    vm.callSequence,
 		newActorAddressCount: 0,
 		statsSource:          vm.statsSource,
+		circSupply:           vm.circSupply,
 	}
 	vm.callSequence++
 
@@ -410,6 +413,16 @@ func (vm *VM) GetCallStats() map[MethodKey]*CallStats {
 	return vm.statsByMethod
 }
 
+// Set the FIL circulating supply passed to actors through runtime
+func (vm *VM) SetCirculatingSupply(supply abi.TokenAmount) {
+	vm.circSupply = supply
+}
+
+// Set the FIL circulating supply passed to actors through runtime
+func (vm *VM) GetCirculatingSupply() abi.TokenAmount {
+	return vm.circSupply
+}
+
 // transfer debits money from one account and credits it to another.
 // avoid calling this method with a zero amount else it will perform unnecessary actor loading.
 //
@@ -462,11 +475,47 @@ func (vm *VM) transfer(debitFrom address.Address, creditTo address.Address, amou
 }
 
 func (vm *VM) getActorImpl(code cid.Cid) runtime.VMActor {
-	actorImpl, ok := vm.actorImpls[code]
+	actorImpl, ok := vm.ActorImpls[code]
 	if !ok {
 		vm.Abortf(exitcode.SysErrInvalidReceiver, "actor implementation not found for Exitcode %v", code)
 	}
 	return actorImpl
+}
+
+//
+// stats
+//
+
+func (vm *VM) SetStatsSource(s StatsSource) {
+	vm.statsSource = s
+}
+
+func (vm *VM) StoreReads() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.ReadCount()
+	}
+	return 0
+}
+
+func (vm *VM) StoreWrites() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.WriteCount()
+	}
+	return 0
+}
+
+func (vm *VM) StoreReadBytes() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.ReadSize()
+	}
+	return 0
+}
+
+func (vm *VM) StoreWriteBytes() uint64 {
+	if vm.statsSource != nil {
+		return vm.statsSource.WriteSize()
+	}
+	return 0
 }
 
 //
@@ -505,7 +554,7 @@ func (vm *VM) LastInvocation() *Invocation {
 // implement runtime.Runtime for VM
 //
 
-func (vm *VM) Log(level rt.LogLevel, msg string, args ...interface{}) {
+func (vm *VM) Log(_ rt.LogLevel, msg string, args ...interface{}) {
 	vm.logs = append(vm.logs, fmt.Sprintf(msg, args...))
 }
 

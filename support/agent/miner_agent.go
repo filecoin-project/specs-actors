@@ -4,8 +4,6 @@ import (
 	"container/heap"
 	"crypto/sha256"
 	"fmt"
-	"github.com/filecoin-project/go-state-types/dline"
-	"github.com/pkg/errors"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
@@ -13,84 +11,26 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
+	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 )
 
 type MinerAgentConfig struct {
-	PrecommitRate   float64                 // average number of PreCommits per epoch
-	ProofType       abi.RegisteredSealProof // seal proof type for this miner
-	StartingBalance abi.TokenAmount         // initial actor balance for miner actor
-	FaultRate       float64                 // rate at which committed sectors go faulty (faults per committed sector per epoch)
-	RecoveryRate    float64                 // rate at which faults are recovered (recoveries per fault per epoch)
-}
-
-type MinerGenerator struct {
-	config            MinerAgentConfig // eventually this should become a set of probabilities to support miner differentiation
-	createMinerEvents *RateIterator
-	minersCreated     int
-	accounts          []address.Address
-	rnd               *rand.Rand
-}
-
-func NewMinerGenerator(accounts []address.Address, config MinerAgentConfig, createMinerRate float64, rndSeed int64) *MinerGenerator {
-	rnd := rand.New(rand.NewSource(rndSeed))
-	return &MinerGenerator{
-		config:            config,
-		createMinerEvents: NewRateIterator(createMinerRate, rnd.Int63()),
-		accounts:          accounts,
-		rnd:               rnd,
-	}
-}
-
-func (mg *MinerGenerator) Tick(_ SimState) ([]message, error) {
-	var msgs []message
-	if mg.minersCreated >= len(mg.accounts) {
-		return msgs, nil
-	}
-
-	err := mg.createMinerEvents.Tick(func() error {
-		if mg.minersCreated < len(mg.accounts) {
-			addr := mg.accounts[mg.minersCreated]
-			mg.minersCreated++
-			msgs = append(msgs, mg.createMiner(addr, mg.config))
-		}
-		return nil
-	})
-	return msgs, err
-}
-
-func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) message {
-	return message{
-		From:   owner,
-		To:     builtin.StoragePowerActorAddr,
-		Value:  mg.config.StartingBalance, // miner gets all account funds
-		Method: builtin.MethodsPower.CreateMiner,
-		Params: &power.CreateMinerParams{
-			Owner:         owner,
-			Worker:        owner,
-			SealProofType: cfg.ProofType,
-		},
-		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
-			createMinerRet, ok := ret.(*power.CreateMinerReturn)
-			if !ok {
-				return errors.Errorf("create miner return has wrong type: %v", ret)
-			}
-
-			params := msg.Params.(*power.CreateMinerParams)
-			if !ok {
-				return errors.Errorf("create miner params has wrong type: %v", msg.Params)
-			}
-
-			s.AddAgent(NewMinerAgent(params.Owner, params.Worker, createMinerRet.IDAddress, createMinerRet.RobustAddress, mg.rnd.Int63(), cfg))
-			return nil
-		},
-	}
+	PrecommitRate    float64                 // average number of PreCommits per epoch
+	ProofType        abi.RegisteredSealProof // seal proof type for this miner
+	StartingBalance  abi.TokenAmount         // initial actor balance for miner actor
+	FaultRate        float64                 // rate at which committed sectors go faulty (faults per committed sector per epoch)
+	RecoveryRate     float64                 // rate at which faults are recovered (recoveries per fault per epoch)
+	MinMarketBalance abi.TokenAmount         // balance below which miner will top up funds in market actor
+	MaxMarketBalance abi.TokenAmount         // balance to which miner will top up funds in market actor
+	UpgradeSectors   bool                    // if true, miner will replace sectors without deals with sectors that do
 }
 
 type MinerAgent struct {
@@ -100,11 +40,21 @@ type MinerAgent struct {
 	IDAddress     address.Address
 	RobustAddress address.Address
 
+	// Stats
+	UpgradedSectors uint64
+
 	// These slices are used to track counts and for random selections
-	// total number of committed sectors (including sectors pending proof validation) that are not faulty and have not expired
+	// all committed sectors (including sectors pending proof validation) that are not faulty and have not expired
 	liveSectors []uint64
-	// total number of sectors expected to be faulty
+	// all sectors expected to be faulty
 	faultySectors []uint64
+	// all sectors that contain no deals (committed capacity sectors)
+	ccSectors []uint64
+
+	// deals made by this agent that need to be published
+	pendingDeals []market.ClientDealProposal
+	// deals made by this agent that need to be published
+	dealsPendingInclusion []pendingDeal
 
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
@@ -118,6 +68,8 @@ type MinerAgent struct {
 	recoveryEvents *RateIterator
 	// tracks which sector number to use next
 	nextSectorNumber abi.SectorNumber
+	// tracks funds expected to be locked for miner deal collateral
+	expectedMarketBalance abi.TokenAmount
 	// random numnber generator provided by sim
 	rnd *rand.Rand
 }
@@ -133,8 +85,9 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		IDAddress:     idAddress,
 		RobustAddress: robustAddress,
 
-		operationSchedule: &opQueue{},
-		preCommitEvents:   NewRateIterator(config.PrecommitRate, rnd.Int63()),
+		operationSchedule:     &opQueue{},
+		preCommitEvents:       NewRateIterator(config.PrecommitRate, rnd.Int63()),
+		expectedMarketBalance: big.Zero(),
 
 		// fault rate is the configured fault rate times the number of live sectors or zero.
 		faultEvents: NewRateIterator(0.0, rnd.Int63()),
@@ -151,9 +104,9 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 	for _, op := range ma.operationSchedule.PopOpsUntil(s.GetEpoch()) {
 		switch o := op.action.(type) {
 		case proveCommitAction:
-			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber))
+			messages = append(messages, ma.createProveCommit(s.GetEpoch(), o.sectorNumber, o.committedCapacity, o.upgrade))
 		case registerSectorAction:
-			err := ma.registerSector(s, o.sectorNumber)
+			err := ma.registerSector(s, o.sectorNumber, o.committedCapacity, o.upgrade)
 			if err != nil {
 				return nil, err
 			}
@@ -187,7 +140,11 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 			return nil
 		}
 
-		messages = append(messages, ma.createPreCommit(s.GetEpoch()))
+		msg, err := ma.createPreCommit(s, s.GetEpoch())
+		if err != nil {
+			return err
+		}
+		messages = append(messages, msg)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -221,26 +178,102 @@ func (ma *MinerAgent) Tick(s SimState) ([]message, error) {
 		return nil, err
 	}
 
+	// publish pending deals
+	messages = append(messages, ma.publishStorageDeals()...)
+
+	// add market balance if needed
+	messages = append(messages, ma.updateMarketBalance()...)
+
 	return messages, nil
 }
 
+///////////////////////////////////
+//
+//  DealProvider methods
+//
+///////////////////////////////////
+
+var _ DealProvider = (*MinerAgent)(nil)
+
+func (ma *MinerAgent) Address() address.Address {
+	return ma.IDAddress
+}
+
+func (ma *MinerAgent) DealRange(currentEpoch abi.ChainEpoch) (abi.ChainEpoch, abi.ChainEpoch) {
+	// maximum sector start and maximum expiration
+	return currentEpoch + miner.MaxProveCommitDuration[ma.Config.ProofType] + miner.MinSectorExpiration,
+		currentEpoch + miner.MaxSectorExpirationExtension
+}
+
+func (ma *MinerAgent) CreateDeal(proposal market.ClientDealProposal) {
+	ma.expectedMarketBalance = big.Sub(ma.expectedMarketBalance, proposal.Proposal.ProviderCollateral)
+	ma.pendingDeals = append(ma.pendingDeals, proposal)
+}
+
+func (ma *MinerAgent) AvailableCollateral() abi.TokenAmount {
+	return ma.expectedMarketBalance
+}
+
+///////////////////////////////////
+//
+//  Message Generation
+//
+///////////////////////////////////
+
 // create PreCommit message and activation trigger
-func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
+func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (message, error) {
 	// go ahead and choose when we're going to activate this sector
 	sectorActivation := ma.sectorActivation(currentEpoch)
 	sectorNumber := ma.nextSectorNumber
 	ma.nextSectorNumber++
 
-	// assume PreCommit succeeds and schedule prove commit
-	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{sectorNumber})
+	expiration := ma.sectorExpiration(currentEpoch)
+	dealIds, expiration := ma.fillSectorWithPendingDeals(expiration)
+	ma.pendingDeals = nil
 
+	// create sector with all deals the miner has made but not yet included
 	params := miner.PreCommitSectorParams{
+		DealIDs:       dealIds,
 		SealProof:     ma.Config.ProofType,
 		SectorNumber:  sectorNumber,
 		SealedCID:     sectorSealCID(ma.rnd),
 		SealRandEpoch: currentEpoch - 1,
-		Expiration:    ma.sectorExpiration(currentEpoch),
+		Expiration:    expiration,
 	}
+
+	// upgrade sector if upgrades are on, this sector has deals, and we have a cc sector
+	isUpgrade := ma.Config.UpgradeSectors && len(dealIds) > 0 && len(ma.ccSectors) > 0
+	if isUpgrade {
+		var upgradeNumber uint64
+		upgradeNumber, ma.ccSectors = PopRandom(ma.ccSectors, ma.rnd)
+
+		// prevent sim from attempting to upgrade to sector with shorter duration
+		sinfo, err := ma.sectorInfo(s, upgradeNumber)
+		if err != nil {
+			return message{}, err
+		}
+		if sinfo.Expiration > expiration {
+			params.Expiration = sinfo.Expiration
+		}
+
+		dlInfo, pIdx, err := ma.dlInfoForSector(s, upgradeNumber)
+		if err != nil {
+			return message{}, err
+		}
+
+		params.ReplaceCapacity = true
+		params.ReplaceSectorNumber = abi.SectorNumber(upgradeNumber)
+		params.ReplaceSectorDeadline = dlInfo.Index
+		params.ReplaceSectorPartition = pIdx
+		ma.UpgradedSectors++
+	}
+
+	// assume PreCommit succeeds and schedule prove commit
+	ma.operationSchedule.ScheduleOp(sectorActivation, proveCommitAction{
+		sectorNumber:      sectorNumber,
+		committedCapacity: ma.Config.UpgradeSectors && len(dealIds) == 0,
+		upgrade:           isUpgrade,
+	})
 
 	return message{
 		From:   ma.Worker,
@@ -248,17 +281,21 @@ func (ma *MinerAgent) createPreCommit(currentEpoch abi.ChainEpoch) message {
 		Value:  big.Zero(),
 		Method: builtin.MethodsMiner.PreCommitSector,
 		Params: &params,
-	}
+	}, nil
 }
 
 // create prove commit message
-func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber) message {
+func (ma *MinerAgent) createProveCommit(epoch abi.ChainEpoch, sectorNumber abi.SectorNumber, committedCapacity bool, upgrade bool) message {
 	params := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
 
 	// register an op for next epoch (after batch prove) to schedule a post for the sector
-	ma.operationSchedule.ScheduleOp(epoch+1, registerSectorAction{sectorNumber: sectorNumber})
+	ma.operationSchedule.ScheduleOp(epoch+1, registerSectorAction{
+		sectorNumber:      sectorNumber,
+		committedCapacity: committedCapacity,
+		upgrade:           upgrade,
+	})
 
 	return message{
 		From:   ma.Worker,
@@ -282,6 +319,9 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 	var faultNumber uint64
 	faultNumber, ma.liveSectors = PopRandom(ma.liveSectors, ma.rnd)
 	ma.faultySectors = append(ma.faultySectors, faultNumber)
+
+	// avoid trying to upgrade a faulty sector
+	ma.ccSectors = filterSlice(ma.ccSectors, map[uint64]bool{faultNumber: true})
 
 	faultDlInfo, pIdx, err := ma.dlInfoForSector(v, faultNumber)
 	if err != nil {
@@ -380,6 +420,11 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		}
 	}
 
+	// schedule post-deadline state synchronization and next PoSt
+	if err := ma.scheduleSyncAndNextProof(v, dlIdx); err != nil {
+		return nil, err
+	}
+
 	// submitPoSt only if we have something to prove
 	if len(partitions) == 0 {
 		return nil, nil
@@ -401,11 +446,6 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 		ChainCommitRand:  []byte("not really random"),
 	}
 
-	// schedule post-deadline state synchronization and next PoSt
-	if err := ma.scheduleSyncAndNextProof(v, dlIdx); err != nil {
-		return nil, err
-	}
-
 	return []message{{
 		From:   ma.Worker,
 		To:     ma.IDAddress,
@@ -415,8 +455,72 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 	}}, nil
 }
 
+// create a deal proposal message and notify provider of deal
+func (ma *MinerAgent) publishStorageDeals() []message {
+	if len(ma.pendingDeals) == 0 {
+		return []message{}
+	}
+
+	params := market.PublishStorageDealsParams{
+		Deals: ma.pendingDeals,
+	}
+	ma.pendingDeals = nil
+
+	return []message{{
+		From:   ma.Worker,
+		To:     builtin.StorageMarketActorAddr,
+		Value:  big.Zero(),
+		Method: builtin.MethodsMarket.PublishStorageDeals,
+		Params: &params,
+		ReturnHandler: func(_ SimState, _ message, ret cbor.Marshaler) error {
+			// add returned deal ids to be included within sectors
+			publishReturn, ok := ret.(*market.PublishStorageDealsReturn)
+			if !ok {
+				return errors.Errorf("create miner return has wrong type: %v", ret)
+			}
+
+			for idx, dealId := range publishReturn.IDs {
+				ma.dealsPendingInclusion = append(ma.dealsPendingInclusion, pendingDeal{
+					id:   dealId,
+					size: params.Deals[idx].Proposal.PieceSize,
+					ends: params.Deals[idx].Proposal.EndEpoch,
+				})
+			}
+			return nil
+		},
+	}}
+}
+
+func (ma *MinerAgent) updateMarketBalance() []message {
+	if ma.expectedMarketBalance.GreaterThanEqual(ma.Config.MinMarketBalance) {
+		return []message{}
+	}
+
+	balanceToAdd := big.Sub(ma.Config.MaxMarketBalance, ma.expectedMarketBalance)
+
+	return []message{{
+		From:   ma.Worker,
+		To:     builtin.StorageMarketActorAddr,
+		Value:  balanceToAdd,
+		Method: builtin.MethodsMarket.AddBalance,
+		Params: &ma.IDAddress,
+
+		// update in return handler to prevent deals before the miner has balance
+		ReturnHandler: func(_ SimState, _ message, _ cbor.Marshaler) error {
+			ma.expectedMarketBalance = ma.Config.MaxMarketBalance
+			return nil
+		},
+	}}
+}
+
+////////////////////////////////////////////////
+//
+//  Misc methods
+//
+////////////////////////////////////////////////
+
 // looks up sector deadline and partition so we can start adding it to PoSts
-func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) error {
+func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber, committedCapacity bool, upgrade bool) error {
 	var st miner.State
 	err := v.GetState(ma.IDAddress, &st)
 	if err != nil {
@@ -443,7 +547,14 @@ func (ma *MinerAgent) registerSector(v SimState, sectorNumber abi.SectorNumber) 
 		}
 	}
 
+	if upgrade {
+		ma.UpgradedSectors++
+	}
+
 	ma.liveSectors = append(ma.liveSectors, uint64(sectorNumber))
+	if committedCapacity {
+		ma.ccSectors = append(ma.ccSectors, uint64(sectorNumber))
+	}
 
 	// pIdx should be sequential, but add empty partitions just in case
 	for pIdx >= uint64(len(ma.deadlines[dlIdx])) {
@@ -478,6 +589,40 @@ func (ma *MinerAgent) scheduleSyncAndNextProof(v SimState, dlIdx uint64) error {
 	ma.operationSchedule.ScheduleOp(proveAt, proveDeadlineAction{dlIdx: dlIdx})
 
 	return nil
+}
+
+// Fill sector with deals
+// This is a naive packing algorithm that adds pieces in order received.
+func (ma *MinerAgent) fillSectorWithPendingDeals(expiration abi.ChainEpoch) ([]abi.DealID, abi.ChainEpoch) {
+	var dealIDs []abi.DealID
+
+	sectorSize, err := ma.Config.ProofType.SectorSize()
+	if err != nil {
+		panic(err)
+	}
+
+	// pieces are aligned so that each starts at the first multiple of its piece size >= the next empty slot.
+	// just stop when we find one that doesn't fit in the sector. Assume pieces can't have zero size
+	loc := uint64(0)
+	for _, piece := range ma.dealsPendingInclusion {
+		size := uint64(piece.size)
+		loc = ((loc + size - 1) / size) * size // round loc up to the next multiple of size
+		if loc+size > uint64(sectorSize) {
+			break
+		}
+
+		dealIDs = append(dealIDs, piece.id)
+		if piece.ends > expiration {
+			expiration = piece.ends
+		}
+
+		loc += size
+	}
+
+	// remove ids we've added from pending
+	ma.dealsPendingInclusion = ma.dealsPendingInclusion[len(dealIDs):]
+
+	return dealIDs, expiration
 }
 
 // ensure recovery hasn't expired since it was scheduled
@@ -566,6 +711,7 @@ func (ma *MinerAgent) syncMinerState(s SimState, dlIdx uint64) error {
 	if len(toRemove) > 0 {
 		ma.liveSectors = filterSlice(ma.liveSectors, toRemove)
 		ma.faultySectors = filterSlice(ma.faultySectors, toRemove)
+		ma.ccSectors = filterSlice(ma.ccSectors, toRemove)
 	}
 	return nil
 }
@@ -597,6 +743,20 @@ func (ma *MinerAgent) getState(s SimState) (miner.State, error) {
 		return miner.State{}, err
 	}
 	return st, err
+}
+
+func (ma *MinerAgent) sectorInfo(v SimState, sectorNumber uint64) (*miner.SectorOnChainInfo, error) {
+	var st miner.State
+	err := v.GetState(ma.IDAddress, &st)
+	if err != nil {
+		return nil, err
+	}
+
+	sectors, err := st.LoadSectorInfos(v.Store(), bitfield.NewFromSet([]uint64{uint64(sectorNumber)}))
+	if err != nil {
+		return nil, err
+	}
+	return sectors[0], nil
 }
 
 func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.Info, uint64, error) {
@@ -697,11 +857,15 @@ type minerOp struct {
 }
 
 type proveCommitAction struct {
-	sectorNumber abi.SectorNumber
+	sectorNumber      abi.SectorNumber
+	committedCapacity bool
+	upgrade           bool
 }
 
 type registerSectorAction struct {
-	sectorNumber abi.SectorNumber
+	sectorNumber      abi.SectorNumber
+	committedCapacity bool
+	upgrade           bool
 }
 
 type recoverSectorAction struct {
@@ -716,6 +880,12 @@ type proveDeadlineAction struct {
 
 type syncDeadlineStateAction struct {
 	dlIdx uint64
+}
+
+type pendingDeal struct {
+	id   abi.DealID
+	size abi.PaddedPieceSize
+	ends abi.ChainEpoch
 }
 
 /////////////////////////////////////////////

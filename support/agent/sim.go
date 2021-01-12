@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
 	"testing"
@@ -15,9 +16,11 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v2/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v2/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v2/support/ipld"
 	vm "github.com/filecoin-project/specs-actors/v2/support/vm"
 )
 
@@ -31,44 +34,45 @@ import (
 // * Messages will be shuffled to simulate network entropy.
 // * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
-	Config SimConfig
-	Agents []Agent
-
-	v             *vm.VM
-	rnd           *rand.Rand
+	Config        SimConfig
+	Agents        []Agent
+	DealProviders []DealProvider
 	WinCount      uint64
 	MessageCount  uint64
-	statsByMethod map[vm.MethodKey]*vm.CallStats
+
+	v               *vm.VM
+	rnd             *rand.Rand
+	statsByMethod   map[vm.MethodKey]*vm.CallStats
+	blkStore        ipldcbor.IpldBlockstore
+	blkStoreFactory func() ipldcbor.IpldBlockstore
+	ctx             context.Context
+	t               testing.TB
 }
 
-type SimState interface {
-	GetEpoch() abi.ChainEpoch
-	GetState(addr address.Address, out cbor.Unmarshaler) error
-	Store() adt.Store
-	AddAgent(a Agent)
-	Rnd() int64
-}
+func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor.IpldBlockstore, config SimConfig) *Sim {
+	blkStore := blockstoreFactory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
+	v.SetStatsSource(metrics)
 
-type Agent interface {
-	Tick(v SimState) ([]message, error)
-}
-
-type SimConfig struct {
-	AccountCount           int
-	AccountInitialBalance  abi.TokenAmount
-	Seed                   int64
-	CreateMinerProbability float32
-}
-
-func NewSim(ctx context.Context, t testing.TB, bs ipldcbor.IpldBlockstore, config SimConfig) *Sim {
-	v := vm.NewVMWithSingletons(ctx, t, bs)
 	return &Sim{
-		Config: config,
-		Agents: []Agent{},
-		v:      v,
-		rnd:    rand.New(rand.NewSource(config.Seed)),
+		Config:          config,
+		Agents:          []Agent{},
+		DealProviders:   []DealProvider{},
+		v:               v,
+		rnd:             rand.New(rand.NewSource(config.Seed)),
+		blkStore:        blkStore,
+		blkStoreFactory: blockstoreFactory,
+		ctx:             ctx,
+		t:               t,
 	}
 }
+
+//////////////////////////////////////////
+//
+//  Sim execution
+//
+//////////////////////////////////////////
 
 func (s *Sim) Tick() error {
 	var err error
@@ -77,6 +81,10 @@ func (s *Sim) Tick() error {
 	// compute power table before state transition to create block rewards at the end
 	powerTable, err := computePowerTable(s.v, s.Agents)
 	if err != nil {
+		return err
+	}
+
+	if err := computeCircSupply(s.v); err != nil {
 		return err
 	}
 
@@ -136,7 +144,33 @@ func (s *Sim) Tick() error {
 	// store last stats
 	s.statsByMethod = s.v.GetCallStats()
 
-	s.v, err = s.v.WithEpoch(s.v.GetEpoch() + 1)
+	// dump logs if we have them
+	if len(s.v.GetLogs()) > 0 {
+		fmt.Printf("%s\n", strings.Join(s.v.GetLogs(), "\n"))
+	}
+
+	// create next vm
+	nextEpoch := s.v.GetEpoch() + 1
+	if s.Config.CheckpointEpochs > 0 && uint64(nextEpoch)%s.Config.CheckpointEpochs == 0 {
+		nextStore := ipld.NewBlockStoreInMemory()
+		blks, size, err := BlockstoreCopy(s.blkStore, nextStore, s.v.StateRoot())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("CHECKPOINT: state blocks: %d, state data size %d\n", blks, size)
+
+		s.blkStore = nextStore
+		metrics := ipld.NewMetricsBlockStore(nextStore)
+		s.v, err = vm.NewVMAtEpoch(s.ctx, s.v.ActorImpls, adt.WrapStore(s.ctx, ipldcbor.NewCborStore(metrics)), s.v.StateRoot(), nextEpoch)
+		if err != nil {
+			return err
+		}
+		s.v.SetStatsSource(metrics)
+
+	} else {
+		s.v, err = s.v.WithEpoch(nextEpoch)
+	}
+
 	return err
 }
 
@@ -162,8 +196,8 @@ func (s *Sim) AddAgent(a Agent) {
 	s.Agents = append(s.Agents, a)
 }
 
-func (s *Sim) Rnd() int64 {
-	return s.rnd.Int63()
+func (s *Sim) AddDealProvider(d DealProvider) {
+	s.DealProviders = append(s.DealProviders, d)
 }
 
 func (s *Sim) GetVM() *vm.VM {
@@ -172,6 +206,17 @@ func (s *Sim) GetVM() *vm.VM {
 
 func (s *Sim) GetCallStats() map[vm.MethodKey]*vm.CallStats {
 	return s.statsByMethod
+}
+
+func (s *Sim) ChooseDealProvider() DealProvider {
+	if len(s.DealProviders) == 0 {
+		return nil
+	}
+	return s.DealProviders[s.rnd.Int63n(int64(len(s.DealProviders)))]
+}
+
+func (s *Sim) NetworkCirculatingSupply() abi.TokenAmount {
+	return s.v.GetCirculatingSupply()
 }
 
 //////////////////////////////////////////////////
@@ -229,11 +274,67 @@ func computePowerTable(v *vm.VM, agents []Agent) (powerTable, error) {
 	return pt, nil
 }
 
+func computeCircSupply(v *vm.VM) error {
+	// disbursed + reward.State.TotalStoragePowerReward - burnt.Balance - power.State.TotalPledgeCollateral
+	var rewardSt reward.State
+	if err := v.GetState(builtin.RewardActorAddr, &rewardSt); err != nil {
+		return err
+	}
+
+	var powerSt power.State
+	if err := v.GetState(builtin.StoragePowerActorAddr, &powerSt); err != nil {
+		return err
+	}
+
+	burnt, found, err := v.GetActor(builtin.BurntFundsActorAddr)
+	if err != nil {
+		return err
+	} else if !found {
+		return errors.Errorf("burnt actor not found at %v", builtin.BurntFundsActorAddr)
+	}
+
+	v.SetCirculatingSupply(big.Sum(DisbursedAmount, rewardSt.TotalStoragePowerReward,
+		powerSt.TotalPledgeCollateral.Neg(), burnt.Balance.Neg()))
+	return nil
+}
+
 //////////////////////////////////////////////
 //
 //  Internal Types
 //
 //////////////////////////////////////////////
+
+type SimState interface {
+	GetEpoch() abi.ChainEpoch
+	GetState(addr address.Address, out cbor.Unmarshaler) error
+	Store() adt.Store
+	AddAgent(a Agent)
+	AddDealProvider(d DealProvider)
+	NetworkCirculatingSupply() abi.TokenAmount
+
+	// randomly select an agent capable of making deals.
+	// Returns nil if no providers exist.
+	ChooseDealProvider() DealProvider
+}
+
+type Agent interface {
+	Tick(v SimState) ([]message, error)
+}
+
+type DealProvider interface {
+	Address() address.Address
+	DealRange(currentEpoch abi.ChainEpoch) (start abi.ChainEpoch, end abi.ChainEpoch)
+	CreateDeal(proposal market.ClientDealProposal)
+	AvailableCollateral() abi.TokenAmount
+}
+
+type SimConfig struct {
+	AccountCount           int
+	AccountInitialBalance  abi.TokenAmount
+	Seed                   int64
+	CreateMinerProbability float32
+	CheckpointEpochs       uint64
+}
 
 type returnHandler func(v SimState, msg message, ret cbor.Marshaler) error
 
