@@ -74,6 +74,40 @@ type MinerAgent struct {
 	rnd *rand.Rand
 }
 
+type MinerAgentExport struct {
+	Config        MinerAgentConfig
+	Owner         address.Address
+	Worker        address.Address
+	IDAddress     address.Address
+	RobustAddress address.Address
+
+	UpgradedSectors uint64
+
+	LiveSectors   []uint64
+	FaultySectors []uint64
+	CCSectors     []uint64
+
+	PendingDeals          []market.ClientDealProposal
+	DealsPendingInclusion []pendingDeal
+
+	// priority queue used to trigger actions at future epochs
+	operationSchedule *opQueue
+	// which sector belongs to which deadline/partition
+	deadlines [miner.WPoStPeriodDeadlines][]partition
+	// iterator to time PreCommit events according to rate
+	preCommitEvents *RateIterator
+	// iterator to time faults events according to rate
+	faultEvents *RateIterator
+	// iterator to time recoveries according to rate
+	recoveryEvents *RateIterator
+	// tracks which sector number to use next
+	nextSectorNumber abi.SectorNumber
+	// tracks funds expected to be locked for miner deal collateral
+	expectedMarketBalance abi.TokenAmount
+	// random numnber generator provided by sim
+	rnd *rand.Rand
+}
+
 func NewMinerAgent(owner address.Address, worker address.Address, idAddress address.Address, robustAddress address.Address,
 	rndSeed int64, config MinerAgentConfig,
 ) *MinerAgent {
