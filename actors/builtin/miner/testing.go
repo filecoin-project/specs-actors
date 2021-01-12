@@ -226,6 +226,22 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions snapshot")
 
+	// Check that we don't have any proofs proving partitions that are not in the snapshot.
+	proofsSnapshot, err := deadline.OptimisticProofsSnapshotArray(store)
+	acc.RequireNoError(err, "error loading proofs snapshot")
+	var proof WindowedPoSt
+	err = proofsSnapshot.ForEach(&proof, func(_ int64) error {
+		err = proof.Partitions.ForEach(func(i uint64) error {
+			found, err := partitionsSnapshot.Get(i, &partition)
+			acc.RequireNoError(err, "error loading partition snapshot")
+			acc.Require(found, "failed to find partition for recorded proof in the snapshot")
+			return nil
+		})
+		acc.RequireNoError(err, "error iterating proof partitions bitfield")
+		return nil
+	})
+	acc.RequireNoError(err, "error iterating proofs snapshot")
+
 	// Check memoized sector and power values.
 	live, err := bitfield.MultiMerge(allLiveSectors...)
 	if err != nil {

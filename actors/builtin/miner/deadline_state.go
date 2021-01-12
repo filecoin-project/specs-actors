@@ -193,10 +193,27 @@ func (d *Deadline) PartitionsArray(store adt.Store) (*adt.Array, error) {
 	return arr, nil
 }
 
+func (d *Deadline) OptimisticProofsArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	return arr, nil
+}
+
 func (d *Deadline) PartitionsSnapshotArray(store adt.Store) (*adt.Array, error) {
 	arr, err := adt.AsArray(store, d.PartitionsSnapshot, DeadlinePartitionsAmtBitwidth)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to load partitions: %w", err)
+		return nil, xerrors.Errorf("failed to load partitions snapshot: %w", err)
+	}
+	return arr, nil
+}
+
+
+func (d *Deadline) OptimisticProofsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load proofs snapshot: %w", err)
 	}
 	return arr, nil
 }
@@ -1096,7 +1113,7 @@ func (dl *Deadline) RecordProvenSectors(
 // RecordPoStProofs records a set of optimistically accepted PoSt proofs
 // (usually one), associating them with the given partitions.
 func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
-	proofArr, err := adt.AsArray(store, dl.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	proofArr, err := dl.OptimisticProofsArray(store)
 	if err != nil {
 		return xerrors.Errorf("failed to load proofs: %w", err)
 	}
@@ -1120,7 +1137,7 @@ func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitFie
 // associated partitions. This method takes the PoSt from the PoSt submissions
 // snapshot.
 func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitfield.BitField, proofs []proof.PoStProof, err error) {
-	proofArr, err := adt.AsArray(store, dl.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	proofArr, err := dl.OptimisticProofsSnapshotArray(store)
 	if err != nil {
 		return bitfield.New(), nil, xerrors.Errorf("failed to load proofs: %w", err)
 	}
