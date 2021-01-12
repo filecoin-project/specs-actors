@@ -2357,28 +2357,14 @@ func TestWindowPost(t *testing.T) {
 
 		// Dispute it.
 		params := miner.DisputeWindowedPoStParams{
-			Deadline: dlinfo.Index,
+			Deadline:  dlinfo.Index,
 			PoStIndex: 0,
 		}
 
 		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
 		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
-		currentReward := reward.ThisEpochRewardReturn{
-			ThisEpochBaselinePower:  actor.baselinePower,
-			ThisEpochRewardSmoothed: actor.epochRewardSmooth,
-		}
-		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
-
-		networkPower := big.NewIntUnsigned(1 << 50)
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
-			&power.CurrentTotalPowerReturn{
-				RawBytePower:            networkPower,
-				QualityAdjPower:         networkPower,
-				PledgeCollateral:        actor.networkPledge,
-				QualityAdjPowerSmoothed: actor.epochQAPowerSmooth,
-			},
-			exitcode.Ok)
+		expectQueryNetworkInfo(rt, actor)
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "can only dispute window posts during the dispute window", func() {
 			rt.Call(actor.a.DisputeWindowedPoSt, &params)
@@ -2404,7 +2390,7 @@ func TestWindowPost(t *testing.T) {
 
 		// first, try to dispute right before the window end.
 		// We expect this to fail "normally" (fail to disprove).
-		rt.SetEpoch(windowEnd-1)
+		rt.SetEpoch(windowEnd - 1)
 		actor.disputeWindowPoSt(rt, nextDl, 0, []*miner.SectorOnChainInfo{sector}, nil)
 
 		// Now set the epoch at the window end. We expect a different error.
@@ -2412,7 +2398,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Now try to dispute.
 		params := miner.DisputeWindowedPoStParams{
-			Deadline: dlIdx,
+			Deadline:  dlIdx,
 			PoStIndex: 0,
 		}
 
@@ -3349,6 +3335,38 @@ func TestTerminateSectors(t *testing.T) {
 		actor.terminateSectors(rt, sectors, expectedFee)
 		actor.checkState(rt)
 	})
+
+	t.Run("cannot terminate a sector when the challenge window is open", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		rt.SetEpoch(abi.ChainEpoch(1))
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		sector := sectorInfo[0]
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+
+		// advance into the deadline, but not past it.
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		params := &miner.TerminateSectorsParams{Terminations: []miner.TerminationDeclaration{{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bf(uint64(sector.SectorNumber)),
+		}}}
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline", func() {
+			rt.Call(actor.a.TerminateSectors, params)
+		})
+
+		actor.checkState(rt)
+	})
+
 }
 
 func TestWithdrawBalance(t *testing.T) {
@@ -5329,22 +5347,7 @@ func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info,
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
 
-	currentReward := reward.ThisEpochRewardReturn{
-		ThisEpochBaselinePower:  h.baselinePower,
-		ThisEpochRewardSmoothed: h.epochRewardSmooth,
-	}
-	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
-
-	networkPower := big.NewIntUnsigned(1 << 50)
-	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
-		&power.CurrentTotalPowerReturn{
-			RawBytePower:            networkPower,
-			QualityAdjPower:         networkPower,
-			PledgeCollateral:        h.networkPledge,
-			QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
-		},
-		exitcode.Ok)
-
+	expectQueryNetworkInfo(rt, h)
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
 
 	// only sectors that are not skipped and not existing non-recovered faults will be verified
