@@ -2124,6 +2124,15 @@ func TestWindowPost(t *testing.T) {
 		assertBitfieldEmpty(t, partition.Faults)
 		assertBitfieldEmpty(t, partition.Recoveries)
 
+		// We restored power, so we should not have recorded a post.
+		deadline = actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
+		postsCid := deadline.OptimisticPoStSubmissions
+		posts, err := adt.AsArray(rt.AdtStore(), postsCid,
+			miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+		require.NoError(t, err)
+		require.EqualValues(t, posts.Length(), 0)
+
 		// Next deadline cron does not charge for the fault
 		advanceDeadline(rt, actor, &cronConfig{})
 
