@@ -43,6 +43,10 @@ type Deadline struct {
 
 	// Partitions that have been proved by window PoSts so far during the
 	// current challenge window.
+	// NOTE: This bitfield includes both partitions whose proofs
+	// were optimistically accepted and stored in
+	// OptimisticPoStSubmissions, and those whose proofs were
+	// verified on-chain.
 	PartitionsPoSted bitfield.BitField
 
 	// Partitions with sectors that terminated early.
