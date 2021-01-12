@@ -1129,9 +1129,8 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 
 	// No live sectors in this deadline, nothing to do.
 	if deadline.LiveSectors == 0 {
-		// TODO: do we still need to clear the post submissions here? I
-		// think we're technically fine, but this is a strange
-		// edge-case.
+		// We should do some more checks here. See:
+		// Fix: https://github.com/filecoin-project/specs-actors/issues/1348
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,
