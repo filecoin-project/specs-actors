@@ -1928,7 +1928,7 @@ func TestWindowPost(t *testing.T) {
 			result = &poStDisputeResult{
 				expectedPowerDelta:  pwr.Neg(),
 				expectedPenalty:     expectedFee,
-				expectedReward:     big.Zero(),
+				expectedReward:      big.Zero(),
 				expectedPledgeDelta: big.Zero(),
 			}
 		}
@@ -2326,6 +2326,119 @@ func TestWindowPost(t *testing.T) {
 			actor.submitWindowPoSt(rt, dlinfo, partitions, infos, cfg)
 		})
 		actor.checkState(rt)
+	})
+
+	t.Run("cannot dispute posts when the challenge window is open", func(t *testing.T) {
+		proofs := makePoStProofs(actor.postProofType)
+
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
+		pwr := miner.PowerForSector(actor.sectorSize, sector)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+
+		// Skip over deadlines until the beginning of the one with the new sector
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Submit PoSt
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bitfield.New()},
+		}
+		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
+			expectedPowerDelta: pwr,
+		})
+
+		// Dispute it.
+		params := miner.DisputeWindowedPoStParams{
+			Deadline: dlinfo.Index,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		currentReward := reward.ThisEpochRewardReturn{
+			ThisEpochBaselinePower:  actor.baselinePower,
+			ThisEpochRewardSmoothed: actor.epochRewardSmooth,
+		}
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
+
+		networkPower := big.NewIntUnsigned(1 << 50)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
+			&power.CurrentTotalPowerReturn{
+				RawBytePower:            networkPower,
+				QualityAdjPower:         networkPower,
+				PledgeCollateral:        actor.networkPledge,
+				QualityAdjPowerSmoothed: actor.epochQAPowerSmooth,
+			},
+			exitcode.Ok)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "can only dispute window posts during the dispute window", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
+	})
+	t.Run("can dispute up till window end, but not after", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
+
+		st := getState(rt)
+		dlIdx, _, err := st.FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+
+		nextDl := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch()).
+			NextNotElapsed()
+
+		advanceAndSubmitPoSts(rt, actor, sector)
+
+		windowEnd := nextDl.Close + miner.WPoStDisputeWindow
+
+		// first, try to dispute right before the window end.
+		// We expect this to fail "normally" (fail to disprove).
+		rt.SetEpoch(windowEnd-1)
+		actor.disputeWindowPoSt(rt, nextDl, 0, []*miner.SectorOnChainInfo{sector}, nil)
+
+		// Now set the epoch at the window end. We expect a different error.
+		rt.SetEpoch(windowEnd)
+
+		// Now try to dispute.
+		params := miner.DisputeWindowedPoStParams{
+			Deadline: dlIdx,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		currentReward := reward.ThisEpochRewardReturn{
+			ThisEpochBaselinePower:  actor.baselinePower,
+			ThisEpochRewardSmoothed: actor.epochRewardSmooth,
+		}
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
+
+		networkPower := big.NewIntUnsigned(1 << 50)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
+			&power.CurrentTotalPowerReturn{
+				RawBytePower:            networkPower,
+				QualityAdjPower:         networkPower,
+				PledgeCollateral:        actor.networkPledge,
+				QualityAdjPowerSmoothed: actor.epochQAPowerSmooth,
+			},
+			exitcode.Ok)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "can only dispute window posts during the dispute window", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
 	})
 }
 
