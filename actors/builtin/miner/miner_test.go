@@ -5390,7 +5390,6 @@ func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info,
 	actorId, err := addr.IDFromAddress(h.receiver)
 	require.NoError(h.t, err)
 
-	// if not all sectors are skipped
 	proofInfos := make([]proof.SectorInfo, len(infos))
 	for i, ci := range infos {
 		si := ci
