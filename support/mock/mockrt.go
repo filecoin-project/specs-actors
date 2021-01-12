@@ -942,6 +942,10 @@ func (rt *Runtime) Verify() {
 		rt.failTest("missing expected ComputeUnsealedSectorCID with %v", rt.expectComputeUnsealedSectorCID)
 	}
 
+	if rt.expectVerifyPoSt != nil {
+		rt.failTest("missing expected PoSt verification with %v", rt.expectVerifyPoSt)
+	}
+
 	if rt.expectVerifyConsensusFault != nil {
 		rt.failTest("missing expected verify consensus fault")
 	}
