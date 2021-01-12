@@ -490,7 +490,11 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 	currEpoch := rt.CurrEpoch()
 
-	// TODO: maybe stash this in the deadline for better accuracy?
+	// Note: these are going to be slightly inaccurate as time
+	// will have moved on from when the post was actually
+	// submitted.
+	//
+	// However, these are estimates _anyways_.
 	epochReward := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
