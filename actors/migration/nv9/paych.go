@@ -4,6 +4,7 @@ import (
 	"context"
 
 	paych2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
+	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
@@ -33,7 +34,11 @@ func (m paychMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.PaymentChannelActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
+}
+
+func (m paychMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.PaymentChannelActorCodeID
 }

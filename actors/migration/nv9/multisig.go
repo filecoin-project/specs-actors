@@ -4,6 +4,7 @@ import (
 	"context"
 
 	multisig2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
+	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
@@ -34,7 +35,11 @@ func (m multisigMigrator) migrateState(ctx context.Context, store cbor.IpldStore
 	}
 	newHead, err := store.Put(ctx, &outState)
 	return &actorMigrationResult{
-		newCodeCID: builtin3.MultisigActorCodeID,
+		newCodeCID: m.migratedCodeCID(),
 		newHead:    newHead,
 	}, err
+}
+
+func (m multisigMigrator) migratedCodeCID() cid.Cid {
+	return builtin3.MultisigActorCodeID
 }

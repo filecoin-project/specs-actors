@@ -3,6 +3,7 @@ package nv9
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
@@ -12,6 +13,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	adt3 "github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 )
@@ -116,4 +118,48 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 		return cid.Undef, err
 	}
 	return store.Put(ctx, outRootNodeOuter)
+}
+
+type MemMigrationCache struct {
+	MigrationMap *sync.Map
+}
+
+func NewMemMigrationCache() MemMigrationCache {
+	return MemMigrationCache{
+		MigrationMap: new(sync.Map),
+	}
+}
+
+func (m MemMigrationCache) Write(key MigrationCacheKey, c cid.Cid) error {
+	m.MigrationMap.Store(key, c)
+	return nil
+}
+
+func (m MemMigrationCache) Read(key MigrationCacheKey) (bool, cid.Cid, error) {
+	val, found := m.MigrationMap.Load(key)
+	if !found {
+		return false, cid.Undef, nil
+	}
+	c, ok := val.(cid.Cid)
+	if !ok {
+		return false, cid.Undef, xerrors.Errorf("non cid value in cache")
+	}
+
+	return true, c, nil
+}
+
+func (m MemMigrationCache) Load(key MigrationCacheKey, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
+	found, c, err := m.Read(key)
+	if err != nil {
+		return cid.Undef, err
+	}
+	if found {
+		return c, nil
+	}
+	c, err = loadFunc()
+	if err != nil {
+		return cid.Undef, err
+	}
+	m.MigrationMap.Store(key, c)
+	return c, nil
 }
