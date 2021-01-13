@@ -509,7 +509,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 		}
 
 		info := getMinerInfo(rt, &st)
-		disputedPower := NewPowerPairZero()
+		penalisedPower := NewPowerPairZero()
 		store := adt.AsStore(rt)
 
 		// Check proof
@@ -538,7 +538,9 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			// Load the partition info we need for the dispute.
 			disputeInfo, err := dlCurrent.LoadPartitionsForDispute(store, partitions)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partition info for dispute")
-			disputedPower = disputeInfo.DisputedPower
+			// This includes power that is no longer active (e.g., due to sector terminations).
+			// It must only be used for penalty calculations, not power adjustments.
+			penalisedPower = disputeInfo.DisputedPower
 
 			// Load sectors for the dispute.
 			sectors, err := LoadSectors(store, st.Sectors)
@@ -577,13 +579,13 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			penaltyBase := PledgePenaltyForInvalidWindowPoSt(
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
-				disputedPower.QA,
+				penalisedPower.QA,
 			)
 
 			// Calculate the target reward.
 			postProofType, err := info.SealProofType.RegisteredWindowPoStProof()
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine post proof type")
-			rewardTarget := RewardForDisputedWindowPoSt(postProofType, disputedPower)
+			rewardTarget := RewardForDisputedWindowPoSt(postProofType, penalisedPower)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute reward for disputed window post")
 
 			// Compute the target penalty by adding the

@@ -1148,6 +1148,9 @@ func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitf
 	} else if !found {
 		return bitfield.New(), nil, xc.ErrIllegalArgument.Wrapf("proof %d not found", idx)
 	}
+
+	// Delete the proof from the proofs array, leaving a hole.
+	// This will not affect concurrent attempts to refute other proofs.
 	err = proofArr.Delete(idx)
 	if err != nil {
 		return bitfield.New(), nil, xerrors.Errorf("failed to delete proof %d: %w", idx, err)
