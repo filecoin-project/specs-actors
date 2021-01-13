@@ -2426,6 +2426,81 @@ func TestWindowPost(t *testing.T) {
 		})
 		rt.Verify()
 	})
+
+	t.Run("can't dispute up with an invalid deadline", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		params := miner.DisputeWindowedPoStParams{
+			Deadline:  50,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("can dispute test after proving period changes", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		periodStart := actor.deadline(rt).NextPeriodStart()
+
+		// go to the next deadline 0
+		rt.SetEpoch(periodStart)
+
+		// fill one partition in each mutable deadline.
+		numSectors := int(actor.partitionSize*(miner.WPoStPeriodDeadlines-2))
+
+		// creates a partition in every deadline except 0 and 47
+		sectors := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, nil)
+		actor.t.Log("here")
+
+		// prove every sector once to activate power. This
+		// simplifies the test a bit.
+		advanceAndSubmitPoSts(rt, actor, sectors...)
+
+		// Make sure we're in the correct deadline. We should
+		// finish at deadline 2 because precommit takes some
+		// time.
+		dlinfo := actor.deadline(rt)
+		require.True(t, dlinfo.Index < 46,
+			"we need to be before the target deadline for this test to make sense")
+
+		// Now challenge find the sectors in the last partition.
+		_, partition := actor.getDeadlineAndPartition(rt, 46, 0)
+		var targetSectors []*miner.SectorOnChainInfo
+		err := partition.Sectors.ForEach(func(i uint64) error {
+			for _, sector := range sectors {
+				if uint64(sector.SectorNumber) == i {
+					targetSectors = append(targetSectors, sector)
+				}
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, targetSectors)
+
+		pwr := miner.PowerForSectors(actor.sectorSize, targetSectors)
+
+		// And challenge the last partition.
+		var result *poStDisputeResult
+		expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+		result = &poStDisputeResult{
+			expectedPowerDelta:  pwr.Neg(),
+			expectedPenalty:     expectedFee,
+			expectedReward:      big.Zero(),
+			expectedPledgeDelta: big.Zero(),
+		}
+
+		targetDlInfo := miner.NewDeadlineInfo(periodStart, 46, rt.Epoch())
+		actor.disputeWindowPoSt(rt, targetDlInfo, 0, targetSectors, result)
+	})
 }
 
 func TestProveCommit(t *testing.T) {
