@@ -93,10 +93,6 @@ func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c
 	if err != nil {
 		return cid.Undef, err
 	}
-	winningPoStProof, err := oldInfo.SealProofType.RegisteredWinningPoStProof()
-	if err != nil {
-		return cid.Undef, err
-	}
 
 	newInfo := miner3.MinerInfo{
 		Owner:                      oldInfo.Owner,
@@ -106,7 +102,6 @@ func (m *minerMigrator) migrateInfo(ctx context.Context, store cbor.IpldStore, c
 		PeerId:                     oldInfo.PeerId,
 		Multiaddrs:                 oldInfo.Multiaddrs,
 		WindowPoStProofType:        windowPoStProof,
-		WinningPoStProofType:       winningPoStProof,
 		SectorSize:                 oldInfo.SectorSize,
 		WindowPoStPartitionSectors: oldInfo.WindowPoStPartitionSectors,
 		ConsensusFaultElapsed:      oldInfo.ConsensusFaultElapsed,

@@ -24,7 +24,6 @@ func TestCreateMiner(t *testing.T) {
 		Owner:                addrs[0],
 		Worker:               addrs[0],
 		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
 		Peer:                 abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
@@ -53,7 +52,6 @@ func TestCreateMiner(t *testing.T) {
 					OwnerAddr:            params.Owner,
 					WorkerAddr:           params.Worker,
 					WindowPoStProofType:  params.WindowPoStProofType,
-					WinningPoStProofType: params.WinningPoStProofType,
 					PeerId:               params.Peer,
 				}),
 				SubInvocations: []vm.ExpectInvocation{{
@@ -74,7 +72,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 
 	// create a miner
 	params := power.CreateMinerParams{Owner: addrs[0], Worker: addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1, WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
+		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		Peer: abi.PeerID("pid")}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, big.NewInt(1e10), builtin.MethodsPower.CreateMiner, &params)
 

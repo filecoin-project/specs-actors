@@ -84,13 +84,12 @@ func TestConstruction(t *testing.T) {
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			ControlAddrs:         controlAddrs,
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
-			PeerId:               testPid,
-			Multiaddrs:           testMultiaddrs,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			ControlAddrs:        controlAddrs,
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PeerId:              testPid,
+			Multiaddrs:          testMultiaddrs,
 		}
 
 		provingPeriodStart := abi.ChainEpoch(-2222) // This is just set from running the code.
@@ -117,7 +116,6 @@ func TestConstruction(t *testing.T) {
 		assert.Equal(t, params.PeerId, info.PeerId)
 		assert.Equal(t, params.Multiaddrs, info.Multiaddrs)
 		assert.Equal(t, abi.RegisteredPoStProof_StackedDrgWindow32GiBV1, info.WindowPoStProofType)
-		assert.Equal(t, abi.RegisteredPoStProof_StackedDrgWinning32GiBV1, info.WinningPoStProofType)
 		assert.Equal(t, abi.SectorSize(1<<35), info.SectorSize)
 		assert.Equal(t, uint64(2349), info.WindowPoStPartitionSectors)
 
@@ -160,11 +158,10 @@ func TestConstruction(t *testing.T) {
 		rt.AddIDAddress(control2, control2Id)
 
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			ControlAddrs:         []addr.Address{control1, control2},
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			ControlAddrs:        []addr.Address{control1, control2},
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}
 
 		provingPeriodStart := abi.ChainEpoch(-2222) // This is just set from running the code.
@@ -193,11 +190,10 @@ func TestConstruction(t *testing.T) {
 		rt.SetAddressActorType(control1, builtin.PaymentChannelActorCodeID)
 
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			ControlAddrs:         []addr.Address{control1},
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			ControlAddrs:        []addr.Address{control1},
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -213,12 +209,11 @@ func TestConstruction(t *testing.T) {
 		rt := builder.Build(t)
 		pid := [miner.MaxPeerIDLength + 1]byte{1, 2, 3, 4}
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
-			PeerId:               pid[:],
-			Multiaddrs:           testMultiaddrs,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PeerId:              pid[:],
+			Multiaddrs:          testMultiaddrs,
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -237,12 +232,11 @@ func TestConstruction(t *testing.T) {
 		}
 
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
-			PeerId:               testPid,
-			ControlAddrs:         controlAddrs,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PeerId:              testPid,
+			ControlAddrs:        controlAddrs,
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -259,12 +253,11 @@ func TestConstruction(t *testing.T) {
 			maddrs[i] = []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
 		}
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
-			PeerId:               testPid,
-			Multiaddrs:           maddrs,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PeerId:              testPid,
+			Multiaddrs:          maddrs,
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -281,12 +274,11 @@ func TestConstruction(t *testing.T) {
 			{1},
 		}
 		params := miner.ConstructorParams{
-			OwnerAddr:            owner,
-			WorkerAddr:           worker,
-			WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
-			PeerId:               testPid,
-			Multiaddrs:           maddrs,
+			OwnerAddr:           owner,
+			WorkerAddr:          worker,
+			WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PeerId:              testPid,
+			Multiaddrs:          maddrs,
 		}
 
 		rt.ExpectValidateCallerAddr(builtin.InitActorAddr)
@@ -294,20 +286,6 @@ func TestConstruction(t *testing.T) {
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid empty multiaddr", func() {
 			rt.Call(actor.Constructor, &params)
 		})
-	})
-
-	t.Run("checks PoSt proof compatibility", func(t *testing.T) {
-		actor := newHarness(t, 0)
-		builder := builderForHarness(actor)
-		rt := builder.Build(t)
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-		actor.winningPostProofType = abi.RegisteredPoStProof_StackedDrgWinning64GiBV1
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.constructAndVerify(rt)
-		})
-		rt.Reset()
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
-		actor.constructAndVerify(rt)
 	})
 }
 
@@ -4459,13 +4437,12 @@ type actorHarness struct {
 
 	controlAddrs []addr.Address
 
-	sealProofType        abi.RegisteredSealProof
-	windowPostProofType  abi.RegisteredPoStProof
-	winningPostProofType abi.RegisteredPoStProof
-	sectorSize           abi.SectorSize
-	partitionSize        uint64
-	periodOffset         abi.ChainEpoch
-	nextSectorNo         abi.SectorNumber
+	sealProofType       abi.RegisteredSealProof
+	windowPostProofType abi.RegisteredPoStProof
+	sectorSize          abi.SectorSize
+	partitionSize       uint64
+	periodOffset        abi.ChainEpoch
+	nextSectorNo        abi.SectorNumber
 
 	networkPledge   abi.TokenAmount
 	networkRawPower abi.StoragePower
@@ -4516,22 +4493,19 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	h.sealProofType = proof
 	h.windowPostProofType, err = proof.RegisteredWindowPoStProof()
 	require.NoError(h.t, err)
-	h.winningPostProofType, err = proof.RegisteredWinningPoStProof()
-	require.NoError(h.t, err)
 	h.sectorSize, err = proof.SectorSize()
 	require.NoError(h.t, err)
-	h.partitionSize, err = builtin.SealProofWindowPoStPartitionSectors(proof)
+	h.partitionSize, err = builtin.PoStProofWindowPoStPartitionSectors(h.windowPostProofType)
 	require.NoError(h.t, err)
 }
 
 func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
 	params := miner.ConstructorParams{
-		OwnerAddr:            h.owner,
-		WorkerAddr:           h.worker,
-		ControlAddrs:         h.controlAddrs,
-		WindowPoStProofType:  h.windowPostProofType,
-		WinningPoStProofType: h.winningPostProofType,
-		PeerId:               testPid,
+		OwnerAddr:           h.owner,
+		WorkerAddr:          h.worker,
+		ControlAddrs:        h.controlAddrs,
+		WindowPoStProofType: h.windowPostProofType,
+		PeerId:              testPid,
 	}
 
 	rt.ExpectValidateCallerAddr(builtin.InitActorAddr)

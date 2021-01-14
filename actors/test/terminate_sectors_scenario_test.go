@@ -39,7 +39,6 @@ func TestTerminateSectors(t *testing.T) {
 		Owner:                owner,
 		Worker:               worker,
 		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
 		Peer:                 abi.PeerID("not really a peer id"),
 	})
 

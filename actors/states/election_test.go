@@ -141,7 +141,6 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 
 func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, owner address.Address) *miner.State {
 	proofType := abi.RegisteredPoStProof_StackedDrgWindow32GiBV1
-	winningPoStProofType := abi.RegisteredPoStProof_StackedDrgWinning32GiBV1
 	ssize, err := proofType.SectorSize()
 	require.NoError(t, err)
 	psize, err := builtin.PoStProofWindowPoStPartitionSectors(proofType)
@@ -155,7 +154,6 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 		PeerId:                     nil,
 		Multiaddrs:                 [][]byte{},
 		WindowPoStProofType:        proofType,
-		WinningPoStProofType:       winningPoStProofType,
 		SectorSize:                 ssize,
 		WindowPoStPartitionSectors: psize,
 		ConsensusFaultElapsed:      0,

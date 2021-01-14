@@ -22,7 +22,6 @@ type StateSummary struct {
 	FaultyPower          PowerPair
 	Deals                map[abi.DealID]DealSummary
 	WindowPoStProofType  abi.RegisteredPoStProof
-	WinningPoStProofType abi.RegisteredPoStProof
 }
 
 // Checks internal invariants of init state.
@@ -30,11 +29,10 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	acc := &builtin.MessageAccumulator{}
 	sectorSize := abi.SectorSize(0)
 	minerSummary := &StateSummary{
-		LivePower:            NewPowerPairZero(),
-		ActivePower:          NewPowerPairZero(),
-		FaultyPower:          NewPowerPairZero(),
-		WindowPoStProofType:  0,
-		WinningPoStProofType: 0,
+		LivePower:           NewPowerPairZero(),
+		ActivePower:         NewPowerPairZero(),
+		FaultyPower:         NewPowerPairZero(),
+		WindowPoStProofType: 0,
 	}
 
 	// Load data from linked structures.
@@ -44,7 +42,6 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		return minerSummary, acc
 	} else {
 		minerSummary.WindowPoStProofType = info.WindowPoStProofType
-		minerSummary.WinningPoStProofType = info.WinningPoStProofType
 		sectorSize = info.SectorSize
 		CheckMinerInfo(info, acc)
 	}
@@ -665,13 +662,6 @@ func CheckMinerInfo(info *MinerInfo, acc *builtin.MessageAccumulator) {
 	if found {
 		acc.Require(windowPoStProofInfo.SectorSize == info.SectorSize,
 			"sector size %d is wrong for Window PoSt proof type %d: %d", info.SectorSize, info.WindowPoStProofType, windowPoStProofInfo.SectorSize)
-	}
-
-	winningPoStProofInfo, found := abi.PoStProofInfos[info.WinningPoStProofType]
-	acc.Require(found, "miner has unrecognized Window PoSt proof type %d", info.WinningPoStProofType)
-	if found {
-		acc.Require(winningPoStProofInfo.SectorSize == info.SectorSize,
-			"sector size %d is wrong for Winning PoSt proof type %d: %d", info.SectorSize, info.WinningPoStProofType, winningPoStProofInfo.SectorSize)
 	}
 
 	poStProofPolicy, found := builtin.PoStProofPolicies[info.WindowPoStProofType]

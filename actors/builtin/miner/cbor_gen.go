@@ -303,7 +303,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerInfo = []byte{140}
+var lengthBufMinerInfo = []byte{139}
 
 func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -391,17 +391,6 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.WinningPoStProofType (abi.RegisteredPoStProof) (int64)
-	if t.WinningPoStProofType >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.WinningPoStProofType)); err != nil {
-			return err
-		}
-	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.WinningPoStProofType-1)); err != nil {
-			return err
-		}
-	}
-
 	// t.SectorSize (abi.SectorSize) (uint64)
 
 	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.SectorSize)); err != nil {
@@ -446,7 +435,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 12 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -608,31 +597,6 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.WindowPoStProofType = abi.RegisteredPoStProof(extraI)
-	}
-	// t.WinningPoStProofType (abi.RegisteredPoStProof) (int64)
-	{
-		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-		var extraI int64
-		if err != nil {
-			return err
-		}
-		switch maj {
-		case cbg.MajUnsignedInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 positive overflow")
-			}
-		case cbg.MajNegativeInt:
-			extraI = int64(extra)
-			if extraI < 0 {
-				return fmt.Errorf("int64 negative oveflow")
-			}
-			extraI = -1 - extraI
-		default:
-			return fmt.Errorf("wrong type for int64 field: %d", maj)
-		}
-
-		t.WinningPoStProofType = abi.RegisteredPoStProof(extraI)
 	}
 	// t.SectorSize (abi.SectorSize) (uint64)
 

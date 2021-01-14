@@ -37,7 +37,6 @@ func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 		Owner:                worker,
 		Worker:               worker,
 		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		WinningPoStProofType: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
 		Peer:                 abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, worker, builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)

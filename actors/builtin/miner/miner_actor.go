@@ -115,7 +115,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
 	builtin.RequireState(rt, deadlineIndex < WPoStPeriodDeadlines, "computed proving deadline index %d invalid", deadlineIndex)
 
-	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.WindowPoStProofType, params.WinningPoStProofType)
+	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.WindowPoStProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct initial miner info")
 	infoCid := rt.StorePut(info)
 

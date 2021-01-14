@@ -52,7 +52,7 @@ func TestConstruction(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		actor.createMiner(rt, owner, owner, miner, actr, abi.PeerID("miner"), []abi.Multiaddrs{{1}},
-			abi.RegisteredPoStProof_StackedDrgWindow32GiBV1, abi.RegisteredPoStProof_StackedDrgWinning32GiBV1, abi.NewTokenAmount(10))
+			abi.RegisteredPoStProof_StackedDrgWindow32GiBV1, abi.NewTokenAmount(10))
 
 		var st power.State
 		rt.GetState(&st)
@@ -82,7 +82,6 @@ func TestCreateMinerFailures(t *testing.T) {
 	peer := abi.PeerID("miner")
 	mAddr := []abi.Multiaddrs{{1}}
 	windowPoStProofType := abi.RegisteredPoStProof_StackedDrgWindow2KiBV1
-	winningPoStProofType := abi.RegisteredPoStProof_StackedDrgWinning2KiBV1
 
 	t.Run("fails when caller is not of signable type", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
@@ -102,7 +101,6 @@ func TestCreateMinerFailures(t *testing.T) {
 			Owner:                owner,
 			Worker:               owner,
 			WindowPoStProofType:  windowPoStProofType,
-			WinningPoStProofType: winningPoStProofType,
 			Peer:                 peer,
 			Multiaddrs:           mAddr,
 		}
@@ -115,7 +113,7 @@ func TestCreateMinerFailures(t *testing.T) {
 
 		msgParams := &initact.ExecParams{
 			CodeCID:           builtin.StorageMinerActorCodeID,
-			ConstructorParams: initCreateMinerBytes(t, owner, owner, peer, mAddr, windowPoStProofType, winningPoStProofType),
+			ConstructorParams: initCreateMinerBytes(t, owner, owner, peer, mAddr, windowPoStProofType),
 		}
 		expRet := initact.ExecReturn{
 			IDAddress:     tutil.NewIDAddr(t, 1475),
@@ -440,7 +438,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		// miner 5 uses 64GiB sectors and has a higher minimum
 		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
-			nil, abi.RegisteredPoStProof_StackedDrgWindow64GiBV1, abi.RegisteredPoStProof_StackedDrgWinning64GiBV1, big.Zero())
+			nil, abi.RegisteredPoStProof_StackedDrgWindow64GiBV1, big.Zero())
 
 		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredPoStProof_StackedDrgWindow64GiBV1)
 		require.NoError(t, err)
@@ -1090,7 +1088,6 @@ type spActorHarness struct {
 	minerSeq         int
 	sealProof        abi.RegisteredSealProof
 	windowPoStProof  abi.RegisteredPoStProof
-	winningPoStProof abi.RegisteredPoStProof
 }
 
 func newHarness(t *testing.T) *spActorHarness {
@@ -1099,7 +1096,6 @@ func newHarness(t *testing.T) *spActorHarness {
 		t:                t,
 		sealProof:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		windowPoStProof:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		winningPoStProof: abi.RegisteredPoStProof_StackedDrgWinning32GiBV1,
 	}
 }
 
@@ -1158,7 +1154,7 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 }
 
 func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, robust addr.Address, peer abi.PeerID,
-	multiaddrs []abi.Multiaddrs, windowPoStProofType, winningPoStProofType abi.RegisteredPoStProof, value abi.TokenAmount) {
+	multiaddrs []abi.Multiaddrs, windowPoStProofType abi.RegisteredPoStProof, value abi.TokenAmount) {
 
 	st := getState(rt)
 	prevMinerCount := st.MinerCount
@@ -1167,7 +1163,6 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 		Owner:                owner,
 		Worker:               worker,
 		WindowPoStProofType:  windowPoStProofType,
-		WinningPoStProofType: winningPoStProofType,
 		Peer:                 peer,
 		Multiaddrs:           multiaddrs,
 	}
@@ -1185,7 +1180,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 
 	msgParams := &initact.ExecParams{
 		CodeCID:           builtin.StorageMinerActorCodeID,
-		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, multiaddrs, windowPoStProofType, winningPoStProofType),
+		ConstructorParams: initCreateMinerBytes(h.t, owner, worker, peer, multiaddrs, windowPoStProofType),
 	}
 	rt.ExpectSend(builtin.InitActorAddr, builtin.MethodsInit.Exec, msgParams, value, createMinerRet, 0)
 	rt.Call(h.Actor.CreateMiner, createMinerParams)
@@ -1259,7 +1254,7 @@ func (h *spActorHarness) createMinerBasic(rt *mock.Runtime, owner, worker, miner
 	label := strconv.Itoa(h.minerSeq)
 	actrAddr := tutil.NewActorAddr(h.t, label)
 	h.minerSeq += 1
-	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, h.windowPoStProof, h.winningPoStProof, big.Zero())
+	h.createMiner(rt, owner, worker, miner, actrAddr, abi.PeerID(label), nil, h.windowPoStProof, big.Zero())
 }
 
 func (h *spActorHarness) updateClaimedPower(rt *mock.Runtime, miner addr.Address, rawDelta, qaDelta abi.StoragePower) {
@@ -1353,12 +1348,11 @@ func (h *spActorHarness) checkState(rt *mock.Runtime) {
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
-func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, windowPoStProofType, winningPoStProofType abi.RegisteredPoStProof) []byte {
+func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, windowPoStProofType abi.RegisteredPoStProof) []byte {
 	params := &power.MinerConstructorParams{
 		OwnerAddr:            owner,
 		WorkerAddr:           worker,
 		WindowPoStProofType:  windowPoStProofType,
-		WinningPoStProofType: winningPoStProofType,
 		PeerId:               peer,
 		Multiaddrs:           multiaddrs,
 	}

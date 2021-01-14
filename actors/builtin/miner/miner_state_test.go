@@ -893,7 +893,6 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	worker := tutils.NewBLSAddr(t, 2)
 
 	testWindowPoStProofType := abi.RegisteredPoStProof_StackedDrgWindow2KiBV1
-	testWinningPoStProofType := abi.RegisteredPoStProof_StackedDrgWinning2KiBV1
 
 	sectorSize, err := testWindowPoStProofType.SectorSize()
 	require.NoError(t, err)
@@ -908,7 +907,6 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 		PeerId:                     abi.PeerID("peer"),
 		Multiaddrs:                 testMultiaddrs,
 		WindowPoStProofType:        testWindowPoStProofType,
-		WinningPoStProofType:       testWinningPoStProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 	}

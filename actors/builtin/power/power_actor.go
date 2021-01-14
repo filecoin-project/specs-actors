@@ -61,13 +61,12 @@ var _ runtime.VMActor = Actor{}
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
 // Changed since v2:
-// - Seal proof type replaced with PoSt proof types
+// - Seal proof type replaced with PoSt proof type
 type MinerConstructorParams struct {
 	OwnerAddr            addr.Address
 	WorkerAddr           addr.Address
 	ControlAddrs         []addr.Address
 	WindowPoStProofType  abi.RegisteredPoStProof
-	WinningPoStProofType abi.RegisteredPoStProof
 	PeerId               abi.PeerID
 	Multiaddrs           []abi.Multiaddrs
 }
@@ -91,7 +90,6 @@ type CreateMinerParams struct {
 	Owner                addr.Address
 	Worker               addr.Address
 	WindowPoStProofType  abi.RegisteredPoStProof
-	WinningPoStProofType abi.RegisteredPoStProof
 	Peer                 abi.PeerID
 	Multiaddrs           []abi.Multiaddrs
 }
@@ -109,7 +107,6 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		OwnerAddr:  params.Owner,
 		WorkerAddr: params.Worker,
 		WindowPoStProofType: params.WindowPoStProofType,
-		WinningPoStProofType: params.WinningPoStProofType,
 		PeerId:        params.Peer,
 		Multiaddrs:    params.Multiaddrs,
 	}

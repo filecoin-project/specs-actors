@@ -102,11 +102,10 @@ type MinerInfo struct {
 	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
 	Multiaddrs []abi.Multiaddrs
 
-	// The proof types used for PoSt for this miner.
+	// The proof type used for Window PoSt for this miner.
 	// A miner may commit sectors with different seal proof types (but compatible sector size and
 	// corresponding PoSt proof types).
 	WindowPoStProofType  abi.RegisteredPoStProof
-	WinningPoStProofType abi.RegisteredPoStProof
 
 	// Amount of space in each sector committed by this miner.
 	// This is computed from the proof type and represented here redundantly.
@@ -230,20 +229,11 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	}, nil
 }
 
-func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []addr.Address, pid []byte,
-	multiAddrs [][]byte, windowPoStProofType, winningPoStProofType abi.RegisteredPoStProof) (*MinerInfo, error) {
+func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address, pid []byte, multiAddrs [][]byte,
+	windowPoStProofType abi.RegisteredPoStProof) (*MinerInfo, error) {
 	sectorSize, err := windowPoStProofType.SectorSize()
 	if err != nil {
 		return nil, xc.ErrIllegalArgument.Wrapf("invalid sector size: %w", err)
-	}
-
-	checkSectorSize, err := winningPoStProofType.SectorSize()
-	if err != nil {
-		return nil, xc.ErrIllegalArgument.Wrapf("invalid sector size: %w", err)
-	}
-	if sectorSize != checkSectorSize {
-		return nil, xc.ErrIllegalArgument.Wrapf("incompatible Window and Winning PoSt proof types %d, %d",
-			windowPoStProofType, winningPoStProofType)
 	}
 
 	partitionSectors, err := builtin.PoStProofWindowPoStPartitionSectors(windowPoStProofType)
@@ -259,7 +249,6 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,
 		WindowPoStProofType:        windowPoStProofType,
-		WinningPoStProofType:       winningPoStProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),

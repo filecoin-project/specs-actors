@@ -60,10 +60,6 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 	if err != nil {
 		return message{}, err
 	}
-	winningPoStProofType, err := cfg.ProofType.RegisteredWinningPoStProof()
-	if err != nil {
-		return message{}, err
-	}
 	return message{
 		From:   owner,
 		To:     builtin.StoragePowerActorAddr,
@@ -73,7 +69,6 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 			Owner:                owner,
 			Worker:               owner,
 			WindowPoStProofType:  windowPoStProofType,
-			WinningPoStProofType: winningPoStProofType,
 		},
 		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
