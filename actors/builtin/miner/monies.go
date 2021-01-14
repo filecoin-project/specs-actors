@@ -62,6 +62,11 @@ const ConsensusFaultFactor = 5
 var LockedRewardFactorNum = big.NewInt(75)
 var LockedRewardFactorDenom = big.NewInt(100)
 
+// Base reward for successfully disputing a window posts proofs.
+var BaseRewardForDisputedWindowPoSt = big.Mul(big.NewInt(4), big.NewInt(1e10)) // PARAM_SPEC
+// Base penalty for a successful disputed window post proof.
+var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), big.NewInt(1e10)) // PARAM_SPEC
+
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
 // BR(t) = ProjectedRewardFraction(t) * SectorQualityAdjustedPower
@@ -123,7 +128,10 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 
 // The penalty for optimistically proving a sector with an invalid window PoSt.
 func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod)
+	return big.Add(
+		ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod),
+		BasePenaltyForDisputedWindowPoSt,
+	)
 }
 
 // Computes the PreCommit deposit given sector qa weight and current network conditions.

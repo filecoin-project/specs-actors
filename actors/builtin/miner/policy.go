@@ -348,7 +348,6 @@ func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.T
 
 // The reward given for successfully disputing a window post.
 func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPower PowerPair) abi.TokenAmount {
-	// This is currently zero but may be raised at some point to
-	// ensure that disputing proofs rational.
-	return big.Zero()
+	// This is currently just the base. In the future, the fee may scale based on the disputed power.
+	return BaseRewardForDisputedWindowPoSt
 }

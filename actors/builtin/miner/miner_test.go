@@ -1928,7 +1928,7 @@ func TestWindowPost(t *testing.T) {
 			result = &poStDisputeResult{
 				expectedPowerDelta:  pwr.Neg(),
 				expectedPenalty:     expectedFee,
-				expectedReward:      big.Zero(),
+				expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
 				expectedPledgeDelta: big.Zero(),
 			}
 		}
@@ -2494,7 +2494,7 @@ func TestWindowPost(t *testing.T) {
 		result = &poStDisputeResult{
 			expectedPowerDelta:  pwr.Neg(),
 			expectedPenalty:     expectedFee,
-			expectedReward:      big.Zero(),
+			expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
 			expectedPledgeDelta: big.Zero(),
 		}
 
