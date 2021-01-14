@@ -63,9 +63,9 @@ var LockedRewardFactorNum = big.NewInt(75)
 var LockedRewardFactorDenom = big.NewInt(100)
 
 // Base reward for successfully disputing a window posts proofs.
-var BaseRewardForDisputedWindowPoSt = big.Mul(big.NewInt(4), big.NewInt(1e10)) // PARAM_SPEC
+var BaseRewardForDisputedWindowPoSt = big.Mul(big.NewInt(4), builtin.TokenPrecision) // PARAM_SPEC
 // Base penalty for a successful disputed window post proof.
-var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), big.NewInt(1e10)) // PARAM_SPEC
+var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), builtin.TokenPrecision) // PARAM_SPEC
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
