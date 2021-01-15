@@ -2,6 +2,7 @@ package adt
 
 import (
 	"bytes"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 
 	amt "github.com/filecoin-project/go-amt-ipld/v2"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -42,6 +43,11 @@ func MakeEmptyArray(s Store) *Array {
 // Returns the root CID of the underlying AMT.
 func (a *Array) Root() (cid.Cid, error) {
 	return a.root.Flush(a.store.Context())
+}
+
+// Returns the store used by the underlying AMT.
+func (a *Array) Store() ipldcbor.IpldStore {
+	return a.store
 }
 
 // Appends a value to the end of the array. Assumes continuous array.
