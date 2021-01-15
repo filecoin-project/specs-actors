@@ -381,13 +381,13 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.SealProofType (abi.RegisteredSealProof) (int64)
-	if t.SealProofType >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.SealProofType)); err != nil {
+	// t.WindowPoStProofType (abi.RegisteredPoStProof) (int64)
+	if t.WindowPoStProofType >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.WindowPoStProofType)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.SealProofType-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.WindowPoStProofType-1)); err != nil {
 			return err
 		}
 	}
@@ -574,7 +574,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 	}
 
-	// t.SealProofType (abi.RegisteredSealProof) (int64)
+	// t.WindowPoStProofType (abi.RegisteredPoStProof) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -597,7 +597,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.SealProofType = abi.RegisteredSealProof(extraI)
+		t.WindowPoStProofType = abi.RegisteredPoStProof(extraI)
 	}
 	// t.SectorSize (abi.SectorSize) (uint64)
 

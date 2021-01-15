@@ -112,7 +112,7 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		committedRawPower = big.Add(committedRawPower, claim.RawBytePower)
 		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
 
-		minPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
+		minPower, err := builtin.ConsensusMinerMinPower(claim.WindowPoStProofType)
 		acc.Require(err == nil, "could not get consensus miner min power for miner %v: %v", addr, err)
 		if err != nil {
 			return nil // noted above
@@ -169,8 +169,10 @@ func CheckProofValidationInvariants(st *State, store adt.Store, claims ClaimsByA
 
 			var info proof.SealVerifyInfo
 			err = arr.ForEach(&info, func(i int64) error {
-				acc.Require(claim.SealProofType == info.SealProof, "miner submitted proof with proof type %d different from claim %d",
-					info.SealProof, claim.SealProofType)
+				sectorWindowPoStProofType, err := info.SealProof.RegisteredWindowPoStProof()
+				acc.RequireNoError(err, "failed to get PoSt proof type for seal proof %d", info.SealProof)
+				acc.Require(claim.WindowPoStProofType == sectorWindowPoStProofType, "miner submitted proof with proof type %d different from claim %d",
+					sectorWindowPoStProofType, claim.WindowPoStProofType)
 				proofs[addr] = append(proofs[addr], info)
 				return nil
 			})

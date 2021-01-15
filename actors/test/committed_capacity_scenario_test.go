@@ -34,10 +34,10 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 
 	// create miner
 	params := power.CreateMinerParams{
-		Owner:         worker,
-		Worker:        worker,
-		SealProofType: sealProof,
-		Peer:          abi.PeerID("not really a peer id"),
+		Owner:                worker,
+		Worker:               worker,
+		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                 abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 

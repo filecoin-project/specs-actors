@@ -70,7 +70,7 @@ type State struct {
 
 type Claim struct {
 	// Miner's proof type used to determine minimum miner size
-	SealProofType abi.RegisteredSealProof
+	WindowPoStProofType abi.RegisteredPoStProof
 
 	// Sum of raw byte power for a miner's sectors.
 	RawBytePower abi.StoragePower
@@ -131,7 +131,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	minerNominalPower := claim.RawBytePower
-	minerMinPower, err := builtin.ConsensusMinerMinPower(claim.SealProofType)
+	minerMinPower, err := builtin.ConsensusMinerMinPower(claim.WindowPoStProofType)
 	if err != nil {
 		return false, errors.Wrap(err, "could not get miner min power from proof type")
 	}
@@ -191,12 +191,12 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 	st.TotalBytesCommitted = big.Add(st.TotalBytesCommitted, power)
 
 	newClaim := Claim{
-		SealProofType:   oldClaim.SealProofType,
-		RawBytePower:    big.Add(oldClaim.RawBytePower, power),
-		QualityAdjPower: big.Add(oldClaim.QualityAdjPower, qapower),
+		WindowPoStProofType: oldClaim.WindowPoStProofType,
+		RawBytePower:        big.Add(oldClaim.RawBytePower, power),
+		QualityAdjPower:     big.Add(oldClaim.QualityAdjPower, qapower),
 	}
 
-	minPower, err := builtin.ConsensusMinerMinPower(oldClaim.SealProofType)
+	minPower, err := builtin.ConsensusMinerMinPower(oldClaim.WindowPoStProofType)
 	if err != nil {
 		return fmt.Errorf("could not get consensus miner min power: %w", err)
 	}
@@ -232,8 +232,8 @@ func (st *State) addToClaim(claims *adt.Map, miner addr.Address, power abi.Stora
 	return setClaim(claims, miner, &newClaim)
 }
 
-func (st *State) updateStatsForNewMiner(sealProof abi.RegisteredSealProof) error {
-	minPower, err := builtin.ConsensusMinerMinPower(sealProof)
+func (st *State) updateStatsForNewMiner(windowPoStProof abi.RegisteredPoStProof) error {
+	minPower, err := builtin.ConsensusMinerMinPower(windowPoStProof)
 	if err != nil {
 		return fmt.Errorf("could not get consensus miner min power: %w", err)
 	}

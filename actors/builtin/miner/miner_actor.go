@@ -100,10 +100,6 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
-	if !CanPreCommitSealProof(params.SealProofType, rt.NetworkVersion()) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.SealProofType)
-	}
-
 	owner := resolveControlAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 	controlAddrs := make([]addr.Address, 0, len(params.ControlAddrs))
@@ -120,7 +116,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	deadlineIndex := currentDeadlineIndex(currEpoch, periodStart)
 	builtin.RequireState(rt, deadlineIndex < WPoStPeriodDeadlines, "computed proving deadline index %d invalid", deadlineIndex)
 
-	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.SealProofType)
+	info, err := ConstructMinerInfo(owner, worker, controlAddrs, params.PeerId, params.Multiaddrs, params.WindowPoStProofType)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct initial miner info")
 	infoCid := rt.StorePut(info)
 
@@ -361,12 +357,10 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		//
 		// This can be 0 if the miner isn't actually proving anything,
 		// just skipping all sectors.
-		windowPoStProofType, err := info.SealProofType.RegisteredWindowPoStProof()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine window PoSt type")
 		if len(params.Proofs) != 1 {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
-		} else if params.Proofs[0].PoStProof != windowPoStProofType {
-			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", windowPoStProofType, params.Proofs[0])
+		} else if params.Proofs[0].PoStProof != info.WindowPoStProofType {
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", info.WindowPoStProofType, params.Proofs[0])
 		} else if len(params.Proofs[0].ProofBytes) > MaxPoStProofSize {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof to be smaller than %d bytes", MaxPoStProofSize)
 		}
@@ -583,10 +577,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			)
 
 			// Calculate the target reward.
-			postProofType, err := info.SealProofType.RegisteredWindowPoStProof()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine post proof type")
-			rewardTarget := RewardForDisputedWindowPoSt(postProofType, penalisedPower)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute reward for disputed window post")
+			rewardTarget := RewardForDisputedWindowPoSt(info.WindowPoStProofType, penalisedPower)
 
 			// Compute the target penalty by adding the
 			// base penalty to the target reward. We don't
@@ -595,7 +586,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			// portion of their fee back as a reward.
 			penaltyTarget := big.Add(penaltyBase, rewardTarget)
 
-			err = st.ApplyPenalty(penaltyTarget)
+			err := st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay debt")
@@ -725,16 +716,14 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			rt.Abortf(exitcode.ErrForbidden, "precommit not allowed during active consensus fault")
 		}
 
-		// From network version 7, the pre-commit seal type must have the same Window PoSt proof type as the miner's
-		// recorded seal type has, rather than be exactly the same seal type.
+		// From network version 7, the pre-commit seal type must have the same Window PoSt proof type as the miner,
+		// rather than be exactly the same seal type.
 		// This permits a transition window from V1 to V1_1 seal types (which share Window PoSt proof type).
-		minerWPoStProof, err := info.SealProofType.RegisteredWindowPoStProof()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lookup Window PoSt proof type for miner seal proof %d", info.SealProofType)
 		sectorWPoStProof, err := params.SealProof.RegisteredWindowPoStProof()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to lookup Window PoSt proof type for sector seal proof %d", params.SealProof)
-		if sectorWPoStProof != minerWPoStProof {
+		if sectorWPoStProof != info.WindowPoStProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector Window PoSt proof type %d must match miner Window PoSt proof type %d (seal proof type %d)",
-				sectorWPoStProof, minerWPoStProof, params.SealProof)
+				sectorWPoStProof, info.WindowPoStProofType, params.SealProof)
 		}
 
 		dealCountMax := SectorDealsMax(info.SectorSize)

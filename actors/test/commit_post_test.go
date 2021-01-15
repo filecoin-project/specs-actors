@@ -32,10 +32,10 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// create miner
 	params := power.CreateMinerParams{
-		Owner:         addrs[0],
-		Worker:        addrs[0],
-		SealProofType: sealProof,
-		Peer:          abi.PeerID("not really a peer id"),
+		Owner:                addrs[0],
+		Worker:               addrs[0],
+		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                 abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 

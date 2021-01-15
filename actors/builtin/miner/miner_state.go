@@ -102,8 +102,10 @@ type MinerInfo struct {
 	// Slice of byte arrays representing Libp2p multi-addresses used for establishing a connection with this miner.
 	Multiaddrs []abi.Multiaddrs
 
-	// The proof type used by this miner for sealing sectors.
-	SealProofType abi.RegisteredSealProof
+	// The proof type used for Window PoSt for this miner.
+	// A miner may commit sectors with different seal proof types (but compatible sector size and
+	// corresponding PoSt proof types).
+	WindowPoStProofType  abi.RegisteredPoStProof
 
 	// Amount of space in each sector committed by this miner.
 	// This is computed from the proof type and represented here redundantly.
@@ -227,15 +229,14 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	}, nil
 }
 
-func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []addr.Address, pid []byte,
-	multiAddrs [][]byte, sealProofType abi.RegisteredSealProof) (*MinerInfo, error) {
-
-	sectorSize, err := sealProofType.SectorSize()
+func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address, pid []byte, multiAddrs [][]byte,
+	windowPoStProofType abi.RegisteredPoStProof) (*MinerInfo, error) {
+	sectorSize, err := windowPoStProofType.SectorSize()
 	if err != nil {
 		return nil, xc.ErrIllegalArgument.Wrapf("invalid sector size: %w", err)
 	}
 
-	partitionSectors, err := builtin.SealProofWindowPoStPartitionSectors(sealProofType)
+	partitionSectors, err := builtin.PoStProofWindowPoStPartitionSectors(windowPoStProofType)
 	if err != nil {
 		return nil, xc.ErrIllegalArgument.Wrapf("invalid partition sectors: %w", err)
 	}
@@ -247,7 +248,7 @@ func ConstructMinerInfo(owner addr.Address, worker addr.Address, controlAddrs []
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,
-		SealProofType:              sealProofType,
+		WindowPoStProofType:        windowPoStProofType,
 		SectorSize:                 sectorSize,
 		WindowPoStPartitionSectors: partitionSectors,
 		ConsensusFaultElapsed:      abi.ChainEpoch(-1),
