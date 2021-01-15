@@ -22,7 +22,7 @@ import (
 func TestMinerEligibleForElection(t *testing.T) {
 	ctx := context.Background()
 	store := ipld.NewADTStore(ctx)
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	proofType := abi.RegisteredPoStProof_StackedDrgWindow32GiBV1
 	pwr := abi.NewStoragePower(1)
 
 	owner := tutil.NewIDAddr(t, 100)
@@ -80,53 +80,53 @@ func TestMinerEligibleForElection(t *testing.T) {
 func TestMinerEligibleAtLookback(t *testing.T) {
 	ctx := context.Background()
 	store := ipld.NewADTStore(ctx)
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	windowPoStProofType := abi.RegisteredPoStProof_StackedDrgWindow32GiBV1
 	maddr := tutil.NewIDAddr(t, 101)
 
 	t.Run("power does not meet minimum", func(t *testing.T) {
 		// get minimums
-		pow32GiBMin, err := builtin.ConsensusMinerMinPower(proofType)
+		pow32GiBMin, err := builtin.ConsensusMinerMinPower(windowPoStProofType)
 		require.NoError(t, err)
-		pow64GiBMin, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1_1)
+		pow64GiBMin, err := builtin.ConsensusMinerMinPower(abi.RegisteredPoStProof_StackedDrgWindow64GiBV1)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
 			consensusMiners int64
-			minerProof      abi.RegisteredSealProof
+			minerProof      abi.RegisteredPoStProof
 			power           abi.StoragePower
 			eligible        bool
 		}{{
 			// below consensus minimum miners, power only needs to be positive to be eligible
 			consensusMiners: 0,
-			minerProof:      proofType,
+			minerProof:      windowPoStProofType,
 			power:           big.Zero(),
 			eligible:        false,
 		}, {
 			consensusMiners: 0,
-			minerProof:      proofType,
+			minerProof:      windowPoStProofType,
 			power:           big.NewInt(1),
 			eligible:        true,
 		}, {
 			// with enough miners above minimum, power must be at or above consensus min
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      proofType,
+			minerProof:      windowPoStProofType,
 			power:           big.Sub(pow32GiBMin, big.NewInt(1)),
 			eligible:        false,
 		}, {
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      proofType,
+			minerProof:      windowPoStProofType,
 			power:           pow32GiBMin,
 			eligible:        true,
 		}, {
 			// bigger sector size requires higher minimum
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1_1,
+			minerProof:      abi.RegisteredPoStProof_StackedDrgWindow64GiBV1,
 			power:           pow32GiBMin,
 			eligible:        false,
 		}, {
 			// bigger sector size requires higher minimum
 			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      abi.RegisteredSealProof_StackedDrg64GiBV1_1,
+			minerProof:      abi.RegisteredPoStProof_StackedDrgWindow64GiBV1,
 			power:           pow64GiBMin,
 			eligible:        true,
 		}} {
@@ -140,10 +140,10 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 }
 
 func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, owner address.Address) *miner.State {
-	proofType := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	proofType := abi.RegisteredPoStProof_StackedDrgWindow32GiBV1
 	ssize, err := proofType.SectorSize()
 	require.NoError(t, err)
-	psize, err := builtin.SealProofWindowPoStPartitionSectors(proofType)
+	psize, err := builtin.PoStProofWindowPoStPartitionSectors(proofType)
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
@@ -153,7 +153,7 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 		PendingWorkerKey:           nil,
 		PeerId:                     nil,
 		Multiaddrs:                 [][]byte{},
-		SealProofType:              proofType,
+		WindowPoStProofType:        proofType,
 		SectorSize:                 ssize,
 		WindowPoStPartitionSectors: psize,
 		ConsensusFaultElapsed:      0,
@@ -169,14 +169,14 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 	return st
 }
 
-func constructPowerStateWithMiner(t *testing.T, store adt.Store, maddr address.Address, pwr abi.StoragePower, proof abi.RegisteredSealProof) *power.State {
+func constructPowerStateWithMiner(t *testing.T, store adt.Store, maddr address.Address, pwr abi.StoragePower, proof abi.RegisteredPoStProof) *power.State {
 	pSt, err := power.ConstructState(store)
 	require.NoError(t, err)
 
 	claims, err := adt.AsMap(store, pSt.Claims, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 
-	claim := &power.Claim{SealProofType: proof, RawBytePower: pwr, QualityAdjPower: pwr}
+	claim := &power.Claim{WindowPoStProofType: proof, RawBytePower: pwr, QualityAdjPower: pwr}
 
 	err = claims.Put(abi.AddrKey(maddr), claim)
 	require.NoError(t, err)

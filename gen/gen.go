@@ -131,13 +131,13 @@ func main() {
 		power.Claim{},
 		power.CronEvent{},
 		// method params and returns
-		//power.CreateMinerParams{}, // Aliased from v0
+		power.CreateMinerParams{},
 		//power.CreateMinerReturn{}, // Aliased from v0
 		//power.EnrollCronEventParams{}, // Aliased from v0
 		//power.UpdateClaimedPowerParams{}, // Aliased from v0
 		power.CurrentTotalPowerReturn{},
 		// other types
-		// power.MinerConstructorParams{}, // Aliased from v2
+		power.MinerConstructorParams{},
 	); err != nil {
 		panic(err)
 	}

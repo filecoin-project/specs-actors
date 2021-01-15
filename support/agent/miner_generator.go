@@ -1,14 +1,14 @@
 package agent
 
 import (
-	"github.com/pkg/errors"
 	"math/rand"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 )
 
 // MinerGenerator adds miner agents to the simulation at a configured rate.
@@ -44,23 +44,31 @@ func (mg *MinerGenerator) Tick(_ SimState) ([]message, error) {
 		if mg.minersCreated < len(mg.accounts) {
 			addr := mg.accounts[mg.minersCreated]
 			mg.minersCreated++
-			msgs = append(msgs, mg.createMiner(addr, mg.config))
+			msg, err := mg.createMiner(addr, mg.config)
+			if err != nil {
+				return err
+			}
+			msgs = append(msgs, msg)
 		}
 		return nil
 	})
 	return msgs, err
 }
 
-func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) message {
+func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfig) (message, error) {
+	windowPoStProofType, err := cfg.ProofType.RegisteredWindowPoStProof()
+	if err != nil {
+		return message{}, err
+	}
 	return message{
 		From:   owner,
 		To:     builtin.StoragePowerActorAddr,
 		Value:  mg.config.StartingBalance, // miner gets all account funds
 		Method: builtin.MethodsPower.CreateMiner,
 		Params: &power.CreateMinerParams{
-			Owner:         owner,
-			Worker:        owner,
-			SealProofType: cfg.ProofType,
+			Owner:                owner,
+			Worker:               owner,
+			WindowPoStProofType:  windowPoStProofType,
 		},
 		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
@@ -79,5 +87,5 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 			s.AddDealProvider(minerAgent)
 			return nil
 		},
-	}
+	}, nil
 }
