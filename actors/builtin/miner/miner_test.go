@@ -134,7 +134,7 @@ func TestConstruction(t *testing.T) {
 			rt.StoreGet(deadlines.Due[i], &deadline)
 			assert.True(t, deadline.Partitions.Defined())
 			assert.True(t, deadline.ExpirationsEpochs.Defined())
-			assertEmptyBitfield(t, deadline.PostSubmissions)
+			assertEmptyBitfield(t, deadline.PartitionsPoSted)
 			assertEmptyBitfield(t, deadline.EarlyTerminations)
 			assert.Equal(t, uint64(0), deadline.LiveSectors)
 		}
@@ -479,7 +479,7 @@ func TestCommitments(t *testing.T) {
 		require.NoError(t, err)
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
 		assert.Equal(t, uint64(1), deadline.LiveSectors)
-		assertEmptyBitfield(t, deadline.PostSubmissions)
+		assertEmptyBitfield(t, deadline.PartitionsPoSted)
 		assertEmptyBitfield(t, deadline.EarlyTerminations)
 
 		quant := st.QuantSpecForDeadline(dlIdx)
@@ -1205,7 +1205,7 @@ func TestCCUpgrade(t *testing.T) {
 			require.NoError(t, err)
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
-			newFaults, _, _, err := partition.DeclareFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
+			newFaults, _, _, err := partition.RecordFaults(rt.AdtStore(), sectorArr, bf(uint64(oldSectors[0].SectorNumber)), 100000,
 				actor.sectorSize, quant)
 			require.NoError(t, err)
 			assertBitfieldEquals(t, newFaults, uint64(oldSectors[0].SectorNumber))
@@ -1857,7 +1857,9 @@ func TestWindowPost(t *testing.T) {
 		WithEpoch(precommitEpoch).
 		WithBalance(bigBalance, big.Zero())
 
-	t.Run("test proof", func(t *testing.T) {
+	testBasicPoSt := func(disputeSucceed bool) {
+		proofs := makePoStProofs(actor.windowPostProofType)
+
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
@@ -1878,17 +1880,53 @@ func TestWindowPost(t *testing.T) {
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
-		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
+		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
 			expectedPowerDelta: pwr,
 		})
 
 		// Verify proof recorded
 		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
+
+		postsCid := deadline.OptimisticPoStSubmissions
+
+		posts, err := adt.AsArray(store, postsCid, miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+		require.NoError(t, err)
+		require.EqualValues(t, posts.Length(), 1)
+		var post miner.WindowedPoSt
+		found, err := posts.Get(0, &post)
+		require.NoError(t, err)
+		require.True(t, found)
+		assertBitfieldEquals(t, post.Partitions, pIdx)
 
 		// Advance to end-of-deadline cron to verify no penalties.
 		advanceDeadline(rt, actor, &cronConfig{})
 		actor.checkState(rt)
+
+		deadline = actor.getDeadline(rt, dlIdx)
+
+		// Proofs should exist in snapshot.
+		require.Equal(t, deadline.OptimisticPoStSubmissionsSnapshot, postsCid)
+
+		var result *poStDisputeResult
+		if disputeSucceed {
+			expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+			result = &poStDisputeResult{
+				expectedPowerDelta:  pwr.Neg(),
+				expectedPenalty:     expectedFee,
+				expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
+				expectedPledgeDelta: big.Zero(),
+			}
+		}
+		actor.disputeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
+	}
+
+	t.Run("test proof", func(t *testing.T) {
+		testBasicPoSt(true)
+	})
+
+	t.Run("test bad proof accepted and disputed", func(t *testing.T) {
+		testBasicPoSt(false)
 	})
 
 	t.Run("test duplicate proof rejected", func(t *testing.T) {
@@ -1918,7 +1956,7 @@ func TestWindowPost(t *testing.T) {
 
 		// Verify proof recorded
 		deadline := actor.getDeadline(rt, dlIdx)
-		assertBitfieldEquals(t, deadline.PostSubmissions, pIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
 
 		// Submit a duplicate proof for the same partition. This will be rejected because after ignoring the
 		// already-proven partition, there are no sectors remaining.
@@ -1983,7 +2021,7 @@ func TestWindowPost(t *testing.T) {
 			})
 			// Verify proof recorded
 			deadline := actor.getDeadline(rt, dlIdx)
-			assertBitfieldEquals(t, deadline.PostSubmissions, 0)
+			assertBitfieldEquals(t, deadline.PartitionsPoSted, 0)
 		}
 		{
 			// Attempt PoSt for both partitions, thus duplicating proof for partition 0, so rejected
@@ -2014,7 +2052,7 @@ func TestWindowPost(t *testing.T) {
 			})
 			// Verify both proofs now recorded
 			deadline := actor.getDeadline(rt, dlIdx)
-			assertBitfieldEquals(t, deadline.PostSubmissions, 0, 1)
+			assertBitfieldEquals(t, deadline.PartitionsPoSted, 0, 1)
 		}
 
 		// Advance to end-of-deadline cron to verify no penalties.
@@ -2071,6 +2109,15 @@ func TestWindowPost(t *testing.T) {
 		assert.Equal(t, miner.NewPowerPairZero(), partition.FaultyPower)
 		assertBitfieldEmpty(t, partition.Faults)
 		assertBitfieldEmpty(t, partition.Recoveries)
+
+		// We restored power, so we should not have recorded a post.
+		deadline = actor.getDeadline(rt, dlIdx)
+		assertBitfieldEquals(t, deadline.PartitionsPoSted, pIdx)
+		postsCid := deadline.OptimisticPoStSubmissions
+		posts, err := adt.AsArray(rt.AdtStore(), postsCid,
+			miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+		require.NoError(t, err)
+		require.EqualValues(t, posts.Length(), 0)
 
 		// Next deadline cron does not charge for the fault
 		advanceDeadline(rt, actor, &cronConfig{})
@@ -2266,6 +2313,180 @@ func TestWindowPost(t *testing.T) {
 		})
 		actor.checkState(rt)
 	})
+
+	t.Run("cannot dispute posts when the challenge window is open", func(t *testing.T) {
+		proofs := makePoStProofs(actor.windowPostProofType)
+
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
+		pwr := miner.PowerForSector(actor.sectorSize, sector)
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+
+		// Skip over deadlines until the beginning of the one with the new sector
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		// Submit PoSt
+		partitions := []miner.PoStPartition{
+			{Index: pIdx, Skipped: bitfield.New()},
+		}
+		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
+			expectedPowerDelta: pwr,
+		})
+
+		// Dispute it.
+		params := miner.DisputeWindowedPoStParams{
+			Deadline:  dlinfo.Index,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		expectQueryNetworkInfo(rt, actor)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "can only dispute window posts during the dispute window", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
+	})
+	t.Run("can dispute up till window end, but not after", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)[0]
+
+		st := getState(rt)
+		dlIdx, _, err := st.FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+
+		nextDl := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch()).
+			NextNotElapsed()
+
+		advanceAndSubmitPoSts(rt, actor, sector)
+
+		windowEnd := nextDl.Close + miner.WPoStDisputeWindow
+
+		// first, try to dispute right before the window end.
+		// We expect this to fail "normally" (fail to disprove).
+		rt.SetEpoch(windowEnd - 1)
+		actor.disputeWindowPoSt(rt, nextDl, 0, []*miner.SectorOnChainInfo{sector}, nil)
+
+		// Now set the epoch at the window end. We expect a different error.
+		rt.SetEpoch(windowEnd)
+
+		// Now try to dispute.
+		params := miner.DisputeWindowedPoStParams{
+			Deadline:  dlIdx,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		currentReward := reward.ThisEpochRewardReturn{
+			ThisEpochBaselinePower:  actor.baselinePower,
+			ThisEpochRewardSmoothed: actor.epochRewardSmooth,
+		}
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
+
+		networkPower := big.NewIntUnsigned(1 << 50)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
+			&power.CurrentTotalPowerReturn{
+				RawBytePower:            networkPower,
+				QualityAdjPower:         networkPower,
+				PledgeCollateral:        actor.networkPledge,
+				QualityAdjPowerSmoothed: actor.epochQAPowerSmooth,
+			},
+			exitcode.Ok)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "can only dispute window posts during the dispute window", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("can't dispute up with an invalid deadline", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		params := miner.DisputeWindowedPoStParams{
+			Deadline:  50,
+			PoStIndex: 0,
+		}
+
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline", func() {
+			rt.Call(actor.a.DisputeWindowedPoSt, &params)
+		})
+		rt.Verify()
+	})
+
+	t.Run("can dispute test after proving period changes", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		periodStart := actor.deadline(rt).NextPeriodStart()
+
+		// go to the next deadline 0
+		rt.SetEpoch(periodStart)
+
+		// fill one partition in each mutable deadline.
+		numSectors := int(actor.partitionSize*(miner.WPoStPeriodDeadlines-2))
+
+		// creates a partition in every deadline except 0 and 47
+		sectors := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, nil)
+		actor.t.Log("here")
+
+		// prove every sector once to activate power. This
+		// simplifies the test a bit.
+		advanceAndSubmitPoSts(rt, actor, sectors...)
+
+		// Make sure we're in the correct deadline. We should
+		// finish at deadline 2 because precommit takes some
+		// time.
+		dlinfo := actor.deadline(rt)
+		require.True(t, dlinfo.Index < 46,
+			"we need to be before the target deadline for this test to make sense")
+
+		// Now challenge find the sectors in the last partition.
+		_, partition := actor.getDeadlineAndPartition(rt, 46, 0)
+		var targetSectors []*miner.SectorOnChainInfo
+		err := partition.Sectors.ForEach(func(i uint64) error {
+			for _, sector := range sectors {
+				if uint64(sector.SectorNumber) == i {
+					targetSectors = append(targetSectors, sector)
+				}
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, targetSectors)
+
+		pwr := miner.PowerForSectors(actor.sectorSize, targetSectors)
+
+		// And challenge the last partition.
+		var result *poStDisputeResult
+		expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+		result = &poStDisputeResult{
+			expectedPowerDelta:  pwr.Neg(),
+			expectedPenalty:     expectedFee,
+			expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
+			expectedPledgeDelta: big.Zero(),
+		}
+
+		targetDlInfo := miner.NewDeadlineInfo(periodStart, 46, rt.Epoch())
+		actor.disputeWindowPoSt(rt, targetDlInfo, 0, targetSectors, result)
+	})
 }
 
 func TestProveCommit(t *testing.T) {
@@ -2393,8 +2614,9 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
-		st.ProvingPeriodStart = expirationPeriod
+		remainingEpochs := expiration - st.ProvingPeriodStart
+		remainingPeriods := remainingEpochs/miner.WPoStProvingPeriod + 1
+		st.ProvingPeriodStart += remainingPeriods * miner.WPoStProvingPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
@@ -2426,8 +2648,9 @@ func TestDeadlineCron(t *testing.T) {
 		// setup state to simulate moving forward all the way to expiry
 		dlIdx, _, err := st.FindSector(rt.AdtStore(), sectors[0].SectorNumber)
 		require.NoError(t, err)
-		expirationPeriod := (expiration/miner.WPoStProvingPeriod + 1) * miner.WPoStProvingPeriod
-		st.ProvingPeriodStart = expirationPeriod
+		remainingEpochs := expiration - st.ProvingPeriodStart
+		remainingPeriods := remainingEpochs/miner.WPoStProvingPeriod + 1
+		st.ProvingPeriodStart += remainingPeriods * miner.WPoStProvingPeriod
 		st.CurrentDeadline = dlIdx
 		rt.ReplaceState(st)
 
@@ -3171,6 +3394,38 @@ func TestTerminateSectors(t *testing.T) {
 		actor.terminateSectors(rt, sectors, expectedFee)
 		actor.checkState(rt)
 	})
+
+	t.Run("cannot terminate a sector when the challenge window is open", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		rt.SetEpoch(abi.ChainEpoch(1))
+		sectorInfo := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil)
+		sector := sectorInfo[0]
+
+		st := getState(rt)
+		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
+		require.NoError(t, err)
+
+		// advance into the deadline, but not past it.
+		dlinfo := actor.deadline(rt)
+		for dlinfo.Index != dlIdx {
+			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+
+		params := &miner.TerminateSectorsParams{Terminations: []miner.TerminationDeclaration{{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bf(uint64(sector.SectorNumber)),
+		}}}
+		rt.SetCaller(actor.worker, builtin.AccountActorCodeID)
+		rt.ExpectValidateCallerAddr(append(actor.controlAddrs, actor.owner, actor.worker)...)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline", func() {
+			rt.Call(actor.a.TerminateSectors, params)
+		})
+
+		actor.checkState(rt)
+	})
+
 }
 
 func TestWithdrawBalance(t *testing.T) {
@@ -3379,6 +3634,9 @@ func TestCompactPartitions(t *testing.T) {
 		sectors := bitfield.NewFromSet([]uint64{uint64(sector1)})
 		actor.terminateSectors(rt, sectors, expectedFee)
 
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
+
 		// compacting partition will remove sector1 but retain sector 2, 3 and 4.
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -3406,6 +3664,9 @@ func TestCompactPartitions(t *testing.T) {
 		// fault sector1
 		actor.declareFaults(rt, info[0])
 
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
+
 		partId := uint64(0)
 		deadlineId := uint64(0)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to remove partitions from deadline 0: while removing partitions: cannot remove partition 0: has faults", func() {
@@ -3419,9 +3680,18 @@ func TestCompactPartitions(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		rt.SetEpoch(200)
+		// Wait until deadline 0 (the one to which we'll assign the
+		// sector) has elapsed. That'll let us commit, prove, then wait
+		// finality epochs.
+		st := getState(rt)
+		deadlineEpoch := miner.NewDeadlineInfo(st.ProvingPeriodStart, 0, rt.Epoch()).NextNotElapsed().NextOpen()
+		rt.SetEpoch(deadlineEpoch)
+
 		// create 2 sectors in partition 0
 		actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, [][]abi.DealID{{10}, {20}})
+
+		// Wait WPoStProofChallengePeriod epochs so we can compact the sector.
+		advanceToEpochWithCron(rt, actor, rt.Epoch()+miner.WPoStDisputeWindow)
 
 		partId := uint64(0)
 		deadlineId := uint64(0)
@@ -3436,21 +3706,72 @@ func TestCompactPartitions(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline 48", func() {
 			actor.compactPartitions(rt, miner.WPoStPeriodDeadlines, bitfield.New())
 		})
 		actor.checkState(rt)
 	})
 
-	t.Run("fails if deadline is not mutable", func(t *testing.T) {
+	t.Run("fails if deadline is open for challenging", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		epoch := abi.ChainEpoch(200)
-		rt.SetEpoch(epoch)
+		rt.SetEpoch(periodOffset)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 0, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("fails if deadline is next up to be challenged", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.compactPartitions(rt, 1, bitfield.New())
 		})
+		actor.checkState(rt)
+	})
+
+	t.Run("the deadline after the next deadline should still be open for compaction", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
+		actor.compactPartitions(rt, 3, bitfield.New())
+		actor.checkState(rt)
+	})
+
+	t.Run("deadlines challenged last proving period should still be in the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(periodOffset)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 47, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	disputeEnd := periodOffset + miner.WPoStChallengeWindow + miner.WPoStDisputeWindow - 1
+	t.Run("compaction should be forbidden during the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(disputeEnd)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.compactPartitions(rt, 0, bitfield.New())
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("compaction should be allowed following the dispute window", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		rt.SetEpoch(disputeEnd + 1)
+		actor.compactPartitions(rt, 0, bitfield.New())
 		actor.checkState(rt)
 	})
 
@@ -4577,6 +4898,22 @@ func (h *actorHarness) getPartition(rt *mock.Runtime, deadline *miner.Deadline, 
 	return partition
 }
 
+func (h *actorHarness) getPartitionSnapshot(rt *mock.Runtime, deadline *miner.Deadline, idx uint64) *miner.Partition {
+	partition, err := deadline.LoadPartitionSnapshot(rt.AdtStore(), idx)
+	require.NoError(h.t, err)
+	return partition
+}
+
+func (h *actorHarness) getSubmittedProof(rt *mock.Runtime, deadline *miner.Deadline, idx uint64) *miner.WindowedPoSt {
+	proofs, err := adt.AsArray(rt.AdtStore(), deadline.OptimisticPoStSubmissionsSnapshot, miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
+	require.NoError(h.t, err)
+	var post miner.WindowedPoSt
+	found, err := proofs.Get(idx, &post)
+	require.NoError(h.t, err)
+	require.True(h.t, found)
+	return &post
+}
+
 func (h *actorHarness) getDeadlineAndPartition(rt *mock.Runtime, dlIdx, pIdx uint64) (*miner.Deadline, *miner.Partition) {
 	deadline := h.getDeadline(rt, dlIdx)
 	partition := h.getPartition(rt, deadline, pIdx)
@@ -5056,31 +5393,163 @@ func (h *actorHarness) advancePastDeadlineEndWithCron(rt *mock.Runtime) {
 	rt.SetEpoch(deadline.NextPeriodStart())
 }
 
+type poStDisputeResult struct {
+	expectedPowerDelta  miner.PowerPair
+	expectedPledgeDelta abi.TokenAmount
+	expectedPenalty     abi.TokenAmount
+	expectedReward      abi.TokenAmount
+}
+
+func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info, proofIndex uint64, infos []*miner.SectorOnChainInfo, expectSuccess *poStDisputeResult) {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerType(builtin.CallerTypesSignable...)
+
+	expectQueryNetworkInfo(rt, h)
+	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
+
+	// only sectors that are not skipped and not existing non-recovered faults will be verified
+	allIgnored := bf()
+	dln := h.getDeadline(rt, deadline.Index)
+
+	post := h.getSubmittedProof(rt, dln, proofIndex)
+
+	var err error
+	err = post.Partitions.ForEach(func(idx uint64) error {
+		partition := h.getPartitionSnapshot(rt, dln, idx)
+		allIgnored, err = bitfield.MergeBitFields(allIgnored, partition.Faults)
+		require.NoError(h.t, err)
+		noRecoveries, err := partition.Recoveries.IsEmpty()
+		require.NoError(h.t, err)
+		require.True(h.t, noRecoveries)
+		return nil
+	})
+	require.NoError(h.t, err)
+
+	// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
+	var goodInfo *miner.SectorOnChainInfo
+	for _, ci := range infos {
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if !contains {
+			goodInfo = ci
+			break
+		}
+	}
+	require.NotNil(h.t, goodInfo, "stored proof should prove at least one sector")
+
+	var buf bytes.Buffer
+	receiver := rt.Receiver()
+	err = receiver.MarshalCBOR(&buf)
+	require.NoError(h.t, err)
+
+	rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_WindowedPoStChallengeSeed, deadline.Challenge, buf.Bytes(), abi.Randomness(challengeRand))
+
+	actorId, err := addr.IDFromAddress(h.receiver)
+	require.NoError(h.t, err)
+
+	proofInfos := make([]proof.SectorInfo, len(infos))
+	for i, ci := range infos {
+		si := ci
+		contains, err := allIgnored.IsSet(uint64(ci.SectorNumber))
+		require.NoError(h.t, err)
+		if contains {
+			si = goodInfo
+		}
+		proofInfos[i] = proof.SectorInfo{
+			SealProof:    si.SealProof,
+			SectorNumber: si.SectorNumber,
+			SealedCID:    si.SealedCID,
+		}
+	}
+
+	vi := proof.WindowPoStVerifyInfo{
+		Randomness:        abi.PoStRandomness(challengeRand),
+		Proofs:            post.Proofs,
+		ChallengedSectors: proofInfos,
+		Prover:            abi.ActorID(actorId),
+	}
+	var verifResult error
+	if expectSuccess != nil {
+		// if we succeed at challenging, proof verification needs to fail.
+		verifResult = fmt.Errorf("invalid post")
+	}
+	rt.ExpectVerifyPoSt(vi, verifResult)
+
+	if expectSuccess != nil {
+		// expect power update
+		if !expectSuccess.expectedPowerDelta.IsZero() {
+			claim := &power.UpdateClaimedPowerParams{
+				RawByteDelta:         expectSuccess.expectedPowerDelta.Raw,
+				QualityAdjustedDelta: expectSuccess.expectedPowerDelta.QA,
+			}
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdateClaimedPower, claim, abi.NewTokenAmount(0),
+				nil, exitcode.Ok)
+		}
+		// expect reward
+		if !expectSuccess.expectedReward.IsZero() {
+			rt.ExpectSend(h.worker, builtin.MethodSend, nil, expectSuccess.expectedReward, nil, exitcode.Ok)
+		}
+		// expect penalty
+		if !expectSuccess.expectedPenalty.IsZero() {
+			rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectSuccess.expectedPenalty, nil, exitcode.Ok)
+		}
+		// expect pledge update
+		if !expectSuccess.expectedPledgeDelta.IsZero() {
+			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal,
+				&expectSuccess.expectedPledgeDelta, abi.NewTokenAmount(0), nil, exitcode.Ok)
+		}
+	}
+
+	params := miner.DisputeWindowedPoStParams{
+		Deadline:  deadline.Index,
+		PoStIndex: proofIndex,
+	}
+	if expectSuccess == nil {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "failed to dispute valid post", func() {
+			rt.Call(h.a.DisputeWindowedPoSt, &params)
+		})
+	} else {
+		rt.Call(h.a.DisputeWindowedPoSt, &params)
+	}
+	rt.Verify()
+}
+
 type poStConfig struct {
 	expectedPowerDelta miner.PowerPair
 	verificationError  error
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
+	h.submitWindowPoStRaw(rt, deadline, partitions, infos, makePoStProofs(h.windowPostProofType), poStCfg)
+}
+
+func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, proofs []proof.PoStProof, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	commitRand := abi.Randomness("chaincommitment")
 	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
-	proofs := makePoStProofs(h.windowPostProofType)
 	challengeRand := abi.SealRandomness([]byte{10, 11, 12, 13})
 
 	// only sectors that are not skipped and not existing non-recovered faults will be verified
 	allIgnored := bf()
+	allRecovered := bf()
 	dln := h.getDeadline(rt, deadline.Index)
+
 	for _, p := range partitions {
 		partition := h.getPartition(rt, dln, p.Index)
 		expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
 		require.NoError(h.t, err)
 		allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
 		require.NoError(h.t, err)
+		recovered, err := bitfield.SubtractBitField(partition.Recoveries, p.Skipped)
+		require.NoError(h.t, err)
+		allRecovered, err = bitfield.MergeBitFields(allRecovered, recovered)
+		require.NoError(h.t, err)
 	}
+	optimistic, err := allRecovered.IsEmpty()
+	require.NoError(h.t, err)
 
 	// find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
 	var goodInfo *miner.SectorOnChainInfo
@@ -5094,7 +5563,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, 
 	}
 
 	// goodInfo == nil indicates all the sectors have been skipped and should PoSt verification should not occur
-	if goodInfo != nil {
+	if !optimistic && goodInfo != nil {
 		var buf bytes.Buffer
 		receiver := rt.Receiver()
 		err := receiver.MarshalCBOR(&buf)
@@ -5133,6 +5602,7 @@ func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, 
 		}
 		rt.ExpectVerifyPoSt(vi, verifResult)
 	}
+
 	if poStCfg != nil {
 		// expect power update
 		if !poStCfg.expectedPowerDelta.IsZero() {

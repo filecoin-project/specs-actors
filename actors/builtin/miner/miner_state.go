@@ -1130,6 +1130,8 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 
 	// No live sectors in this deadline, nothing to do.
 	if deadline.LiveSectors == 0 {
+		// We should do some more checks here. See:
+		// Fix: https://github.com/filecoin-project/specs-actors/issues/1348
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,

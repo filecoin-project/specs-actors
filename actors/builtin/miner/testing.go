@@ -201,14 +201,46 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions")
 
-	// Check PoSt submissions
-	if postSubmissions, err := deadline.PostSubmissions.All(1 << 20); err != nil {
-		acc.Addf("error expanding post submissions: %v", err)
-	} else {
-		for _, p := range postSubmissions {
-			acc.Require(p <= partitionCount, "invalid PoSt submission for partition %d of %d", p, partitionCount)
+	// Check partitions snapshot to make sure we take the snapshot after
+	// dealing with recovering power and unproven power.
+	partitionsSnapshot, err := deadline.PartitionsSnapshotArray(store)
+	acc.RequireNoError(err, "error loading partitions snapshot")
+	err = partitionsSnapshot.ForEach(&partition, func(i int64) error {
+		acc := acc.WithPrefix("partition snapshot %d: ", i) // Shadow
+
+		acc.Require(partition.RecoveringPower.IsZero(), "snapshot partition has recovering power")
+		if noRecoveries, err := partition.Recoveries.IsEmpty(); err != nil {
+			acc.Addf("error counting recoveries: %v", err)
+		} else {
+			acc.Require(noRecoveries, "snapshot partition has pending recoveries")
 		}
-	}
+
+		acc.Require(partition.UnprovenPower.IsZero(), "snapshot partition has unproven power")
+		if noUnproven, err := partition.Unproven.IsEmpty(); err != nil {
+			acc.Addf("error counting unproven: %v", err)
+		} else {
+			acc.Require(noUnproven, "snapshot partition has unproven sectors")
+		}
+
+		return nil
+	})
+	acc.RequireNoError(err, "error iterating partitions snapshot")
+
+	// Check that we don't have any proofs proving partitions that are not in the snapshot.
+	proofsSnapshot, err := deadline.OptimisticProofsSnapshotArray(store)
+	acc.RequireNoError(err, "error loading proofs snapshot")
+	var proof WindowedPoSt
+	err = proofsSnapshot.ForEach(&proof, func(_ int64) error {
+		err = proof.Partitions.ForEach(func(i uint64) error {
+			found, err := partitionsSnapshot.Get(i, &partition)
+			acc.RequireNoError(err, "error loading partition snapshot")
+			acc.Require(found, "failed to find partition for recorded proof in the snapshot")
+			return nil
+		})
+		acc.RequireNoError(err, "error iterating proof partitions bitfield")
+		return nil
+	})
+	acc.RequireNoError(err, "error iterating proofs snapshot")
 
 	// Check memoized sector and power values.
 	live, err := bitfield.MultiMerge(allLiveSectors...)

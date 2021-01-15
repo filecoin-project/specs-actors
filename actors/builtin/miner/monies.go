@@ -43,6 +43,9 @@ var ContinuedFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * Conti
 
 var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
 
+// FF + 2BR
+var InvalidWindowPoStProjectionPeriod = abi.ChainEpoch(ContinuedFaultProjectionPeriod + 2*builtin.EpochsInDay) // PARAM_SPEC
+
 // Fraction of assumed block reward penalized when a sector is terminated.
 var TerminationRewardFactor = builtin.BigFrac{ // PARAM_SPEC
 	Numerator:   big.NewInt(1),
@@ -58,6 +61,11 @@ const ConsensusFaultFactor = 5
 // Fraction of total reward (block reward + gas reward) to be locked up as of V6
 var LockedRewardFactorNum = big.NewInt(75)
 var LockedRewardFactorDenom = big.NewInt(100)
+
+// Base reward for successfully disputing a window posts proofs.
+var BaseRewardForDisputedWindowPoSt = big.Mul(big.NewInt(4), builtin.TokenPrecision) // PARAM_SPEC
+// Base penalty for a successful disputed window post proof.
+var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), builtin.TokenPrecision) // PARAM_SPEC
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
@@ -116,6 +124,14 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 			big.Div(
 				penalizedReward,
 				big.Mul(big.NewInt(builtin.EpochsInDay), TerminationRewardFactor.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
+}
+
+// The penalty for optimistically proving a sector with an invalid window PoSt.
+func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+	return big.Add(
+		ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod),
+		BasePenaltyForDisputedWindowPoSt,
+	)
 }
 
 // Computes the PreCommit deposit given sector qa weight and current network conditions.

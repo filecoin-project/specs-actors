@@ -124,6 +124,12 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 
 	outDeadlines := miner3.Deadlines{Due: [miner3.WPoStPeriodDeadlines]cid.Cid{}}
 
+	// Start from an empty template to zero-initialize new fields.
+	deadlineTemplate, err := miner3.ConstructDeadline(adt3.WrapStore(ctx, store))
+	if err != nil {
+		return cid.Undef, xerrors.Errorf("failed to construct new deadline template")
+	}
+
 	for i, c := range inDeadlines.Due {
 		outDlCid, err := cache.Load(DeadlineKey(c), func() (cid.Cid, error) {
 			var inDeadline miner2.Deadline
@@ -141,15 +147,14 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 				return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 			}
 
-			outDeadline := miner3.Deadline{
-				Partitions:        partitions,
-				ExpirationsEpochs: expirationEpochs,
-				PostSubmissions:   inDeadline.PostSubmissions,
-				EarlyTerminations: inDeadline.EarlyTerminations,
-				LiveSectors:       inDeadline.LiveSectors,
-				TotalSectors:      inDeadline.TotalSectors,
-				FaultyPower:       miner3.PowerPair(inDeadline.FaultyPower),
-			}
+		outDeadline := *deadlineTemplate
+		outDeadline.Partitions = partitions
+		outDeadline.ExpirationsEpochs = expirationEpochs
+		outDeadline.PartitionsPoSted = inDeadline.PostSubmissions
+		outDeadline.EarlyTerminations = inDeadline.EarlyTerminations
+		outDeadline.LiveSectors = inDeadline.LiveSectors
+		outDeadline.TotalSectors = inDeadline.TotalSectors
+		outDeadline.FaultyPower = miner3.PowerPair(inDeadline.FaultyPower)
 
 			return store.Put(ctx, &outDeadline)
 		})
