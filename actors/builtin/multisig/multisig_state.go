@@ -4,7 +4,6 @@ import (
 	address "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
@@ -142,18 +141,6 @@ func (st *State) assertAvailable(currBalance abi.TokenAmount, amountToSpend abi.
 	}
 
 	return nil
-}
-
-func getPendingTransaction(ptx *adt.Map, txnID TxnID) (Transaction, error) {
-	var out Transaction
-	found, err := ptx.Get(txnID, &out)
-	if err != nil {
-		return Transaction{}, xerrors.Errorf("failed to read transaction: %w", err)
-	}
-	if !found {
-		return Transaction{}, exitcode.ErrNotFound.Wrapf("failed to find transaction %v", txnID)
-	}
-	return out, nil
 }
 
 // An adt.Map key that just preserves the underlying string.

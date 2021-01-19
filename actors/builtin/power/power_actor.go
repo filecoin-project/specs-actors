@@ -267,10 +267,11 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 
 		store := adt.AsStore(rt)
 		var mmap *adt.Multimap
+		var err error
 		if st.ProofValidationBatch == nil {
-			mmap = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
+			mmap, err = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty proof validation set")
 		} else {
-			var err error
 			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
 		}
@@ -486,9 +487,12 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 
 			// Remove miner claim and leave miner frozen
 			for _, minerAddr := range failedMinerCrons {
-				err := st.deleteClaim(claims, minerAddr)
+				found, err := st.deleteClaim(claims, minerAddr)
 				if err != nil {
 					rt.Log(rtt.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+					continue
+				} else if !found {
+					rt.Log(rtt.ERROR, "can't find claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 					continue
 				}
 

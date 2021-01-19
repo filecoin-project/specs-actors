@@ -20,7 +20,8 @@ func TestBalanceTable(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+		require.NoError(t, err)
 
 		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
 		require.NoError(t, err)
@@ -129,7 +130,8 @@ func TestSubtractWithMinimum(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
 		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
 		store := adt.AsStore(rt)
-		emptyMap := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+		require.NoError(t, err)
 
 		bt, err := adt.AsBalanceTable(store, tutil.MustRoot(t, emptyMap))
 		require.NoError(t, err)

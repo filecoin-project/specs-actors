@@ -75,7 +75,10 @@ func (m powerMigrator) migrateClaims(ctx context.Context, store cbor.IpldStore, 
 	if err != nil {
 		return cid.Undef, err
 	}
-	outClaims := adt3.MakeEmptyMap(astore, builtin3.DefaultHamtBitwidth)
+	outClaims, err := adt3.MakeEmptyMap(astore, builtin3.DefaultHamtBitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
 
 	var inClaim power2.Claim
 	if err = inClaims.ForEach(&inClaim, func(key string) error {

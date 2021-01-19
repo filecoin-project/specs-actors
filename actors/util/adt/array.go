@@ -7,7 +7,6 @@ import (
 
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
@@ -22,7 +21,7 @@ type Array struct {
 
 // AsArray interprets a store as an AMT-based array with root `r`.
 func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
-	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(bitwidth))
+	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(uint(bitwidth)))
 	root, err := amt.LoadAMT(s.Context(), s, r, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to root: %w", err)
@@ -36,7 +35,7 @@ func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
 
 // Creates a new array backed by an empty AMT.
 func MakeEmptyArray(s Store, bitwidth int) (*Array, error) {
-	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(bitwidth))
+	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(uint(bitwidth)))
 	root, err := amt.NewAMT(s, options...)
 	if err != nil {
 		return nil, err
@@ -65,28 +64,41 @@ func (a *Array) Root() (cid.Cid, error) {
 // If the array isn't continuous use Set and a separate counter
 func (a *Array) AppendContinuous(value cbor.Marshaler) error {
 	if err := a.root.Set(a.store.Context(), a.root.Len(), value); err != nil {
-		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", a.root.Len(), value, a.root)
+		return xerrors.Errorf("append failed to set index %v value %v in root %v: %w", a.root.Len(), value, a.root, err)
 	}
 	return nil
 }
 
 func (a *Array) Set(i uint64, value cbor.Marshaler) error {
 	if err := a.root.Set(a.store.Context(), i, value); err != nil {
-		return xerrors.Errorf("array set failed to set index %v in root %v: %w", i, a.root, err)
+		return xerrors.Errorf("failed to set index %v value %v in root %v: %w", i, value, a.root, err)
 	}
 	return nil
 }
 
+// Removes the value at index `i` from the AMT, if it exists.
+// Returns whether the index was previously present.
+func (a *Array) TryDelete(i uint64) (bool, error) {
+	if found, err := a.root.Delete(a.store.Context(), i); err != nil {
+		return false, xerrors.Errorf("array delete failed to delete index %v in root %v: %w", i, a.root, err)
+	} else {
+		return found, nil
+	}
+}
+
+// Removes the value at index `i` from the AMT, expecting it to exist.
 func (a *Array) Delete(i uint64) error {
-	if err := a.root.Delete(a.store.Context(), i); err != nil {
-		return xerrors.Errorf("array delete failed to delete index %v in root %v: %w", i, a.root, err)
+	if found, err := a.root.Delete(a.store.Context(), i); err != nil {
+		return xerrors.Errorf("failed to delete index %v in root %v: %w", i, a.root, err)
+	} else if !found {
+		return xerrors.Errorf("no such index %v in root %v to delete: %w", i, a.root, err)
 	}
 	return nil
 }
 
-func (a *Array) BatchDelete(ix []uint64) error {
-	if err := a.root.BatchDelete(a.store.Context(), ix); err != nil {
-		return xerrors.Errorf("array delete failed to batchdelete: %w", err)
+func (a *Array) BatchDelete(ix []uint64, strict bool) error {
+	if _, err := a.root.BatchDelete(a.store.Context(), ix, strict); err != nil {
+		return xerrors.Errorf("failed to batch delete keys %v: %w", ix, err)
 	}
 	return nil
 }
@@ -115,12 +127,26 @@ func (a *Array) Length() uint64 {
 // Get retrieves array element into the 'out' unmarshaler, returning a boolean
 //  indicating whether the element was found in the array
 func (a *Array) Get(k uint64, out cbor.Unmarshaler) (bool, error) {
-
-	if err := a.root.Get(a.store.Context(), k, out); err == nil {
-		return true, nil
-	} else if _, nf := err.(*amt.ErrNotFound); nf {
-		return false, nil
+	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
+		return false, xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
 	} else {
-		return false, err
+		return found, nil
 	}
+}
+
+// Retrieves an array value into the 'out' unmarshaler (if non-nil), and removes the entry.
+// Returns a boolean indicating whether the element was previously in the array.
+func (a *Array) Pop(k uint64, out cbor.Unmarshaler) (bool, error) {
+	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
+		return false, xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
+	} else if !found {
+		return false, nil
+	}
+
+	if found, err := a.root.Delete(a.store.Context(), k); err != nil {
+		return false, xerrors.Errorf("failed to delete index %v in root %v: %w", k, a.root, err)
+	} else if !found {
+		return false, xerrors.Errorf("can't find index %v to delete in root %v", k, a.root)
+	}
+	return true, nil
 }

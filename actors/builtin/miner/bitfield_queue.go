@@ -80,7 +80,7 @@ func (q BitfieldQueue) Cut(toCut bitfield.BitField) error {
 	}); err != nil {
 		return xerrors.Errorf("failed to cut from bitfield queue: %w", err)
 	}
-	if err := q.BatchDelete(epochsToRemove); err != nil {
+	if err := q.BatchDelete(epochsToRemove, true); err != nil {
 		return xerrors.Errorf("failed to remove empty epochs from bitfield queue: %w", err)
 	}
 	return nil
@@ -135,7 +135,7 @@ func (q BitfieldQueue) PopUntil(until abi.ChainEpoch) (values bitfield.BitField,
 		return bitfield.New(), false, nil
 	}
 
-	if err = q.BatchDelete(poppedKeys); err != nil {
+	if err = q.BatchDelete(poppedKeys, true); err != nil {
 		return bitfield.BitField{}, false, err
 	}
 	merged, err := bitfield.MultiMerge(poppedValues...)

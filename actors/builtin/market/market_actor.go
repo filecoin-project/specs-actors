@@ -539,7 +539,6 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 
 					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal %v", dcid)
-
 					return nil
 				}
 
@@ -642,8 +641,8 @@ func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(cry
 func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
 	removeState bool) error {
 	if removeProposal {
-		if err := proposals.Delete(uint64(dealId)); err != nil {
-			return xerrors.Errorf("failed to delete deal proposal: %w", err)
+		if err := proposals.Delete(dealId); err != nil {
+			return xerrors.Errorf("failed to delete proposal %d : %w", dealId, err)
 		}
 	}
 

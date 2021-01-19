@@ -89,7 +89,7 @@ func ConstructState(store adt.Store) (*State, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyCronQueueMMapCid, err := adt.MakeEmptyMultimap(store, CronQueueHamtBitwidth, CronQueueAmtBitwidth).Root()
+	emptyCronQueueMMapCid, err := adt.StoreEmptyMultimap(store, CronQueueHamtBitwidth, CronQueueAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multimap: %w", err)
 	}
@@ -244,23 +244,25 @@ func (st *State) updateStatsForNewMiner(windowPoStProof abi.RegisteredPoStProof)
 	return nil
 }
 
-func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) error {
+func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) (bool, error) {
+	// Note: this flow loads the claim multiple times, unnecessarily.
+	// We should refactor to use claims.Pop().
 	oldClaim, ok, err := getClaim(claims, miner)
 	if err != nil {
-		return fmt.Errorf("failed to get claim: %w", err)
+		return false, fmt.Errorf("failed to get claim: %w", err)
 	}
 	if !ok {
-		return nil // no record, we're done
+		return false, nil // no record, we're done
 	}
 
 	// subtract from stats as if we were simply removing power
 	err = st.addToClaim(claims, miner, oldClaim.RawBytePower.Neg(), oldClaim.QualityAdjPower.Neg())
 	if err != nil {
-		return fmt.Errorf("failed to subtract miner power before deleting claim: %w", err)
+		return false, fmt.Errorf("failed to subtract miner power before deleting claim: %w", err)
 	}
 
 	// delete claim from state to invalidate miner
-	return claims.Delete(abi.AddrKey(miner))
+	return true, claims.Delete(abi.AddrKey(miner))
 }
 
 func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {

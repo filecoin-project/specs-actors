@@ -78,7 +78,10 @@ func (a marketMigrator) MapPendingProposals(ctx context.Context, store cbor.Ipld
 		return cid.Undef, err
 	}
 
-	newPendingProposals := adt3.MakeEmptySet(adt3.WrapStore(ctx, store), builtin3.DefaultHamtBitwidth)
+	newPendingProposals, err := adt3.MakeEmptySet(adt3.WrapStore(ctx, store), builtin3.DefaultHamtBitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
 
 	err = oldPendingProposals.ForEach(nil, func(key string) error {
 		return newPendingProposals.Put(StringKey(key))

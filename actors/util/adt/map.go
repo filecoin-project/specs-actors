@@ -8,7 +8,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
@@ -47,19 +46,25 @@ func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
 }
 
 // Creates a new map backed by an empty HAMT.
-func MakeEmptyMap(s Store, bitwidth int) *Map {
+func MakeEmptyMap(s Store, bitwidth int) (*Map, error) {
 	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
-	nd := hamt.NewNode(s, options...)
+	nd, err := hamt.NewNode(s, options...)
+	if err != nil {
+		return nil, err
+	}
 	return &Map{
 		lastCid: cid.Undef,
 		root:    nd,
 		store:   s,
-	}
+	}, nil
 }
 
 // Creates and stores a new empty map, returning its CID.
 func StoreEmptyMap(s Store, bitwidth int) (cid.Cid, error) {
-	m := MakeEmptyMap(s, bitwidth)
+	m, err := MakeEmptyMap(s, bitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
 	return m.Root()
 }
 
@@ -81,39 +86,47 @@ func (m *Map) Root() (cid.Cid, error) {
 // Put adds value `v` with key `k` to the hamt store.
 func (m *Map) Put(k abi.Keyer, v cbor.Marshaler) error {
 	if err := m.root.Set(m.store.Context(), k.Key(), v); err != nil {
-		return errors.Wrapf(err, "map put failed set in node %v with key %v value %v", m.lastCid, k.Key(), v)
+		return xerrors.Errorf("failed to set key %v value %v in node %v: %w", k.Key(), v, m.lastCid, err)
 	}
 	return nil
 }
 
-// Get puts the value at `k` into `out`.
+// Get retrieves the value at `k` into `out`, if the `k` is present and `out` is non-nil.
+// Returns whether the key was found.
 func (m *Map) Get(k abi.Keyer, out cbor.Unmarshaler) (bool, error) {
-	if err := m.root.Find(m.store.Context(), k.Key(), out); err != nil {
-		if err == hamt.ErrNotFound {
-			return false, nil
-		}
-		return false, errors.Wrapf(err, "map get failed find in node %v with key %v", m.lastCid, k.Key())
+	if found, err := m.root.Find(m.store.Context(), k.Key(), out); err != nil {
+		return false, xerrors.Errorf("failed to get key %v in node %v: %w", m.lastCid, k.Key(), err)
+	} else {
+		return found, nil
 	}
-	return true, nil
 }
 
-// Has checks for the existance of a key without deserializing its value.
+// Has checks for the existence of a key without deserializing its value.
 func (m *Map) Has(k abi.Keyer) (bool, error) {
-	if _, err := m.root.FindRaw(m.store.Context(), k.Key()); err != nil {
-		if err == hamt.ErrNotFound {
-			return false, nil
-		}
-		return false, errors.Wrapf(err, "map get failed find in node %v with key %v", m.lastCid, k.Key())
+	if found, err := m.root.Find(m.store.Context(), k.Key(), nil); err != nil {
+		return false, xerrors.Errorf("failed to check key %v in node %v: %w", m.lastCid, k.Key(), err)
+	} else {
+		return found, nil
 	}
-	return true, nil
 }
 
-// Delete removes the value at `k` from the hamt store.
-func (m *Map) Delete(k abi.Keyer) error {
-	if err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
-		return errors.Wrapf(err, "map delete failed in node %v key %v", m.root, k.Key())
+// Removes the value at `k` from the hamt store, if it exists.
+// Returns whether the key was previously present.
+func (m *Map) TryDelete(k abi.Keyer) (bool, error) {
+	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
+		return false, xerrors.Errorf("failed to delete key %v in node %v: %v", k.Key(), m.root, err)
+	} else {
+		return found, nil
 	}
+}
 
+// Removes the value at `k` from the hamt store, expecting it to exist.
+func (m *Map) Delete(k abi.Keyer) error {
+	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
+		return xerrors.Errorf("failed to delete key %v in node %v: %v", k.Key(), m.root, err)
+	} else if !found {
+		return xerrors.Errorf("no such key %v to delete in node %v", k.Key(), m.root)
+	}
 	return nil
 }
 
@@ -122,10 +135,10 @@ func (m *Map) Delete(k abi.Keyer) error {
 // Iteration halts if the function returns an error.
 // If the output parameter is nil, deserialization is skipped.
 func (m *Map) ForEach(out cbor.Unmarshaler, fn func(key string) error) error {
-	return m.root.ForEach(m.store.Context(), func(k string, val interface{}) error {
+	return m.root.ForEach(m.store.Context(), func(k string, val *cbg.Deferred) error {
 		if out != nil {
 			// Why doesn't hamt.ForEach() just return the value as bytes?
-			err := out.UnmarshalCBOR(bytes.NewReader(val.(*cbg.Deferred).Raw))
+			err := out.UnmarshalCBOR(bytes.NewReader(val.Raw))
 			if err != nil {
 				return err
 			}
@@ -141,4 +154,20 @@ func (m *Map) CollectKeys() (out []string, err error) {
 		return nil
 	})
 	return
+}
+
+// Retrieves the value for `k` into the 'out' unmarshaler (if non-nil), and removes the entry.
+// Returns a boolean indicating whether the element was previously in the map.
+func (m *Map) Pop(k abi.Keyer, out cbor.Unmarshaler) (bool, error) {
+	key := k.Key()
+	if found, err := m.root.Find(m.store.Context(), key, out); err != nil || !found {
+		return found, err
+	}
+
+	if found, err := m.root.Delete(m.store.Context(), key); err != nil {
+		return false, err
+	} else if !found {
+		return false, xerrors.Errorf("failed to find key %v to delete", k.Key())
+	}
+	return true, nil
 }

@@ -25,9 +25,12 @@ func AsSet(s Store, r cid.Cid, bitwidth int) (*Set, error) {
 
 // NewSet creates a new HAMT with root `r` and store `s`.
 // The HAMT has branching factor 2^bitwidth.
-func MakeEmptySet(s Store, bitwidth int) *Set {
-	m := MakeEmptyMap(s, bitwidth)
-	return &Set{m}
+func MakeEmptySet(s Store, bitwidth int) (*Set, error) {
+	m, err := MakeEmptyMap(s, bitwidth)
+	if err != nil {
+		return nil, err
+	}
+	return &Set{m}, nil
 }
 
 // Root return the root cid of HAMT.
@@ -45,7 +48,13 @@ func (h *Set) Has(k abi.Keyer) (bool, error) {
 	return h.m.Get(k, nil)
 }
 
-// Delete removes `k` from the set.
+// Removes `k` from the set, if present.
+// Returns whether the key was previously present.
+func (h *Set) TryDelete(k abi.Keyer) (bool, error) {
+	return h.m.TryDelete(k)
+}
+
+// Removes `k` from the set, expecting it to be present.
 func (h *Set) Delete(k abi.Keyer) error {
 	return h.m.Delete(k)
 }

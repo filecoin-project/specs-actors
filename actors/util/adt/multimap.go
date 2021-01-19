@@ -29,9 +29,21 @@ func AsMultimap(s Store, r cid.Cid, outerBitwidth, innerBitwidth int) (*Multimap
 
 // Creates a new map backed by an empty HAMT and flushes it to the store.
 // The outer map has a branching factor of 2^bitwidth.
-func MakeEmptyMultimap(s Store, outerBitwidth, innerBitwidth int) *Multimap {
-	m := MakeEmptyMap(s, outerBitwidth)
-	return &Multimap{m, innerBitwidth}
+func MakeEmptyMultimap(s Store, outerBitwidth, innerBitwidth int) (*Multimap, error) {
+	m, err := MakeEmptyMap(s, outerBitwidth)
+	if err != nil {
+		return nil, err
+	}
+	return &Multimap{m, innerBitwidth}, nil
+}
+
+// Creates and stores a new empty multimap, returning its CID.
+func StoreEmptyMultimap(store Store, outerBitwidth, innerBitwidth int) (cid.Cid, error) {
+	mmap, err := MakeEmptyMultimap(store, outerBitwidth, innerBitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
+	return mmap.Root()
 }
 
 // Returns the root cid of the underlying HAMT.
@@ -74,8 +86,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 
 // Removes all values for a key.
 func (mm *Multimap) RemoveAll(key abi.Keyer) error {
-	err := mm.mp.Delete(key)
-	if err != nil {
+	if _, err := mm.mp.TryDelete(key); err != nil {
 		return errors.Wrapf(err, "failed to delete multimap key %v root %v", key, mm.mp.root)
 	}
 	return nil

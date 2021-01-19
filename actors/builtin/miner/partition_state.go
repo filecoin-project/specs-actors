@@ -801,7 +801,7 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 	}
 
 	// Update early terminations
-	err = earlyTerminatedQ.BatchDelete(processed)
+	err = earlyTerminatedQ.BatchDelete(processed, true)
 	if err != nil {
 		return TerminationResult{}, false, xerrors.Errorf("failed to remove entries from early terminations queue: %w", err)
 	}
