@@ -537,15 +537,14 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 						builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal %d", dealID)
 					}
 
-					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
+					pdErr := msm.pendingDeals.MustDelete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal %v", dcid)
-
 					return nil
 				}
 
 				// if this is the first cron tick for the deal, it should be in the pending state.
 				if state.LastUpdatedEpoch == epochUndefined {
-					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
+					pdErr := msm.pendingDeals.MustDelete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal %v", dcid)
 				}
 
@@ -642,13 +641,13 @@ func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(cry
 func deleteDealProposalAndState(dealId abi.DealID, states *DealMetaArray, proposals *DealArray, removeProposal bool,
 	removeState bool) error {
 	if removeProposal {
-		if err := proposals.Delete(uint64(dealId)); err != nil {
-			return xerrors.Errorf("failed to delete deal proposal: %w", err)
+		if err := proposals.MustDelete(uint64(dealId)); err != nil {
+			return xerrors.Errorf("failed to delete proposal %d : %w", dealId, err)
 		}
 	}
 
 	if removeState {
-		if err := states.Delete(dealId); err != nil {
+		if err := states.MustDelete(uint64(dealId)); err != nil {
 			return xerrors.Errorf("failed to delete deal state: %w", err)
 		}
 	}

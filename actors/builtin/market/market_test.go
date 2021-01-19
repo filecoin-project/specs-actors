@@ -50,7 +50,8 @@ func TestRemoveAllError(t *testing.T) {
 	rt := builder.Build(t)
 	store := adt.AsStore(rt)
 
-	smm := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth)
+	smm, err := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth)
+	require.NoError(t, err)
 
 	if err := smm.RemoveAll(42); err != nil {
 		t.Fatalf("expected no error, got: %s", err)
@@ -94,7 +95,7 @@ func TestMarketActor(t *testing.T) {
 		emptyStatesArrayCid, err := adt.StoreEmptyArray(store, market.StatesAmtBitwidth)
 		assert.NoError(t, err)
 
-		emptyMultiMap, err := market.MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
+		emptyMultiMap, err := market.StoreEmptySetMultimap(store, builtin.DefaultHamtBitwidth)
 		assert.NoError(t, err)
 
 		var state market.State
@@ -3140,7 +3141,7 @@ func (h *marketActorTestHarness) deleteDealProposal(rt *mock.Runtime, dealId abi
 	rt.GetState(&st)
 	deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	require.NoError(h.t, err)
-	require.NoError(h.t, deals.Delete(uint64(dealId)))
+	require.NoError(h.t, deals.MustDelete(uint64(dealId)))
 	st.Proposals, err = deals.Root()
 	require.NoError(h.t, err)
 	rt.ReplaceState(&st)

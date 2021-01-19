@@ -398,7 +398,7 @@ func (st *State) DeletePrecommittedSectors(store adt.Store, sectorNos ...abi.Sec
 	}
 
 	for _, sectorNo := range sectorNos {
-		err = precommitted.Delete(SectorKey(sectorNo))
+		err = precommitted.MustDelete(SectorKey(sectorNo))
 		if err != nil {
 			return xerrors.Errorf("failed to delete precommitment for %v: %w", sectorNo, err)
 		}
@@ -453,7 +453,7 @@ func (st *State) DeleteSectors(store adt.Store, sectorNos bitfield.BitField) err
 		return err
 	}
 	err = sectorNos.ForEach(func(sectorNo uint64) error {
-		if err = sectors.Delete(sectorNo); err != nil {
+		if err = sectors.MustDelete(sectorNo); err != nil {
 			return xerrors.Errorf("failed to delete sector %v: %w", sectorNos, err)
 		}
 		return nil

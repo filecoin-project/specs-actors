@@ -270,10 +270,13 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending txns")
 
-		txn, err := getPendingTransaction(ptx, params.ID)
-		if err != nil {
-			rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for cancel: %v", err)
+		var txn Transaction
+		found, err := ptx.Pop(params.ID, &txn)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pop transaction %v for cancel", params.ID)
+		if !found {
+			rt.Abortf(exitcode.ErrNotFound, "no such transaction %v to cancel", params.ID)
 		}
+
 		proposer := txn.Approved[0]
 		if proposer != callerAddr {
 			rt.Abortf(exitcode.ErrForbidden, "Cannot cancel another signers transaction")
@@ -285,9 +288,6 @@ func (a Actor) Cancel(rt runtime.Runtime, params *TxnIDParams) *abi.EmptyValue {
 		if params.ProposalHash != nil && !bytes.Equal(params.ProposalHash, calculatedHash[:]) {
 			rt.Abortf(exitcode.ErrIllegalState, "hash does not match proposal params (ensure requester is an ID address)")
 		}
-
-		err = ptx.Delete(params.ID)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete pending transaction")
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")
@@ -501,13 +501,12 @@ func (a Actor) approveTransaction(rt runtime.Runtime, txnID TxnID, txn *Transact
 }
 
 func getTransaction(rt runtime.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
-	var txn Transaction
-
 	// get transaction from the state trie
-	var err error
-	txn, err = getPendingTransaction(ptx, txnID)
-	if err != nil {
-		rt.Abortf(exitcode.ErrNotFound, "failed to get transaction for approval: %v", err)
+	var txn Transaction
+	found, err := ptx.Get(txnID, &txn)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load transaction %v for approval", txnID)
+	if !found {
+		rt.Abortf(exitcode.ErrNotFound, "no such transaction %v for approval", txnID)
 	}
 
 	// confirm the hashes match
@@ -548,15 +547,10 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 			ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
-			// Starting at version 6 we first check if the transaction exists before
-			// deleting. This allows 1 out of n multisig swaps and removes initiated
-			// by the swapped/removed signer to go through without an illegal state error
-			txnExists, err := ptx.Has(txnID)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check existance of transaction %v for cleanup", txnID)
-			if txnExists {
-				if err := ptx.Delete(txnID); err != nil {
-					rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
-				}
+			// Allow transaction not to be found when deleting.
+			// This allows 1 out of n multisig swaps and removes initiated by the swapped/removed signer to go through cleanly.
+			if _, err := ptx.Delete(txnID); err != nil {
+				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 
 			st.PendingTxns, err = ptx.Root()

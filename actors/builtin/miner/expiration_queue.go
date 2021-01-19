@@ -331,7 +331,7 @@ func (q ExpirationQueue) RescheduleAllAsFaults(faultExpiration abi.ChainEpoch) e
 	}
 
 	// Trim the rescheduled epochs from the queue.
-	if err = q.BatchDelete(rescheduledEpochs); err != nil {
+	if err = q.BatchDelete(rescheduledEpochs, true); err != nil {
 		return err
 	}
 
@@ -558,7 +558,7 @@ func (q ExpirationQueue) PopUntil(until abi.ChainEpoch) (*ExpirationSet, error) 
 		return nil, err
 	}
 
-	if err := q.Array.BatchDelete(poppedKeys); err != nil {
+	if err := q.Array.BatchDelete(poppedKeys, true); err != nil {
 		return nil, err
 	}
 
@@ -660,7 +660,7 @@ func (q ExpirationQueue) traverseMutate(f func(epoch abi.ChainEpoch, es *Expirat
 	}); err != nil && err != errStop {
 		return err
 	}
-	if err := q.Array.BatchDelete(epochsEmptied); err != nil {
+	if err := q.Array.BatchDelete(epochsEmptied, true); err != nil {
 		return err
 	}
 	return nil
@@ -693,7 +693,7 @@ func (q ExpirationQueue) mustUpdateOrDelete(epoch abi.ChainEpoch, es *Expiration
 	if empty, err := es.IsEmpty(); err != nil {
 		return err
 	} else if empty {
-		if err = q.Array.Delete(uint64(epoch)); err != nil {
+		if err = q.Array.MustDelete(uint64(epoch)); err != nil {
 			return xerrors.Errorf("failed to delete queue epoch %d: %w", epoch, err)
 		}
 	} else if err = q.Array.Set(uint64(epoch), es); err != nil {

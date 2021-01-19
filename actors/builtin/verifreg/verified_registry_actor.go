@@ -116,8 +116,9 @@ func (a Actor) RemoveVerifier(rt runtime.Runtime, verifierAddr *addr.Address) *a
 		verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
-		err = verifiers.Delete(abi.AddrKey(verifier))
+		found, err := verifiers.Delete(abi.AddrKey(verifier))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to remove verifier")
+		builtin.RequireParam(rt, found, "no such verifier %v", verifierAddr)
 
 		st.Verifiers, err = verifiers.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verifiers")
@@ -247,7 +248,7 @@ func (a Actor) UseBytes(rt runtime.Runtime, params *UseBytesParams) *abi.EmptyVa
 			//
 			// NOTE: Technically, client could lose up to MinVerifiedDealSize worth of DataCap.
 			// See: https://github.com/filecoin-project/specs-actors/issues/727
-			err = verifiedClients.Delete(abi.AddrKey(client))
+			err = verifiedClients.MustDelete(abi.AddrKey(client))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", client)
 		} else {
 			err = verifiedClients.Put(abi.AddrKey(client), &newVcCap)

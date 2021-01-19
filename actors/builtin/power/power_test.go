@@ -1212,7 +1212,7 @@ func (h *spActorHarness) deleteClaim(rt *mock.Runtime, a addr.Address) {
 	st := getState(rt)
 	claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
 	require.NoError(h.t, err)
-	err = claims.Delete(abi.AddrKey(a))
+	err = claims.MustDelete(abi.AddrKey(a))
 	require.NoError(h.t, err)
 	st.Claims, err = claims.Root()
 	require.NoError(h.t, err)

@@ -78,7 +78,7 @@ func ConstructState(store adt.Store) (*State, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyDealOpsHamtCid, err := MakeEmptySetMultimap(store, builtin.DefaultHamtBitwidth).Root()
+	emptyDealOpsHamtCid, err := StoreEmptySetMultimap(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multiset: %w", err)
 	}

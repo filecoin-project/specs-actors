@@ -194,7 +194,7 @@ func TestRemoveVerifier(t *testing.T) {
 		rt.ExpectValidateCallerAddr(ac.rootkey)
 		rt.SetCaller(ac.rootkey, builtin.VerifiedRegistryActorCodeID)
 		v := tutil.NewIDAddr(t, 501)
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			rt.Call(ac.RemoveVerifier, &v)
 		})
 		ac.checkState(rt)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/filecoin-project/go-address"
-	hamt "github.com/filecoin-project/go-hamt-ipld/v2"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -72,7 +71,10 @@ type Invocation struct {
 
 // NewVM creates a new runtime for executing messages.
 func NewVM(ctx context.Context, actorImpls ActorImplLookup, store adt.Store) *VM {
-	actors := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+	actors, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		panic(err)
+	}
 	actorRoot, err := actors.Root()
 	if err != nil {
 		panic(err)
@@ -235,11 +237,8 @@ func (vm *VM) SetActorState(ctx context.Context, key address.Address, state cbor
 // This behaviour is based on a principle that some store implementations might not be able to determine
 // whether something exists before deleting it.
 func (vm *VM) deleteActor(_ context.Context, key address.Address) error {
-	err := vm.actors.Delete(abi.AddrKey(key))
-	vm.actorsDirty = true
-	if err == hamt.ErrNotFound {
-		return nil
-	}
+	found, err := vm.actors.Delete(abi.AddrKey(key))
+	vm.actorsDirty = found
 	return err
 }
 
