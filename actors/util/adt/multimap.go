@@ -37,6 +37,15 @@ func MakeEmptyMultimap(s Store, outerBitwidth, innerBitwidth int) (*Multimap, er
 	return &Multimap{m, innerBitwidth}, nil
 }
 
+// Creates and stores a new empty multimap, returning its CID.
+func StoreEmptyMultimap(store Store, outerBitwidth, innerBitwidth int) (cid.Cid, error) {
+	mmap, err := MakeEmptyMultimap(store, outerBitwidth, innerBitwidth)
+	if err != nil {
+		return cid.Undef, err
+	}
+	return mmap.Root()
+}
+
 // Returns the root cid of the underlying HAMT.
 func (mm *Multimap) Root() (cid.Cid, error) {
 	return mm.mp.Root()

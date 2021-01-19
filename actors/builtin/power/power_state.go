@@ -89,13 +89,9 @@ func ConstructState(store adt.Store) (*State, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty map: %w", err)
 	}
-	emptyCronQueueMMap, err := adt.MakeEmptyMultimap(store, CronQueueHamtBitwidth, CronQueueAmtBitwidth)
+	emptyCronQueueMMapCid, err := adt.StoreEmptyMultimap(store, CronQueueHamtBitwidth, CronQueueAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create empty multimap: %w", err)
-	}
-	emptyCronQueueMMapCid, err := emptyCronQueueMMap.Root()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to get empty multimap CID: %w", err)
 	}
 
 	return &State{

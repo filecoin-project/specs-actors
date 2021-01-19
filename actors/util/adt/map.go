@@ -8,7 +8,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
@@ -87,7 +86,7 @@ func (m *Map) Root() (cid.Cid, error) {
 // Put adds value `v` with key `k` to the hamt store.
 func (m *Map) Put(k abi.Keyer, v cbor.Marshaler) error {
 	if err := m.root.Set(m.store.Context(), k.Key(), v); err != nil {
-		return errors.Wrapf(err, "map put failed set in node %v with key %v value %v", m.lastCid, k.Key(), v)
+		return xerrors.Errorf("failed to set key %v value %v in node %v: %w", k.Key(), v, m.lastCid, err)
 	}
 	return nil
 }
@@ -96,7 +95,7 @@ func (m *Map) Put(k abi.Keyer, v cbor.Marshaler) error {
 // Returns whether the key was found.
 func (m *Map) Get(k abi.Keyer, out cbor.Unmarshaler) (bool, error) {
 	if found, err := m.root.Find(m.store.Context(), k.Key(), out); err != nil {
-		return false, errors.Wrapf(err, "map get failed find in node %v with key %v", m.lastCid, k.Key())
+		return false, xerrors.Errorf("failed to get key %v in node %v: %w", m.lastCid, k.Key(), err)
 	} else {
 		return found, nil
 	}
@@ -105,7 +104,7 @@ func (m *Map) Get(k abi.Keyer, out cbor.Unmarshaler) (bool, error) {
 // Has checks for the existence of a key without deserializing its value.
 func (m *Map) Has(k abi.Keyer) (bool, error) {
 	if found, err := m.root.Find(m.store.Context(), k.Key(), nil); err != nil {
-		return false, errors.Wrapf(err, "map get failed find in node %v with key %v", m.lastCid, k.Key())
+		return false, xerrors.Errorf("failed to check key %v in node %v: %w", m.lastCid, k.Key(), err)
 	} else {
 		return found, nil
 	}
@@ -115,8 +114,8 @@ func (m *Map) Has(k abi.Keyer) (bool, error) {
 // Returns whether the key was previously present.
 func (m *Map) TryDelete(k abi.Keyer) (bool, error) {
 	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
-		return false, errors.Wrapf(err, "map delete failed in node %v key %v", m.root, k.Key())
-	}  else {
+		return false, xerrors.Errorf("failed to delete key %v in node %v: %v", k.Key(), m.root, err)
+	} else {
 		return found, nil
 	}
 }
@@ -124,9 +123,9 @@ func (m *Map) TryDelete(k abi.Keyer) (bool, error) {
 // Removes the value at `k` from the hamt store, expecting it to exist.
 func (m *Map) Delete(k abi.Keyer) error {
 	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
-		return xerrors.Errorf("map delete failed in node %v key %v: %w", m.root, k.Key(), err)
-	}  else if !found {
-		return xerrors.Errorf("no such key %v to delete", k.Key())
+		return xerrors.Errorf("failed to delete key %v in node %v: %v", k.Key(), m.root, err)
+	} else if !found {
+		return xerrors.Errorf("no such key %v to delete in node %v", k.Key(), m.root)
 	}
 	return nil
 }

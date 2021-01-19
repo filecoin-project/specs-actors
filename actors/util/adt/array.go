@@ -7,7 +7,6 @@ import (
 
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
@@ -65,14 +64,14 @@ func (a *Array) Root() (cid.Cid, error) {
 // If the array isn't continuous use Set and a separate counter
 func (a *Array) AppendContinuous(value cbor.Marshaler) error {
 	if err := a.root.Set(a.store.Context(), a.root.Len(), value); err != nil {
-		return errors.Wrapf(err, "array append failed to set index %v value %v in root %v, ", a.root.Len(), value, a.root)
+		return xerrors.Errorf("append failed to set index %v value %v in root %v: %w", a.root.Len(), value, a.root, err)
 	}
 	return nil
 }
 
 func (a *Array) Set(i uint64, value cbor.Marshaler) error {
 	if err := a.root.Set(a.store.Context(), i, value); err != nil {
-		return xerrors.Errorf("array set failed to set index %v in root %v: %w", i, a.root, err)
+		return xerrors.Errorf("failed to set index %v value %v in root %v: %w", i, value, a.root, err)
 	}
 	return nil
 }
@@ -129,7 +128,7 @@ func (a *Array) Length() uint64 {
 //  indicating whether the element was found in the array
 func (a *Array) Get(k uint64, out cbor.Unmarshaler) (bool, error) {
 	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
-		return false, err
+		return false, xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
 	} else {
 		return found, nil
 	}
@@ -138,14 +137,16 @@ func (a *Array) Get(k uint64, out cbor.Unmarshaler) (bool, error) {
 // Retrieves an array value into the 'out' unmarshaler (if non-nil), and removes the entry.
 // Returns a boolean indicating whether the element was previously in the array.
 func (a *Array) Pop(k uint64, out cbor.Unmarshaler) (bool, error) {
-	if found, err := a.root.Get(a.store.Context(), k, out); err != nil || !found {
-		return found, err
+	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
+		return false, xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
+	} else if !found {
+		return false, nil
 	}
 
 	if found, err := a.root.Delete(a.store.Context(), k); err != nil {
-		return false, err
+		return false, xerrors.Errorf("failed to delete index %v in root %v: %w", k, a.root, err)
 	} else if !found {
-		return false, xerrors.Errorf("failed to find index %v to delete", k)
+		return false, xerrors.Errorf("can't find index %v to delete in root %v", k, a.root)
 	}
 	return true, nil
 }
