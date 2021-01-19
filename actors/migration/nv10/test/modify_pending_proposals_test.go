@@ -27,7 +27,7 @@ import (
 	exported3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
 	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv9"
+	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv10"
 	states3 "github.com/filecoin-project/specs-actors/v3/actors/states"
 	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
 	vm3 "github.com/filecoin-project/specs-actors/v3/support/vm"
@@ -74,7 +74,7 @@ func TestUpdatePendingDealsMigration(t *testing.T) {
 	}
 
 	// run migration
-	nextRoot, err := nv9.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv9.Config{MaxWorkers: 1}, log, nv9.NewMemMigrationCache())
+	nextRoot, err := nv10.MigrateStateTree(ctx, v.Store(), v.StateRoot(), v.GetEpoch(), nv10.Config{MaxWorkers: 1}, log, nv10.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]rt.VMActor{}
