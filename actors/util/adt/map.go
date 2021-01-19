@@ -111,9 +111,9 @@ func (m *Map) Has(k abi.Keyer) (bool, error) {
 	}
 }
 
-// Delete removes the value at `k` from the hamt store, if it exists.
+// Removes the value at `k` from the hamt store, if it exists.
 // Returns whether the key was previously present.
-func (m *Map) Delete(k abi.Keyer) (bool, error) {
+func (m *Map) TryDelete(k abi.Keyer) (bool, error) {
 	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
 		return false, errors.Wrapf(err, "map delete failed in node %v key %v", m.root, k.Key())
 	}  else {
@@ -122,7 +122,7 @@ func (m *Map) Delete(k abi.Keyer) (bool, error) {
 }
 
 // Removes the value at `k` from the hamt store, expecting it to exist.
-func (m *Map) MustDelete(k abi.Keyer) error {
+func (m *Map) Delete(k abi.Keyer) error {
 	if found, err := m.root.Delete(m.store.Context(), k.Key()); err != nil {
 		return xerrors.Errorf("map delete failed in node %v key %v: %w", m.root, k.Key(), err)
 	}  else if !found {

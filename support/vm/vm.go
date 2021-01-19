@@ -237,7 +237,7 @@ func (vm *VM) SetActorState(ctx context.Context, key address.Address, state cbor
 // This behaviour is based on a principle that some store implementations might not be able to determine
 // whether something exists before deleting it.
 func (vm *VM) deleteActor(_ context.Context, key address.Address) error {
-	found, err := vm.actors.Delete(abi.AddrKey(key))
+	found, err := vm.actors.TryDelete(abi.AddrKey(key))
 	vm.actorsDirty = found
 	return err
 }

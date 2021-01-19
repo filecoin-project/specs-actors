@@ -693,7 +693,7 @@ func (q ExpirationQueue) mustUpdateOrDelete(epoch abi.ChainEpoch, es *Expiration
 	if empty, err := es.IsEmpty(); err != nil {
 		return err
 	} else if empty {
-		if err = q.Array.MustDelete(uint64(epoch)); err != nil {
+		if err = q.Array.Delete(uint64(epoch)); err != nil {
 			return xerrors.Errorf("failed to delete queue epoch %d: %w", epoch, err)
 		}
 	} else if err = q.Array.Set(uint64(epoch), es); err != nil {

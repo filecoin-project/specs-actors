@@ -3,7 +3,6 @@ package adt
 import (
 	"github.com/filecoin-project/go-state-types/abi"
 	cid "github.com/ipfs/go-cid"
-	"golang.org/x/xerrors"
 )
 
 // Set interprets a Map as a set, storing keys (with empty values) in a HAMT.
@@ -49,20 +48,15 @@ func (h *Set) Has(k abi.Keyer) (bool, error) {
 	return h.m.Get(k, nil)
 }
 
-// Delete removes `k` from the set, if present.
+// Removes `k` from the set, if present.
 // Returns whether the key was previously present.
-func (h *Set) Delete(k abi.Keyer) (bool, error) {
-	return h.m.Delete(k)
+func (h *Set) TryDelete(k abi.Keyer) (bool, error) {
+	return h.m.TryDelete(k)
 }
 
 // Removes `k` from the set, expecting it to be present.
-func (h *Set) MustDelete(k abi.Keyer) error {
-	if found, err := h.m.Delete(k); err != nil {
-		return err
-	} else if !found {
-		return xerrors.Errorf("no key %v to delete", k.Key())
-	}
-	return nil
+func (h *Set) Delete(k abi.Keyer) error {
+	return h.m.Delete(k)
 }
 
 // ForEach iterates over all values in the set, calling the callback for each value.

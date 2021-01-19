@@ -266,7 +266,7 @@ func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) (bool, error) 
 	}
 
 	// delete claim from state to invalidate miner
-	return true, claims.MustDelete(abi.AddrKey(miner))
+	return true, claims.Delete(abi.AddrKey(miner))
 }
 
 func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {

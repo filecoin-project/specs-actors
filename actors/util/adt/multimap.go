@@ -77,7 +77,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 
 // Removes all values for a key.
 func (mm *Multimap) RemoveAll(key abi.Keyer) error {
-	if _, err := mm.mp.Delete(key); err != nil {
+	if _, err := mm.mp.TryDelete(key); err != nil {
 		return errors.Wrapf(err, "failed to delete multimap key %v root %v", key, mm.mp.root)
 	}
 	return nil

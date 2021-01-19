@@ -38,8 +38,8 @@ func (t *DealArray) Set(k abi.DealID, value *DealProposal) error {
 	return t.Array.Set(uint64(k), value)
 }
 
-func (t *DealArray) Delete(key uint64) (bool, error) {
-	return t.Array.Delete(key)
+func (t *DealArray) Delete(id abi.DealID) error {
+	return t.Array.Delete(uint64(id))
 }
 
 // A specialization of a array to deals.
@@ -90,6 +90,6 @@ func (t *DealMetaArray) Set(k abi.DealID, value *DealState) error {
 	return t.Array.Set(uint64(k), value)
 }
 
-func (t *DealMetaArray) Delete(id abi.DealID) (bool, error) {
+func (t *DealMetaArray) Delete(id abi.DealID) error {
 	return t.Array.Delete(uint64(id))
 }

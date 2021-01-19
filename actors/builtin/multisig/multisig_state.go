@@ -106,7 +106,7 @@ func (st *State) PurgeApprovals(store adt.Store, addr address.Address) error {
 				return xerrors.Errorf("failed to update transaction approvers: %w", err)
 			}
 		} else {
-			if err := txns.MustDelete(StringKey(txid)); err != nil {
+			if err := txns.Delete(StringKey(txid)); err != nil {
 				return xerrors.Errorf("failed to delete transaction with no approvers: %w", err)
 			}
 		}

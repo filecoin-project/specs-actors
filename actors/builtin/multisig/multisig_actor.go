@@ -549,7 +549,7 @@ func executeTransactionIfApproved(rt runtime.Runtime, st State, txnID TxnID, txn
 
 			// Allow transaction not to be found when deleting.
 			// This allows 1 out of n multisig swaps and removes initiated by the swapped/removed signer to go through cleanly.
-			if _, err := ptx.Delete(txnID); err != nil {
+			if _, err := ptx.TryDelete(txnID); err != nil {
 				rt.Abortf(exitcode.ErrIllegalState, "failed to delete transaction for cleanup: %v", err)
 			}
 

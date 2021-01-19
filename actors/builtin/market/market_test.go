@@ -3141,7 +3141,7 @@ func (h *marketActorTestHarness) deleteDealProposal(rt *mock.Runtime, dealId abi
 	rt.GetState(&st)
 	deals, err := market.AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	require.NoError(h.t, err)
-	require.NoError(h.t, deals.MustDelete(uint64(dealId)))
+	require.NoError(h.t, deals.Delete(dealId))
 	st.Proposals, err = deals.Root()
 	require.NoError(h.t, err)
 	rt.ReplaceState(&st)

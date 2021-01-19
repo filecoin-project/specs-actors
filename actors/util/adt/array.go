@@ -79,7 +79,7 @@ func (a *Array) Set(i uint64, value cbor.Marshaler) error {
 
 // Removes the value at index `i` from the AMT, if it exists.
 // Returns whether the index was previously present.
-func (a *Array) Delete(i uint64) (bool, error) {
+func (a *Array) TryDelete(i uint64) (bool, error) {
 	if found, err := a.root.Delete(a.store.Context(), i); err != nil {
 		return false, xerrors.Errorf("array delete failed to delete index %v in root %v: %w", i, a.root, err)
 	} else {
@@ -88,7 +88,7 @@ func (a *Array) Delete(i uint64) (bool, error) {
 }
 
 // Removes the value at index `i` from the AMT, expecting it to exist.
-func (a *Array) MustDelete(i uint64) error {
+func (a *Array) Delete(i uint64) error {
 	if found, err := a.root.Delete(a.store.Context(), i); err != nil {
 		return xerrors.Errorf("failed to delete index %v in root %v: %w", i, a.root, err)
 	} else if !found {

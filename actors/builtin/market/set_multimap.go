@@ -120,7 +120,7 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 
 // Removes all values for a key.
 func (mm *SetMultimap) RemoveAll(key abi.ChainEpoch) error {
-	if _, err := mm.mp.Delete(abi.UIntKey(uint64(key))); err != nil {
+	if _, err := mm.mp.TryDelete(abi.UIntKey(uint64(key))); err != nil {
 		return xerrors.Errorf("failed to delete set key %v: %w", key, err)
 	}
 	return nil
