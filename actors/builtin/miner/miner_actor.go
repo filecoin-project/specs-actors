@@ -739,15 +739,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 		err = st.AllocateSectorNumber(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 
-		// The following two checks shouldn't be necessary, but it can't
-		// hurt to double-check (unless it's really just too
-		// expensive?).
-		_, preCommitFound, err := st.GetPrecommittedSector(store, params.SectorNumber)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check pre-commit %v", params.SectorNumber)
-		if preCommitFound {
-			rt.Abortf(exitcode.ErrIllegalState, "sector %v already pre-committed", params.SectorNumber)
-		}
-
+		// This sector check is redundant given the allocated sectors bitfield, but remains for safety.
 		sectorFound, err := st.HasSectorNo(store, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check sector %v", params.SectorNumber)
 		if sectorFound {

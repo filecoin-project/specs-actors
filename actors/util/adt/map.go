@@ -110,6 +110,15 @@ func (m *Map) Has(k abi.Keyer) (bool, error) {
 	}
 }
 
+// Sets key key `k` to value `v` iff the key is not already present.
+func (m *Map) PutIfAbsent(k abi.Keyer, v cbor.Marshaler) (bool, error) {
+	if modified, err := m.root.SetIfAbsent(m.store.Context(), k.Key(), v); err != nil {
+		return false, xerrors.Errorf("failed to set key %v value %v in node %v: %w", k.Key(), v, m.lastCid, err)
+	} else {
+		return modified, nil
+	}
+}
+
 // Removes the value at `k` from the hamt store, if it exists.
 // Returns whether the key was previously present.
 func (m *Map) TryDelete(k abi.Keyer) (bool, error) {

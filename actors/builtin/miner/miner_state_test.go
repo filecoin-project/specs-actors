@@ -24,31 +24,35 @@ import (
 func TestPrecommittedSectorsStore(t *testing.T) {
 	t.Run("Put, get and delete", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		pc1 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		pc1 := newSectorPreCommitOnChainInfo(1, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(pc1)
-		assert.Equal(t, pc1, harness.getPreCommit(sectorNo))
+		assert.Equal(t, pc1, harness.getPreCommit(1))
 
-		pc2 := newSectorPreCommitOnChainInfo(sectorNo, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		pc2 := newSectorPreCommitOnChainInfo(2, tutils.MakeCID("2", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
 		harness.putPreCommit(pc2)
-		assert.Equal(t, pc2, harness.getPreCommit(sectorNo))
+		assert.Equal(t, pc2, harness.getPreCommit(2))
 
-		harness.deletePreCommit(sectorNo)
-		assert.False(t, harness.hasPreCommit(sectorNo))
+		harness.deletePreCommit(1)
+		assert.False(t, harness.hasPreCommit(1))
 	})
 
 	t.Run("Delete nonexistent value returns an error", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-		err := harness.s.DeletePrecommittedSectors(harness.store, sectorNo)
+		err := harness.s.DeletePrecommittedSectors(harness.store, 1)
 		assert.Error(t, err)
 	})
 
 	t.Run("Get nonexistent value returns false", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-		assert.False(t, harness.hasPreCommit(sectorNo))
+		assert.False(t, harness.hasPreCommit(1))
+	})
+
+	t.Run("Duplicate put rejected", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		pc1 := newSectorPreCommitOnChainInfo(1, tutils.MakeCID("1", &miner.SealedCIDPrefix), abi.NewTokenAmount(1), abi.ChainEpoch(1))
+		harness.putPreCommit(pc1)
+		err := harness.s.PutPrecommittedSector(harness.store, pc1)
+		assert.Error(t, err)
 	})
 }
 
