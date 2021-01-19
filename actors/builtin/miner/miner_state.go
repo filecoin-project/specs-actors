@@ -337,15 +337,17 @@ func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField)
 	return nil
 }
 
+// Stores a pre-committed sector info, failing if the sector number is already present.
 func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return err
 	}
 
-	err = precommitted.Put(SectorKey(info.Info.SectorNumber), info)
-	if err != nil {
-		return errors.Wrapf(err, "failed to store precommitment for %v", info)
+	if modified, err := precommitted.PutIfAbsent(SectorKey(info.Info.SectorNumber), info); err != nil {
+		return errors.Wrapf(err, "failed to store pre-commitment for %v", info)
+	} else if !modified {
+		return xerrors.Errorf("sector %v already pre-committed", info.Info.SectorNumber)
 	}
 	st.PreCommittedSectors, err = precommitted.Root()
 	return err
