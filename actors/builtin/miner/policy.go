@@ -117,34 +117,15 @@ var SealedCIDPrefix = cid.Prefix{
 	MhLength: 32,
 }
 
-// List of proof types which may be used when creating a new miner actor or pre-committing a new sector.
-// This is mutable to allow configuration of testing and development networks.
-var PreCommitSealProofTypesV0 = map[abi.RegisteredSealProof]struct{}{
-	abi.RegisteredSealProof_StackedDrg32GiBV1: {},
-	abi.RegisteredSealProof_StackedDrg64GiBV1: {},
-}
-var PreCommitSealProofTypesV7 = map[abi.RegisteredSealProof]struct{}{
-	abi.RegisteredSealProof_StackedDrg32GiBV1:   {},
-	abi.RegisteredSealProof_StackedDrg64GiBV1:   {},
-	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
-	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
-}
-
 // From network version 8, sectors sealed with the V1 seal proof types cannot be committed.
-var PreCommitSealProofTypesV8 = map[abi.RegisteredSealProof]struct{}{
+var PreCommitSealProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
 	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
 }
 
 // Checks whether a seal proof type is supported for new miners and sectors.
 func CanPreCommitSealProof(s abi.RegisteredSealProof, nv network.Version) bool {
-	_, ok := PreCommitSealProofTypesV0[s]
-	if nv >= network.Version7 {
-		_, ok = PreCommitSealProofTypesV7[s]
-	}
-	if nv >= network.Version8 {
-		_, ok = PreCommitSealProofTypesV8[s]
-	}
+	_, ok := PreCommitSealProofTypes[s]
 	return ok
 }
 

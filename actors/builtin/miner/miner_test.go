@@ -57,7 +57,7 @@ func init() {
 	}
 
 	// permit 2KiB sectors in tests
-	miner.PreCommitSealProofTypesV8[abi.RegisteredSealProof_StackedDrg2KiBV1_1] = struct{}{}
+	miner.PreCommitSealProofTypes[abi.RegisteredSealProof_StackedDrg2KiBV1_1] = struct{}{}
 }
 
 func TestExports(t *testing.T) {
@@ -2441,7 +2441,7 @@ func TestWindowPost(t *testing.T) {
 		rt.SetEpoch(periodStart)
 
 		// fill one partition in each mutable deadline.
-		numSectors := int(actor.partitionSize*(miner.WPoStPeriodDeadlines-2))
+		numSectors := int(actor.partitionSize * (miner.WPoStPeriodDeadlines - 2))
 
 		// creates a partition in every deadline except 0 and 47
 		sectors := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, nil)
