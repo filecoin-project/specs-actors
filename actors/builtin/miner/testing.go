@@ -201,6 +201,18 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 	})
 	acc.RequireNoError(err, "error iterating partitions")
 
+	// Check invariants on partitions proven.
+	{
+		if lastProof, err := deadline.PartitionsPoSted.Last(); err != nil {
+			if err != bitfield.ErrNoBitsSet {
+				acc.Addf("error determining the last partition proven: %v", err)
+			}
+		} else {
+			acc.Require(partitionCount >= (lastProof+1), "expected at least %d partitions, found %d", lastProof+1, partitionCount)
+			acc.Require(deadline.LiveSectors > 0, "expected at least one live sector when partitions have been proven")
+		}
+	}
+
 	// Check partitions snapshot to make sure we take the snapshot after
 	// dealing with recovering power and unproven power.
 	partitionsSnapshot, err := deadline.PartitionsSnapshotArray(store)
