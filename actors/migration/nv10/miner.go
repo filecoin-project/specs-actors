@@ -3,11 +3,13 @@ package nv10
 import (
 	"context"
 
-	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
-	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
+	"github.com/filecoin-project/go-bitfield"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"golang.org/x/xerrors"
+
+	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
+	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 
 	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
@@ -155,6 +157,18 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 			outDeadline.LiveSectors = inDeadline.LiveSectors
 			outDeadline.TotalSectors = inDeadline.TotalSectors
 			outDeadline.FaultyPower = miner3.PowerPair(inDeadline.FaultyPower)
+
+			// If there are no live sectors in this partition, zero out the "partitions
+			// posted" bitfield. This corrects a state issue where:
+			// 1. A proof is submitted and a partition is marked as proven.
+			// 2. All sectors in a deadline are terminated during the challenge window.
+			// 3. The end of deadline logic is skipped because there are no live sectors.
+			// This bug has been fixed in actors v3 (no terminations allowed during the
+			// challenge window) but the state still needs to be fixed.
+			// See: https://github.com/filecoin-project/specs-actors/issues/1348
+			if outDeadline.LiveSectors == 0 {
+				outDeadline.PartitionsPoSted = bitfield.New()
+			}
 
 			return store.Put(ctx, &outDeadline)
 		})
