@@ -1295,6 +1295,39 @@ func (dl *Deadline) LoadPartitionsForDispute(store adt.Store, partitions bitfiel
 	}, nil
 }
 
+// IsLive returns true if the deadline has any live sectors or any other state that should be
+// updated at the end of the challenge window.
+func (d *Deadline) IsLive() (bool, error) {
+	// If we have live sectors, we're definitely live.
+	if d.LiveSectors > 0 {
+		return true, nil
+	}
+
+	if hasNoProofs, err := d.PartitionsPoSted.IsEmpty(); err != nil {
+		return true, xerrors.Errorf("invalid partitions posted bitfield: %w", err)
+	} else if !hasNoProofs {
+		// _This_ case should be impossible, but there's no good way to log from here. We
+		// might as well just process the deadline end and move on.
+		return true, nil
+	}
+
+	// If the partitions have changed, we may have work to do. We should at least update the
+	// partitions snapshot one last time.
+	if d.Partitions != d.PartitionsSnapshot {
+		return true, nil
+	}
+
+	// If we don't have any proofs, and the proofs snapshot isn't the same as the current proofs
+	// snapshot (which should be empty), we should update the deadline one last time to empty
+	// the proofs snapshot.
+	if d.OptimisticPoStSubmissions != d.OptimisticPoStSubmissionsSnapshot {
+		return true, nil
+	}
+
+	// Otherwise, the deadline is definitely dead.
+	return false, nil
+}
+
 func (d *Deadline) ValidateState() error {
 	if d.LiveSectors > d.TotalSectors {
 		return xerrors.Errorf("Deadline left with more live sectors than total: %v", d)

@@ -1131,9 +1131,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	previouslyFaultyPower := deadline.FaultyPower
 
 	// No live sectors in this deadline, nothing to do.
-	if deadline.LiveSectors == 0 {
-		// We should do some more checks here. See:
-		// Fix: https://github.com/filecoin-project/specs-actors/issues/1348
+	if live, err := deadline.IsLive(); err != nil {
+		return nil, xerrors.Errorf("failed to determine if miner is live: %w", err)
+	} else if !live {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,
