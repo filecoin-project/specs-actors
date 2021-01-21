@@ -105,7 +105,7 @@ type MinerInfo struct {
 	// The proof type used for Window PoSt for this miner.
 	// A miner may commit sectors with different seal proof types (but compatible sector size and
 	// corresponding PoSt proof types).
-	WindowPoStProofType  abi.RegisteredPoStProof
+	WindowPoStProofType abi.RegisteredPoStProof
 
 	// Amount of space in each sector committed by this miner.
 	// This is computed from the proof type and represented here redundantly.

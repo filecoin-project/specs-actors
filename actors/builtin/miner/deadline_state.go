@@ -209,7 +209,6 @@ func (d *Deadline) PartitionsSnapshotArray(store adt.Store) (*adt.Array, error) 
 	return arr, nil
 }
 
-
 func (d *Deadline) OptimisticProofsSnapshotArray(store adt.Store) (*adt.Array, error) {
 	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissionsSnapshot, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {

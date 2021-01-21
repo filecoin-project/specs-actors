@@ -17,11 +17,11 @@ type DealSummary struct {
 }
 
 type StateSummary struct {
-	LivePower            PowerPair
-	ActivePower          PowerPair
-	FaultyPower          PowerPair
-	Deals                map[abi.DealID]DealSummary
-	WindowPoStProofType  abi.RegisteredPoStProof
+	LivePower           PowerPair
+	ActivePower         PowerPair
+	FaultyPower         PowerPair
+	Deals               map[abi.DealID]DealSummary
+	WindowPoStProofType abi.RegisteredPoStProof
 }
 
 // Checks internal invariants of init state.

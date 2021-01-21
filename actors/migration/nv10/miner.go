@@ -147,14 +147,14 @@ func (m *minerMigrator) migrateDeadlines(ctx context.Context, store cbor.IpldSto
 				return cid.Undef, xerrors.Errorf("bitfield queue: %w", err)
 			}
 
-		outDeadline := *deadlineTemplate
-		outDeadline.Partitions = partitions
-		outDeadline.ExpirationsEpochs = expirationEpochs
-		outDeadline.PartitionsPoSted = inDeadline.PostSubmissions
-		outDeadline.EarlyTerminations = inDeadline.EarlyTerminations
-		outDeadline.LiveSectors = inDeadline.LiveSectors
-		outDeadline.TotalSectors = inDeadline.TotalSectors
-		outDeadline.FaultyPower = miner3.PowerPair(inDeadline.FaultyPower)
+			outDeadline := *deadlineTemplate
+			outDeadline.Partitions = partitions
+			outDeadline.ExpirationsEpochs = expirationEpochs
+			outDeadline.PartitionsPoSted = inDeadline.PostSubmissions
+			outDeadline.EarlyTerminations = inDeadline.EarlyTerminations
+			outDeadline.LiveSectors = inDeadline.LiveSectors
+			outDeadline.TotalSectors = inDeadline.TotalSectors
+			outDeadline.FaultyPower = miner3.PowerPair(inDeadline.FaultyPower)
 
 			return store.Put(ctx, &outDeadline)
 		})
