@@ -105,7 +105,7 @@ type MinerInfo struct {
 	// The proof type used for Window PoSt for this miner.
 	// A miner may commit sectors with different seal proof types (but compatible sector size and
 	// corresponding PoSt proof types).
-	WindowPoStProofType  abi.RegisteredPoStProof
+	WindowPoStProofType abi.RegisteredPoStProof
 
 	// Amount of space in each sector committed by this miner.
 	// This is computed from the proof type and represented here redundantly.
@@ -1131,9 +1131,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	previouslyFaultyPower := deadline.FaultyPower
 
 	// No live sectors in this deadline, nothing to do.
-	if deadline.LiveSectors == 0 {
-		// We should do some more checks here. See:
-		// Fix: https://github.com/filecoin-project/specs-actors/issues/1348
+	if live, err := deadline.IsLive(); err != nil {
+		return nil, xerrors.Errorf("failed to determine if miner is live: %w", err)
+	} else if !live {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
 			powerDelta,

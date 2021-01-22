@@ -17,11 +17,11 @@ type DealSummary struct {
 }
 
 type StateSummary struct {
-	LivePower            PowerPair
-	ActivePower          PowerPair
-	FaultyPower          PowerPair
-	Deals                map[abi.DealID]DealSummary
-	WindowPoStProofType  abi.RegisteredPoStProof
+	LivePower           PowerPair
+	ActivePower         PowerPair
+	FaultyPower         PowerPair
+	Deals               map[abi.DealID]DealSummary
+	WindowPoStProofType abi.RegisteredPoStProof
 }
 
 // Checks internal invariants of init state.
@@ -200,6 +200,18 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant Qua
 		return nil
 	})
 	acc.RequireNoError(err, "error iterating partitions")
+
+	// Check invariants on partitions proven.
+	{
+		if lastProof, err := deadline.PartitionsPoSted.Last(); err != nil {
+			if err != bitfield.ErrNoBitsSet {
+				acc.Addf("error determining the last partition proven: %v", err)
+			}
+		} else {
+			acc.Require(partitionCount >= (lastProof+1), "expected at least %d partitions, found %d", lastProof+1, partitionCount)
+			acc.Require(deadline.LiveSectors > 0, "expected at least one live sector when partitions have been proven")
+		}
+	}
 
 	// Check partitions snapshot to make sure we take the snapshot after
 	// dealing with recovering power and unproven power.
