@@ -44,25 +44,23 @@ type Logger interface {
 	Log(level rt.LogLevel, msg string, args ...interface{})
 }
 
-type MigrationCacheKey string
-
-func ActorHeadKey(addr address.Address, head cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey(addr.String() + "-h-" + head.String())
+func ActorHeadKey(addr address.Address, head cid.Cid) string {
+	return addr.String() + "-h-" + head.String()
 }
 
-func DeadlineKey(dlCid cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey("d-" + dlCid.String())
+func DeadlineKey(dlCid cid.Cid) string {
+	return "d-" + dlCid.String()
 }
 
-func SectorsRootKey(sCid cid.Cid) MigrationCacheKey {
-	return MigrationCacheKey("s-" + sCid.String())
+func SectorsRootKey(sCid cid.Cid) string {
+	return "s-" + sCid.String()
 }
 
 // MigrationCache stores and loads cached data. Its implementation must be threadsafe
 type MigrationCache interface {
-	Write(key MigrationCacheKey, newCid cid.Cid) error
-	Read(key MigrationCacheKey) (bool, cid.Cid, error)
-	Load(key MigrationCacheKey, loadFunc func() (cid.Cid, error)) (cid.Cid, error)
+	Write(key string, newCid cid.Cid) error
+	Read(key string) (bool, cid.Cid, error)
+	Load(key string, loadFunc func() (cid.Cid, error)) (cid.Cid, error)
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
