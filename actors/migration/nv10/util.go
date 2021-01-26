@@ -139,12 +139,12 @@ func NewMemMigrationCache() MemMigrationCache {
 	}
 }
 
-func (m MemMigrationCache) Write(key MigrationCacheKey, c cid.Cid) error {
+func (m MemMigrationCache) Write(key string, c cid.Cid) error {
 	m.MigrationMap.Store(key, c)
 	return nil
 }
 
-func (m MemMigrationCache) Read(key MigrationCacheKey) (bool, cid.Cid, error) {
+func (m MemMigrationCache) Read(key string) (bool, cid.Cid, error) {
 	val, found := m.MigrationMap.Load(key)
 	if !found {
 		return false, cid.Undef, nil
@@ -157,7 +157,7 @@ func (m MemMigrationCache) Read(key MigrationCacheKey) (bool, cid.Cid, error) {
 	return true, c, nil
 }
 
-func (m MemMigrationCache) Load(key MigrationCacheKey, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
+func (m MemMigrationCache) Load(key string, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
 	found, c, err := m.Read(key)
 	if err != nil {
 		return cid.Undef, err
