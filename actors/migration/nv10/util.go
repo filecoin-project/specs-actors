@@ -130,21 +130,19 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 }
 
 type MemMigrationCache struct {
-	MigrationMap *sync.Map
+	MigrationMap sync.Map
 }
 
-func NewMemMigrationCache() MemMigrationCache {
-	return MemMigrationCache{
-		MigrationMap: new(sync.Map),
-	}
+func NewMemMigrationCache() *MemMigrationCache {
+	return new(MemMigrationCache)
 }
 
-func (m MemMigrationCache) Write(key string, c cid.Cid) error {
+func (m *MemMigrationCache) Write(key string, c cid.Cid) error {
 	m.MigrationMap.Store(key, c)
 	return nil
 }
 
-func (m MemMigrationCache) Read(key string) (bool, cid.Cid, error) {
+func (m *MemMigrationCache) Read(key string) (bool, cid.Cid, error) {
 	val, found := m.MigrationMap.Load(key)
 	if !found {
 		return false, cid.Undef, nil
@@ -157,7 +155,7 @@ func (m MemMigrationCache) Read(key string) (bool, cid.Cid, error) {
 	return true, c, nil
 }
 
-func (m MemMigrationCache) Load(key string, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
+func (m *MemMigrationCache) Load(key string, loadFunc func() (cid.Cid, error)) (cid.Cid, error) {
 	found, c, err := m.Read(key)
 	if err != nil {
 		return cid.Undef, err
@@ -171,4 +169,17 @@ func (m MemMigrationCache) Load(key string, loadFunc func() (cid.Cid, error)) (c
 	}
 	m.MigrationMap.Store(key, c)
 	return c, nil
+}
+
+func (m *MemMigrationCache) Clone() *MemMigrationCache {
+	newCache := NewMemMigrationCache()
+	newCache.Update(m)
+	return newCache
+}
+
+func (m *MemMigrationCache) Update(other *MemMigrationCache) {
+	other.MigrationMap.Range(func(key, value interface{}) bool {
+		m.MigrationMap.Store(key, value)
+		return true
+	})
 }
