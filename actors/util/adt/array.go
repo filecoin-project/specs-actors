@@ -21,7 +21,9 @@ type Array struct {
 
 // AsArray interprets a store as an AMT-based array with root `r`.
 func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
-	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(uint(bitwidth)))
+	options := make([]amt.Option, 0, len(DefaultAmtOptions)+1)
+	options = append(options, DefaultAmtOptions...)
+	options = append(options, amt.UseTreeBitWidth(uint(bitwidth)))
 	root, err := amt.LoadAMT(s.Context(), s, r, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to root: %w", err)
@@ -35,7 +37,9 @@ func AsArray(s Store, r cid.Cid, bitwidth int) (*Array, error) {
 
 // Creates a new array backed by an empty AMT.
 func MakeEmptyArray(s Store, bitwidth int) (*Array, error) {
-	options := append(DefaultAmtOptions, amt.UseTreeBitWidth(uint(bitwidth)))
+	options := make([]amt.Option, 0, len(DefaultAmtOptions)+1)
+	options = append(options, DefaultAmtOptions...)
+	options = append(options, amt.UseTreeBitWidth(uint(bitwidth)))
 	root, err := amt.NewAMT(s, options...)
 	if err != nil {
 		return nil, err

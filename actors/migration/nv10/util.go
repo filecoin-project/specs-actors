@@ -25,7 +25,9 @@ func migrateHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, new
 		return cid.Undef, err
 	}
 
-	newOpts := append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(newBitwidth))
+	var newOpts []hamt3.Option
+	newOpts = append(newOpts, adt3.DefaultHamtOptions...)
+	newOpts = append(newOpts, hamt3.UseTreeBitWidth(newBitwidth))
 	outRootNode, err := hamt3.NewNode(store, newOpts...)
 	if err != nil {
 		return cid.Undef, err
@@ -51,7 +53,9 @@ func migrateAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, newB
 		return cid.Undef, err
 	}
 
-	newOpts := append(adt3.DefaultAmtOptions, amt3.UseTreeBitWidth(uint(newBitwidth)))
+	var newOpts []amt3.Option
+	newOpts = append(newOpts, adt3.DefaultAmtOptions...)
+	newOpts = append(newOpts, amt3.UseTreeBitWidth(uint(newBitwidth)))
 	outRootNode, err := amt3.NewAMT(store, newOpts...)
 	if err != nil {
 		return cid.Undef, err
@@ -73,7 +77,9 @@ func migrateHAMTHAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid,
 		return cid.Undef, err
 	}
 
-	newOptsOuter := append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(newOuterBitwidth))
+	var newOptsOuter []hamt3.Option
+	newOptsOuter = append(newOptsOuter, adt3.DefaultHamtOptions...)
+	newOptsOuter = append(newOptsOuter, hamt3.UseTreeBitWidth(newOuterBitwidth))
 	outRootNodeOuter, err := hamt3.NewNode(store, newOptsOuter...)
 	if err != nil {
 		return cid.Undef, err
@@ -106,7 +112,9 @@ func migrateHAMTAMTRaw(ctx context.Context, store cbor.IpldStore, root cid.Cid, 
 	if err != nil {
 		return cid.Undef, err
 	}
-	newOptsOuter := append(adt3.DefaultHamtOptions, hamt3.UseTreeBitWidth(newOuterBitwidth))
+	var newOptsOuter []hamt3.Option
+	newOptsOuter = append(newOptsOuter, adt3.DefaultHamtOptions...)
+	newOptsOuter = append(newOptsOuter, hamt3.UseTreeBitWidth(newOuterBitwidth))
 	outRootNodeOuter, err := hamt3.NewNode(store, newOptsOuter...)
 	if err != nil {
 		return cid.Undef, err

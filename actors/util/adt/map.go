@@ -32,7 +32,9 @@ type Map struct {
 // The HAMT is interpreted with branching factor 2^bitwidth.
 // We could drop this parameter if https://github.com/filecoin-project/go-hamt-ipld/issues/79 is implemented.
 func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
-	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
+	options := make([]hamt.Option, 0, len(DefaultHamtOptions)+1)
+	options = append(options, DefaultHamtOptions...)
+	options = append(options, hamt.UseTreeBitWidth(bitwidth))
 	nd, err := hamt.LoadNode(s.Context(), s, root, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load hamt node: %w", err)
@@ -47,7 +49,9 @@ func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
 
 // Creates a new map backed by an empty HAMT.
 func MakeEmptyMap(s Store, bitwidth int) (*Map, error) {
-	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
+	options := make([]hamt.Option, 0, len(DefaultHamtOptions)+1)
+	options = append(options, DefaultHamtOptions...)
+	options = append(options, hamt.UseTreeBitWidth(bitwidth))
 	nd, err := hamt.NewNode(s, options...)
 	if err != nil {
 		return nil, err
