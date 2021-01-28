@@ -23,7 +23,7 @@ func (m verifregMigrator) migrateState(ctx context.Context, store cbor.IpldStore
 	if err != nil {
 		return nil, err
 	}
-	verifiedClientsCIDOut, err := migrateHAMTRaw(ctx, store, inState.Verifiers, builtin3.DefaultHamtBitwidth)
+	verifiedClientsCIDOut, err := migrateHAMTRaw(ctx, store, inState.VerifiedClients, builtin3.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
 	}
