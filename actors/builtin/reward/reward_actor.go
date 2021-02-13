@@ -159,7 +159,7 @@ func (a Actor) ThisEpochReward(rt runtime.Runtime, _ *abi.EmptyValue) *ThisEpoch
 func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.StoragePower) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 	if currRealizedPower == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "arugment should not be nil")
+		rt.Abortf(exitcode.ErrIllegalArgument, "argument should not be nil")
 	}
 
 	var st State
