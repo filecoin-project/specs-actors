@@ -116,7 +116,7 @@ Four code paths exercised this ranging behavior on both the deadline and partiti
 
 
 
-1. ProveCommitCallback → State.RescheduleSectorExpirations
+1. ProveCommitCallback
 2. TerminateSectors
 3. DeclareFaults
 4. DeclareFaultsRecovered
@@ -135,7 +135,7 @@ Code path (2) terminating multiple sectors led to a chain head mismatch on Decem
 
 We introduced the bug when refactoring deadline state methods in [#761](https://github.com/filecoin-project/specs-actors/pull/761). We then propagated it into the PR introducing the DeadlineSectorMap and PartitionSectorMap in [#861](https://github.com/filecoin-project/specs-actors/pull/861). This PR includes tests of these abstractions, but they do not cover ranging non-empty collections. There also were no tests checking determinism over non-empty collections, or any existing testing patterns of this sort to build off of.
 
-No significant changes to these abstractions or tests until bug discovery
+We made no significant changes to these abstractions or tests until bug discovery.
 
 
 ## Part 2: Discussion
@@ -171,16 +171,16 @@ A 1 of n multisig actor can add itself as a signer, propose a message to the mul
 
 Furthermore while executing a nested send the node’s vm adds function call stack frames to the go runtime. Go panics with a stack overflow error when the stack gets to about 1GB.  If the send calls loop deep enough this will cause all nodes on the network to panic creating a difficult to recover network halt.
 
-Each multisig call spends some gas. For the mainnet protocol configuration the gas limit is exceeded with a stack of around 250 MB so the stack overflow is not feasible.
+Because there was no send call depth limiting in place during initial network launch, this widespread node pancing was a real concern. However each multisig call spends some gas. For the mainnet protocol configuration the gas limit is exceeded with a only a program stack size of around 250 MB making the stack overflow not feasible.
 
 Since unit tests interact with a mock runtime to fake out all calls to other actors our testing framework was not equipped to exercise this edge case (or the edge case of signer removing itself which when found with manual testing alerted us to the problem)
 
 
 ### Discovery and mitigation
 
-During manual testing the day before liftoff on Oct 14 2020, we were alerted that a bug occurred during multisig removal such that  a multisig signer could not remove itself. This led us to discover the general reentrancy issue and the associated potential for the infinite looping approve transaction.
+During manual testing the day before liftoff on Oct 14 2020, we were alerted that a bug occurred during multisig removal such that a multisig signer could not remove itself. This led us to discover the general reentrancy issue and the associated potential for the infinite looping approve transaction.
 
-We monitored mainnet for multisig signers that added themselves as signers post liftoff and later assessed that it was not feasible to use the bug to stack overflow and crash all nodes on Oct 17 2020. We found a hypothetical worst case DOS vector on Oct 19 2020 which exploited slow ID-address lookup on many nested VM calls. 
+We monitored mainnet for multisig signers that added themselves as signers post liftoff and later assessed that it was not feasible to use the bug to stack overflow and crash all nodes on Oct 17 2020. Furthermore we analyzied all other actor call paths and determined that there was no path to overflowing the stack while remaining under the gas limit systemwide using reentrant sends. We found a less critical DOS vector on Oct 19 2020 which exploited slow ID-address lookup in the case of many nested VM calls. This attack used the same self-approving multisig, but referenced the multisig's robust address to force an ID lookup every send.
 
 Members of the lotus team landed a fix into lotus removing this DOS vector with a state caching optimization the same day in [#4481](https://github.com/filecoin-project/lotus/pull/4481) released in lotus v1.1.0.
 
@@ -195,7 +195,7 @@ The original spec for the multisig actor [PR #139](https://github.com/filecoin-p
 
 The bug was introduced in Lotus on Aug 5th 2019 during the first multisig actor commit [#105](https://github.com/filecoin-project/lotus/pull/105/files).  This case is more subtle than the final bug because the tx.Approved value is both modified and checked before send and would halt looping if state updates persisted between send calls. However the actor state is not written until after send so this state change isn’t seen in subsequent calls allowing looping.
 
-The spec team propagated/introduced a variant of the bug into the spec [here](https://github.com/filecoin-project/specs/pull/774/files#diff-3c41c3cc8a036c552bd599ebd6529f29ecb1764304cbd3aa463487da67602d39R165) in PR [#774](https://github.com/filecoin-project/specs/pull/774) on Dec 22nd 2019. The Lotus code appears to have been used as a template for this work.  Interestingly the original lotus issue is resolved in this PR because state is saved before Send. However this PR also removes the lotus check validating that the approver has not previously called this method so the correct state saving placement no longer helps stop looping.
+The spec team propagated/introduced a variant of the bug into the spec [here](https://github.com/filecoin-project/specs/pull/774/files#diff-3c41c3cc8a036c552bd599ebd6529f29ecb1764304cbd3aa463487da67602d39R165) in PR [#774](https://github.com/filecoin-project/specs/pull/774) on Dec 22nd 2019. The lotus code appears to have been used as a template for this work.  Interestingly the original lotus issue is resolved in this PR because state is saved before Send. However this PR also removes the lotus check validating that the approver has not previously called this method so the correct state saving placement no longer helps stop looping.
 
 We carried over this bug into the first commit of specs actors ([link](https://github.com/filecoin-project/specs-actors/commit/ac6379d84c1e8d7fac9fada6b15cc010db261e0a#diff-0511acf500959014d9e8b44d971eb00fc87109c11db18b18137408afb374a608R166)) on Jan 8th, 2020.
 
@@ -205,7 +205,7 @@ We carried over this bug into the first commit of specs actors ([link](https://g
 
 
 
-*   This turned out to be non-critical only because the gas limit restricted stack depth. A gas limit 4x larger would have caused trouble.
+*   This turned out to be non-critical only because the gas limit restricted stack depth. A gas limit 4x larger would have opened up the attack.
 *   The multisig actor was received by the actors team (via spec) as more or less complete, with change discouraged. Apart from adding tests, we did not spend a lot of time with it.
 *   The state transaction mechanism inherited from the spec was intended to prevent this general class of issue, but it did not because the multisig does multiple transactions in a single method.
 *   The Checks-Effects-Interactions pattern would be an effective defence against this issue.
