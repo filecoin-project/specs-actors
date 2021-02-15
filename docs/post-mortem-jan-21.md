@@ -27,7 +27,7 @@
 # Intro
 <a name="intro"></a>
 
-As of January 2021, the actors team is aware of two network-critical issues that have been released into Filecoin mainnet, and one further that turned out to be dangerous but not critical. This document describes the issues and circumstances around their development, and contains notes of discussion about how we might change work practises to reduce the likelihood or impact of other such issues.
+As of January 2021, the actors team is aware of two network-critical issues that have been released into Filecoin mainnet, and one further that turned out to be dangerous but not critical. This document describes the issues and circumstances around their development, and contains notes of discussion about how we might change work practices to reduce the likelihood or impact of other such issues.
 
 
 
@@ -50,7 +50,7 @@ The Filecoin Space Race test network transitioned into mainnet on 15 October wit
 
 The ReportConsensusFault method of the storage miner actor ([code@v2.0.3](https://github.com/filecoin-project/specs-actors/blob/v2.0.3/actors/builtin/miner/miner_actor.go#L1525-L1594)) is intended to be called by any network participant to report a consensus fault committed by the miner. The reporter provides the data of two or three block headers (depending on the fault “type”). The method passes the headers to a runtime syscall VerifyConsensusFault ([code](https://github.com/filecoin-project/specs-actors/blob/v2.0.3/actors/runtime/runtime.go#L187-L196)) which verifies that the headers represent a valid fault, and then applies penalties to the receiving miner and a small reward to the submitter. Penalties include a fee and ineligibility to produce blocks for the next 900 epochs.
 
-The syscall returns a tuple containing the address of the miner at fault, the epoch of the highest of the blocks comprising it, and the type of fault (or an error, if the fault is not valid). The ReportConsensusFault method **failed to check that the address of the miner at fault matched the receiving actor’s address**, i.e. that the correct miner was being reported. Because of this, any consensus fault specimen could be used to penalise any and all miners on the network. In the extreme case, this could have led to all miners being unable to produce blocks, and a hard-to-recover chain halt.
+The syscall returns a tuple containing the address of the miner at fault, the epoch of the highest of the blocks comprising it, and the type of fault (or an error, if the fault is not valid). The ReportConsensusFault method **failed to check that the address of the miner at fault matched the receiving actor’s address**, i.e. that the correct miner was being reported. Because of this, any consensus fault specimen could be used to penalize any and all miners on the network. In the extreme case, this could have led to all miners being unable to produce blocks, and a hard-to-recover chain halt.
 
 
 ### Discovery and mitigation
@@ -59,12 +59,12 @@ Community contributor [@zgfzgf](https://github.com/zgfzgf) reported the issue to
 
 There were no instances of this error being exploited. We quietly mitigated the issue in the release of Lotus 1.1.3 Nov 13 2020, by changing the VerifyConsensusFault syscall implementation to require the offending blocks’ signers to be the worker key of the receiving actor. An exploitation at this point would have caused a fork between participants running 1.1.3 and earlier versions. The mitigation was considered to be in effect only after Lotus 1.2 was released, which included the network version 7 upgrade (code released Nov 18th 2020 and network upgrade at epoch 265200), and thus forced all participants to be running code containing the workaround.
 
-We implemented the public fix implemented in [#1314](https://github.com/filecoin-project/specs-actors/pull/1314) on 3 December 2020, which will be launched into the network with actors v3 (estimated early February 2021).
+We implemented the public fix implemented in [#1314](https://github.com/filecoin-project/specs-actors/pull/1314) on 3 December 2020, which will be launched into the network with actors v3 (estimated early March 2021).
 
 
 ### Origins
 
-The ReportConsensusFault method was originally implemented and reviewed in non-executable code in an earlier version of the Filecoin spec as [#789](https://github.com/filecoin-project/specs/pull/789) on 9 Jan 2020 in the storage power actor. This [implementation](https://github.com/filecoin-project/specs/blob/218d29ac6c48c342f41ec001787bc158f35e9a35/src/actors/builtin/storage_power/storage_power_actor_code.go#L193-L251) was incomplete, skipping any mechanism to inspect block headers. As a result of [discussio](https://github.com/filecoin-project/specs/pull/789#discussion_r364113492)n, the target (“slashee”) address was taken as an external parameter that was not verified as corresponding with evidence. The runtime contained no block-header fault verification method. Spec code had no tests.
+The ReportConsensusFault method was originally implemented and reviewed in non-executable code in an earlier version of the Filecoin spec as [#789](https://github.com/filecoin-project/specs/pull/789) on 9 Jan 2020 in the storage power actor. This [implementation](https://github.com/filecoin-project/specs/blob/218d29ac6c48c342f41ec001787bc158f35e9a35/src/actors/builtin/storage_power/storage_power_actor_code.go#L193-L251) was incomplete, skipping any mechanism to inspect block headers. As a result of [discussion](https://github.com/filecoin-project/specs/pull/789#discussion_r364113492), the target (“slashee”) address was taken as an external parameter that was not verified as corresponding with evidence. The runtime contained no block-header fault verification method. Spec code had no tests.
 
 Thanks to review we removed this unverified parameter in [#231](https://github.com/filecoin-project/specs-actors/pull/231) on 6 March, after the VerifyConsensusFault syscall existed. In this [implementation](https://github.com/filecoin-project/specs-actors/blob/64ac74fb1cb16077b90715f718a746d55b978deb/actors/builtin/power/power_actor.go#L470-L519), the fault target returned by VerifyConsensusFault identified the offending miner, thus fixing the issue. There were no tests for this method, and #231 didn’t add any.
 
