@@ -21,7 +21,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv9"
+	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv10"
 	"github.com/filecoin-project/specs-actors/v3/actors/states"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v3/support/agent"
@@ -231,7 +231,7 @@ func TestMigration(t *testing.T) {
 	sim := agent.NewSimWithVM(ctx, t, v, v2VMFactory, agent.ComputePowerTableV2, blkStore, newBlockStore, v2MinerFactory, agent.SimConfig{
 		Seed:             rnd.Int63(),
 		CheckpointEpochs: 1000,
-	})
+	}, agent.CreateMinerParamsV2)
 
 	// create miners
 	workerAccounts := vm_test2.CreateAccounts(ctx, t, v, minerCount, initialBalance, rnd.Int63())
@@ -291,9 +291,9 @@ func TestMigration(t *testing.T) {
 
 	// Migrate
 	v2 := sim.GetVM()
-	log := nv9.TestLogger{TB: t}
+	log := nv10.TestLogger{TB: t}
 	priorEpoch := v2.GetEpoch() - 1 // on tick sim internally creates new vm with epoch set to the next one
-	nextRoot, err := nv9.MigrateStateTree(ctx, v2.Store(), v2.StateRoot(), priorEpoch, nv9.Config{MaxWorkers: 1}, log, nv9.NewMemMigrationCache())
+	nextRoot, err := nv10.MigrateStateTree(ctx, v2.Store(), v2.StateRoot(), priorEpoch, nv10.Config{MaxWorkers: 1}, log, nv10.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]rt.VMActor{}
@@ -321,7 +321,7 @@ func TestMigration(t *testing.T) {
 			Root: root,
 		}, nil
 	}
-	sim.SwapVM(v3, agent.VMFactoryFunc(v3VMFactory), v3MinerFactory, agent.ComputePowerTableV3)
+	sim.SwapVM(v3, agent.VMFactoryFunc(v3VMFactory), v3MinerFactory, agent.ComputePowerTableV3, agent.CreateMinerParamsV3)
 
 	// Run v3 for 5000 epochs
 	for i := 0; i < 5000; i++ {

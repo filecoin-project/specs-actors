@@ -34,7 +34,7 @@ import (
 
 func TestUpdatePendingDealsMigration(t *testing.T) {
 	ctx := context.Background()
-	log := nv9.TestLogger{TB: t}
+	log := nv10.TestLogger{TB: t}
 	v := vm2.NewVMWithSingletons(ctx, t, ipld2.NewSyncBlockStoreInMemory())
 	addrs := vm2.CreateAccounts(ctx, t, v, 10, big.Mul(big.NewInt(100_000), vm2.FIL), 93837778)
 	worker := addrs[0]

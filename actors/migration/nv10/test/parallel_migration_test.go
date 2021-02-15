@@ -20,7 +20,7 @@ import (
 func TestParallelMigrationCalls(t *testing.T) {
 	// Construct simple prior state tree over a synchronized store
 	ctx := context.Background()
-	log := nv9.TestLogger{TB: t}
+	log := nv10.TestLogger{TB: t}
 	bs := ipld2.NewSyncBlockStoreInMemory()
 	vm := vm2.NewVMWithSingletons(ctx, t, bs)
 

@@ -27,6 +27,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	power3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v3/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v3/actors/states"
 	"github.com/filecoin-project/specs-actors/v3/actors/util/adt"
@@ -44,12 +45,13 @@ import (
 // * Messages will be shuffled to simulate network entropy.
 // * Messages will be applied and an new VM will be created from the resulting state tree for the next tick.
 type Sim struct {
-	Config            SimConfig
-	Agents            []Agent
-	DealProviders     []DealProvider
-	WinCount          uint64
-	MessageCount      uint64
-	ComputePowerTable func(SimVM, []Agent) (PowerTable, error)
+	Config                SimConfig
+	Agents                []Agent
+	DealProviders         []DealProvider
+	WinCount              uint64
+	MessageCount          uint64
+	ComputePowerTable     func(SimVM, []Agent) (PowerTable, error)
+	CreateMinerParamsFunc func(address.Address, address.Address, abi.RegisteredSealProof) (interface{}, error)
 
 	v                 SimVM
 	vmFactory         VMFactoryFunc
@@ -73,52 +75,61 @@ func NewSim(ctx context.Context, t testing.TB, blockstoreFactory func() ipldcbor
 	}
 	v.SetStatsSource(metrics)
 	minerStateFactory := func(ctx context.Context, root cid.Cid) (SimMinerState, error) {
-		return &MinerStateV2{
+		return &MinerStateV3{
 			Ctx:  ctx,
 			Root: root,
 		}, nil
 	}
 	return &Sim{
-		Config:            config,
-		Agents:            []Agent{},
-		DealProviders:     []DealProvider{},
-		ComputePowerTable: ComputePowerTableV3,
-		v:                 v,
-		vmFactory:         vmFactory,
-		minerStateFactory: minerStateFactory,
-		rnd:               rand.New(rand.NewSource(config.Seed)),
-		blkStore:          blkStore,
-		blkStoreFactory:   blockstoreFactory,
-		ctx:               ctx,
-		t:                 t,
+		Config:                config,
+		Agents:                []Agent{},
+		DealProviders:         []DealProvider{},
+		ComputePowerTable:     ComputePowerTableV3,
+		CreateMinerParamsFunc: CreateMinerParamsV3,
+		v:                     v,
+		vmFactory:             vmFactory,
+		minerStateFactory:     minerStateFactory,
+		rnd:                   rand.New(rand.NewSource(config.Seed)),
+		blkStore:              blkStore,
+		blkStoreFactory:       blockstoreFactory,
+		ctx:                   ctx,
+		t:                     t,
 	}
 }
 
-func NewSimWithVM(ctx context.Context, t testing.TB, v SimVM, vmFactory VMFactoryFunc, computePowerTable func(SimVM, []Agent) (PowerTable, error), blkStore ipldcbor.IpldBlockstore, blockstoreFactory func() ipldcbor.IpldBlockstore, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error), config SimConfig) *Sim {
+func NewSimWithVM(ctx context.Context, t testing.TB, v SimVM, vmFactory VMFactoryFunc,
+	computePowerTable func(SimVM, []Agent) (PowerTable, error), blkStore ipldcbor.IpldBlockstore,
+	blockstoreFactory func() ipldcbor.IpldBlockstore, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error),
+	config SimConfig, createMinerParams func(address.Address, address.Address, abi.RegisteredSealProof) (interface{}, error),
+) *Sim {
 	metrics := ipld.NewMetricsBlockStore(blkStore)
 	v.SetStatsSource(metrics)
 
 	return &Sim{
-		Config:            config,
-		Agents:            []Agent{},
-		DealProviders:     []DealProvider{},
-		ComputePowerTable: computePowerTable,
-		v:                 v,
-		vmFactory:         vmFactory,
-		minerStateFactory: minerStateFactory,
-		rnd:               rand.New(rand.NewSource(config.Seed)),
-		blkStore:          blkStore,
-		blkStoreFactory:   blockstoreFactory,
-		ctx:               ctx,
-		t:                 t,
+		Config:                config,
+		Agents:                []Agent{},
+		DealProviders:         []DealProvider{},
+		ComputePowerTable:     computePowerTable,
+		CreateMinerParamsFunc: createMinerParams,
+		v:                     v,
+		vmFactory:             vmFactory,
+		minerStateFactory:     minerStateFactory,
+		rnd:                   rand.New(rand.NewSource(config.Seed)),
+		blkStore:              blkStore,
+		blkStoreFactory:       blockstoreFactory,
+		ctx:                   ctx,
+		t:                     t,
 	}
 }
 
-func (s *Sim) SwapVM(v SimVM, vmFactory VMFactoryFunc, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error), computePowerTable func(SimVM, []Agent) (PowerTable, error)) {
+func (s *Sim) SwapVM(v SimVM, vmFactory VMFactoryFunc, minerStateFactory func(context.Context, cid.Cid) (SimMinerState, error),
+	computePowerTable func(SimVM, []Agent) (PowerTable, error), createMinerParams func(address.Address, address.Address, abi.RegisteredSealProof) (interface{}, error),
+) {
 	s.v = v
 	s.vmFactory = vmFactory
 	s.minerStateFactory = minerStateFactory
 	s.ComputePowerTable = computePowerTable
+	s.CreateMinerParamsFunc = createMinerParams
 }
 
 //////////////////////////////////////////
@@ -286,6 +297,10 @@ func (s *Sim) NetworkCirculatingSupply() abi.TokenAmount {
 	return s.v.GetCirculatingSupply()
 }
 
+func (s *Sim) CreateMinerParams(worker, owner address.Address, sealProof abi.RegisteredSealProof) (interface{}, error) {
+	return s.CreateMinerParamsFunc(worker, owner, sealProof)
+}
+
 //////////////////////////////////////////////////
 //
 //  Misc Methods
@@ -372,6 +387,27 @@ func ComputePowerTableV2(v SimVM, agents []Agent) (PowerTable, error) {
 	return pt, nil
 }
 
+func CreateMinerParamsV2(worker, owner address.Address, sealProof abi.RegisteredSealProof) (interface{}, error) {
+	return &power2.CreateMinerParams{
+		Owner:         owner,
+		Worker:        worker,
+		SealProofType: sealProof,
+	}, nil
+}
+
+func CreateMinerParamsV3(worker, owner address.Address, sealProof abi.RegisteredSealProof) (interface{}, error) {
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	if err != nil {
+		return nil, err
+	}
+
+	return &power3.CreateMinerParams{
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: wPoStProof,
+	}, nil
+}
+
 func computeCircSupply(v SimVM) error {
 	// disbursed + reward.State.TotalStoragePowerReward - burnt.Balance - power.State.TotalPledgeCollateral
 	var rewardSt reward.State
@@ -410,6 +446,7 @@ type SimState interface {
 	AddDealProvider(d DealProvider)
 	NetworkCirculatingSupply() abi.TokenAmount
 	MinerState(addr address.Address) (SimMinerState, error)
+	CreateMinerParams(worker, owner address.Address, sealProof abi.RegisteredSealProof) (interface{}, error)
 
 	// randomly select an agent capable of making deals.
 	// Returns nil if no providers exist.
