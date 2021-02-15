@@ -22,14 +22,10 @@
 
 - [What *has* been working for us?](#working)
 
-	
-
-
-
 
 
 # Intro
-<a name="intro"></a/>
+<a name="intro"></a>
 
 As of January 2021, the actors team is aware of two network-critical issues that have been released into Filecoin mainnet, and one further that turned out to be dangerous but not critical. This document describes the issues and circumstances around their development, and contains notes of discussion about how we might change work practises to reduce the likelihood or impact of other such issues.
 
@@ -45,10 +41,10 @@ The Filecoin Space Race test network transitioned into mainnet on 15 October wit
 
 
 # Consensus Fault Author Check
-<a name="A"></a/>
+<a name="A"></a>
 
 ## Part 1: Facts
-<a name="facts-A"></a/>
+<a name="facts-A"></a>
 
 ### Description of the bug
 
@@ -78,7 +74,7 @@ We introduced the first test of ReportConsensusFault in [#472](https://github.co
 
 
 ## Part 2: Discussion
-<a name="disc-A"></a/>
+<a name="disc-A"></a>
 
 
 
@@ -110,7 +106,7 @@ We introduced the first test of ReportConsensusFault in [#472](https://github.co
 <a name="B"></a>
 
 ## Part 1: Facts
-<a name="facts-B"></a/>
+<a name="facts-B"></a>
 
 ### Description of the bug
 
@@ -143,7 +139,7 @@ No significant changes to these abstractions or tests until bug discovery
 
 
 ## Part 2: Discussion
-<a name="disc-B"></a/>
+<a name="disc-B"></a>
 
 
 *   We didn’t discover this one until it affected the network
@@ -164,10 +160,10 @@ No significant changes to these abstractions or tests until bug discovery
 
 
 # Multisig Infinite Re-entrancy
-<a name="C"></a/>
+<a name="C"></a>
 
 ## Part 1: Facts
-<a name="facts-C"></a/>
+<a name="facts-C"></a>
 
 ### Description of the bug
 
@@ -205,7 +201,7 @@ We carried over this bug into the first commit of specs actors ([link](https://g
 
 
 ## Part 2: Discussion
-<a name="disc-C"></a/>
+<a name="disc-C"></a>
 
 
 
@@ -223,7 +219,7 @@ We carried over this bug into the first commit of specs actors ([link](https://g
 
 
 # Summary discussion and recommendations
-<a name="recc"></a/>
+<a name="recc"></a>
 
 
 *   Golden files are a useful tool for avoiding unintended behavior changes. Generating golden files from test traces and always running tests against these traces.
@@ -239,7 +235,7 @@ We carried over this bug into the first commit of specs actors ([link](https://g
 
 
 ## What *has* been working for us?
-<a name="working"></a/>
+<a name="working"></a>
 
 *   State invariant checks
     *   These have detected errors in code that produce unexpected state.
