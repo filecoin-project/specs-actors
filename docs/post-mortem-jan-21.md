@@ -57,7 +57,7 @@ The syscall returns a tuple containing the address of the miner at fault, the ep
 
 Community contributor [@zgfzgf](https://github.com/zgfzgf) reported the issue to us on 23 October 2020. 
 
-There were no instances of this error being exploited. We quietly mitigated the issue in the release of Lotus 1.1.3 Nov 13 2020, by changing the VerifyConsensusFault syscall implementation to require the offending blocks’ signers to be the worker key of the receiving actor. An exploitation at this point would have caused a fork between participants running 1.1.3 and earlier versions. The mitigation was considered to be in effect only after Lotus 1.2 was released, which included the network version 7 upgrade (code released Nov 18th 2020 and network upgrade at epoch 265200), and thus forced all participants to be running code containing the workaround.
+There were no instances of this error being exploited. We quietly mitigated the issue in the release of Lotus 1.1.3 Nov 13 2020, by changing the VerifyConsensusFault syscall implementation to require the offending blocks’ signers to be the worker key of the receiving actor. An exploitation at this point would have caused a fork between participants running 1.1.3 and earlier versions. The mitigation was considered to be fully in effect only after Lotus 1.2 was released, which included the network version 7 upgrade (code released Nov 18th 2020 and network upgrade at epoch 265200), and thus forced all participants to be running code containing the workaround.
 
 We implemented the public fix implemented in [#1314](https://github.com/filecoin-project/specs-actors/pull/1314) on 3 December 2020, which will be launched into the network with actors v3 (estimated early March 2021).
 
@@ -155,6 +155,7 @@ We made no significant changes to these abstractions or tests until bug discover
 *   Simple fuzz testing isn’t helpful; the bug required building up enough state to terminate multiple sectors. 
 *   Randomisation over high level agent behaviour could have exercised this (in combination with a golden/expectation file).
 *   We’re not aware of anything other than map iteration that could be non-deterministic, but something could be introduced later.
+    * We explicitly lint against map iteration so introducing map iteration without explicitly indicating an exception will raise a flag. The issue here was that we mae a mistake while implementing a pathway that we explicitly indicated as an exception.
 *   **Recommendation**: introduce a golden file (or trace, or other determinism check) to unit, scenario and agent tests.
 *   **Recommendation**: expand agent-based testing to range over possible actor behaviours (in combination with golden file).
 
@@ -167,13 +168,13 @@ We made no significant changes to these abstractions or tests until bug discover
 
 ### Description of the bug
 
-A 1 of n multisig actor can add itself as a signer, propose a message to the multisig actor address such that the proposal message is an approval message to the multisig actor address approving the tx id of the approval message itself. A multisig transaction of this form recurses indefinitely approving the approval message at each iteration.  This is possible because the multisig actor does not remove the tx id from multisig state before launching the send call that executes the transaction.
+A 1 of n multisig actor could add itself as a signer, propose a message to the multisig actor address such that the proposal message is an approval message to the multisig actor address approving the tx id of the approval message itself. A multisig transaction of this form recurses indefinitely approving the approval message at each iteration.  This was possible because the multisig actor did not remove the tx id from multisig state before launching the send call that executed the transaction.
 
-Furthermore while executing a nested send the node’s vm adds function call stack frames to the go runtime. Go panics with a stack overflow error when the stack gets to about 1GB.  If the send calls loop deep enough this will cause all nodes on the network to panic creating a difficult to recover network halt.
+Furthermore while executing a nested send the node’s vm adds function call stack frames to the go runtime. Go panics with a stack overflow error when the stack gets to about 1GB.  If the send calls looped deep enough this will cause all nodes on the network to panic creating a difficult to recover network halt.
 
-Because there was no send call depth limiting in place during initial network launch, this widespread node pancing was a real concern. However each multisig call spends some gas. For the mainnet protocol configuration the gas limit is exceeded with a only a program stack size of around 250 MB making the stack overflow not feasible.
+Because there was no send call depth limiting in place during initial network launch, this widespread node pancing was a real concern. However each multisig call spends some gas. For the mainnet protocol configuration the gas limit was exceeded with a only a program stack size of around 250 MB making the stack overflow not feasible.
 
-Since unit tests interact with a mock runtime to fake out all calls to other actors our testing framework was not equipped to exercise this edge case (or the edge case of signer removing itself which when found with manual testing alerted us to the problem)
+Since unit tests interact with a mock runtime to fake out all calls to other actors our testing framework was not equipped to exercise this edge case.
 
 
 ### Discovery and mitigation
