@@ -208,7 +208,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 }
 
 func TestMigration(t *testing.T) {
-	//t.Skip("slow")
+	t.Skip("slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
 	minerCount := 10
