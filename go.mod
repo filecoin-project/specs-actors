@@ -9,7 +9,7 @@ require (
 	github.com/filecoin-project/go-bitfield v0.2.3
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.0.1
-	github.com/filecoin-project/go-state-types v0.0.0-20210119062722-4adba5aaea71
+	github.com/filecoin-project/go-state-types v0.0.0-20210219043747-58b4d532dff2
 	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/filecoin-project/specs-actors/v2 v2.3.4
 	github.com/ipfs/go-block-format v0.0.2

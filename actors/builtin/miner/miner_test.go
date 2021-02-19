@@ -877,7 +877,7 @@ func TestCommitments(t *testing.T) {
 
 			// Too big at version 4
 			proveCommit := makeProveCommit(sectorNo)
-			proveCommit.Proof = make([]byte, 1920)
+			proveCommit.Proof = make([]byte, 192)
 			actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{
 				vestingPledgeDelta: &test.vestingPledgeDelta,
 			})
@@ -2441,7 +2441,7 @@ func TestWindowPost(t *testing.T) {
 		rt.SetEpoch(periodStart)
 
 		// fill one partition in each mutable deadline.
-		numSectors := int(actor.partitionSize*(miner.WPoStPeriodDeadlines-2))
+		numSectors := int(actor.partitionSize * (miner.WPoStPeriodDeadlines - 2))
 
 		// creates a partition in every deadline except 0 and 47
 		sectors := actor.commitAndProveSectors(rt, numSectors, defaultSectorExpiration, nil)
@@ -6209,7 +6209,7 @@ func makeDeadlineCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power.Enro
 func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	return &miner.ProveCommitSectorParams{
 		SectorNumber: sectorNo,
-		Proof:        make([]byte, 1920),
+		Proof:        make([]byte, 192),
 	}
 }
 

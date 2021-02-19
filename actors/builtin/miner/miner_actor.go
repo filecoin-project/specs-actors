@@ -349,6 +349,8 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	var info *MinerInfo
 	rt.StateTransaction(&st, func() {
 		info = getMinerInfo(rt, &st)
+		maxProofSize, err := info.WindowPoStProofType.ProofSize()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine max window post proof size")
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
@@ -359,10 +361,16 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		// just skipping all sectors.
 		if len(params.Proofs) != 1 {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
-		} else if params.Proofs[0].PoStProof != info.WindowPoStProofType {
+		}
+
+		// Make sure the miner is using the correct proof type.
+		if params.Proofs[0].PoStProof != info.WindowPoStProofType {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", info.WindowPoStProofType, params.Proofs[0])
-		} else if len(params.Proofs[0].ProofBytes) > MaxPoStProofSize {
-			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof to be smaller than %d bytes", MaxPoStProofSize)
+		}
+
+		// Make sure the proof size doesn't exceed the max. We could probably check for an exact match, but this is safer.
+		if maxSize := maxProofSize * uint64(len(params.Partitions)); uint64(len(params.Proofs[0].ProofBytes)) > maxSize {
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof to be smaller than %d bytes", maxSize)
 		}
 
 		// Validate that the miner didn't try to prove too many partitions at once.
@@ -809,12 +817,6 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector number greater than maximum")
 	}
 
-	maxProofSize := MaxProveCommitSize
-	if len(params.Proof) > maxProofSize {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
-			len(params.Proof), maxProofSize)
-	}
-
 	store := adt.AsStore(rt)
 	sectorNo := params.SectorNumber
 
@@ -825,6 +827,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sector %v", sectorNo)
 	if !found {
 		rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
+	}
+
+	maxProofSize, err := precommit.Info.SealProof.ProofSize()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine max proof size for sector %v", sectorNo)
+	if uint64(len(params.Proof)) > maxProofSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
+			len(params.Proof), maxProofSize)
 	}
 
 	msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
