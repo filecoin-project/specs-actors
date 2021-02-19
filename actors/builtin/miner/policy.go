@@ -94,12 +94,6 @@ const (
 	MaxMultiaddrData = 1024 // PARAM_SPEC
 )
 
-// Maximum size of a single prove-commit proof, in bytes (the expected size is 1920).
-const MaxProveCommitSize = 10240
-
-// Maximum size of a single prove-commit proof, in bytes (the expected size is 192).
-const MaxPoStProofSize = 1024
-
 // Maximum number of control addresses a miner may register.
 const MaxControlAddresses = 10
 
