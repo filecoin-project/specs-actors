@@ -385,6 +385,31 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	return &info, found, nil
 }
 
+// Load all precommits or fail trying
+func (st *State) GetAllPrecommittedSectors(store adt.Store, sectorNos bitfield.BitField) ([]*SectorPreCommitOnChainInfo, error) {
+	precommits := make([]*SectorPreCommitOnChainInfo, 0)
+	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sectorNos.ForEach(func(sectorNo uint64) error {
+		var info SectorPreCommitOnChainInfo
+		found, err := precommitted.Get(SectorKey(abi.SectorNumber(sectorNo)), &info)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return xc.ErrNotFound.Wrapf("sector %d not found", sectorNo)
+		}
+		precommits = append(precommits, &info)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return precommits, nil
+}
+
 // This method gets and returns the requested pre-committed sectors, skipping
 // missing sectors.
 func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.SectorNumber) ([]*SectorPreCommitOnChainInfo, error) {

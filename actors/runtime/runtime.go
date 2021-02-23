@@ -182,6 +182,7 @@ type Syscalls interface {
 	VerifySeal(vi proof.SealVerifyInfo) error
 
 	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)
+	VerifyAggregateSeals(vis []proof.SealVerifyInfo, aggregateProof []byte) error
 
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi proof.WindowPoStVerifyInfo) error

@@ -2,12 +2,14 @@ package miner
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 )
@@ -305,4 +307,23 @@ func RewardForConsensusSlashReport(epochReward abi.TokenAmount) abi.TokenAmount 
 func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPower PowerPair) abi.TokenAmount {
 	// This is currently just the base. In the future, the fee may scale based on the disputed power.
 	return BaseRewardForDisputedWindowPoSt
+}
+
+func aggregatePoRepBatchStepSize() []int {
+	return []int{26, 51, 102, 205, 410, 819}
+}
+
+func aggregatePoRepBatchGasTable() []int64 {
+	return []int64{66_549_600, 74_212_400, 81_775_200, 89_468_000, 97_070_800, 104_743_600}
+}
+
+// Return gas cost of verifying `batchSize` aggregate PoReps. Batch sizes round up.
+func aggregatePoRepVerifyGas(batchSize int) (int64, error) {
+	steps := aggregatePoRepBatchStepSize()
+	i := sort.SearchInts(steps, batchSize)
+	gasTable := aggregatePoRepBatchGasTable()
+	if i >= len(gasTable) {
+		return 0, xerrors.Errorf("batchSize %d unsupported by gas table", batchSize)
+	}
+	return gasTable[i], nil
 }
