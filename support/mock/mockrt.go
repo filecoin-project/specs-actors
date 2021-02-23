@@ -91,7 +91,7 @@ type expectBatchVerifySeals struct {
 }
 
 type expectAggregateVerifySeals struct {
-	inSVIs  []proof.SealVerifyInfo
+	inSVIs  []proof.AggregateSealVerifyInfo
 	inProof []byte
 	err     error
 }
@@ -667,23 +667,23 @@ func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo)
 	return nil, nil
 }
 
-func (rt *Runtime) ExpectAggregateVerifySeals(inSVIs []proof.SealVerifyInfo, inProof []byte, err error) {
+func (rt *Runtime) ExpectAggregateVerifySeals(agg proof.AggregateSealVerifyProofAndInfos, err error) {
 	rt.expectAggregateVerifySeals = &expectAggregateVerifySeals{
-		inSVIs, inProof, err,
+		agg.Infos, agg.Proof, err,
 	}
 }
 
-func (rt *Runtime) VerifyAggregateSeals(vis []proof.SealVerifyInfo, aggregateProof []byte) error {
+func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInfos) error {
 	exp := rt.expectAggregateVerifySeals
 	if exp != nil {
-		if len(vis) != len(exp.inSVIs) {
-			rt.failTest("length mismatch, expected: %v, actual: %v", exp.inSVIs, vis)
+		if len(agg.Infos) != len(exp.inSVIs) {
+			rt.failTest("length mismatch, expected: %v, actual: %v", exp.inSVIs, agg.Infos)
 		}
 		for i, expVI := range exp.inSVIs {
-			if vis[i].SealedCID != expVI.SealedCID {
+			if agg.Infos[i].SealedCID != expVI.SealedCID {
 				rt.failTest("sealed cid does not match")
 			}
-			if vis[i].UnsealedCID != expVI.UnsealedCID {
+			if agg.Infos[i].UnsealedCID != expVI.UnsealedCID {
 				rt.failTest("unsealed cid does not match")
 			}
 		}

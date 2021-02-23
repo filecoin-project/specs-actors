@@ -850,7 +850,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 			len(params.AggregateProof), MaxAggregateProofSize)
 	}
 
-	svis := make([]proof.SealVerifyInfo, 0)
+	svis := make([]proof.AggregateSealVerifyInfo, 0)
 
 	receiver := rt.Receiver()
 	buf := new(bytes.Buffer)
@@ -879,15 +879,11 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, precommit.Info.SealRandEpoch, receiverBytes)
 		svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, receiverBytes)
 		// TODO new struct to more succinctly gather public parameters
-		svi := proof.SealVerifyInfo{
-			SealProof: precommit.Info.SealProof, // TODO this field should be in outer wrapper
-			SectorID: abi.SectorID{
-				Miner:  abi.ActorID(minerActorID), // TODO this field should be in outer wrapper
-				Number: precommit.Info.SectorNumber,
-			},
+		svi := proof.AggregateSealVerifyInfo{
+			SealProof:             precommit.Info.SealProof, // TODO this field should be in outer wrapper
+			Number:                precommit.Info.SectorNumber,
 			DealIDs:               precommit.Info.DealIDs,
 			InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
-			Proof:                 nil, // TODO this field should be in outer wrapper
 			Randomness:            abi.SealRandomness(svInfoRandomness),
 			SealedCID:             precommit.Info.SealedCID,
 			UnsealedCID:           commD,
@@ -899,7 +895,12 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	gas, err := aggregatePoRepVerifyGas(int(aggSectorsCount))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute aggregate PoRep gas cost")
 	rt.ChargeGas("OnVerifySealAggregate", gas, 0)
-	err = rt.VerifyAggregateSeals(svis, params.AggregateProof)
+	err = rt.VerifyAggregateSeals(
+		proof.AggregateSealVerifyProofAndInfos{
+			Infos: svis,
+			Proof: params.AggregateProof,
+			Miner: abi.ActorID(minerActorID),
+		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 	confirmSectorProofsValid(rt, precommits)
 

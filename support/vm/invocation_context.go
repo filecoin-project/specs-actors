@@ -202,8 +202,8 @@ func (ic *invocationContext) BatchVerifySeals(vis map[address.Address][]proof.Se
 	return ic.Syscalls().BatchVerifySeals(vis)
 }
 
-func (ic *invocationContext) VerifyAggregateSeals(vis []proof.SealVerifyInfo, aggregateProof []byte) error {
-	return ic.Syscalls().VerifyAggregateSeals(vis, aggregateProof)
+func (ic *invocationContext) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInfos) error {
+	return ic.Syscalls().VerifyAggregateSeals(agg)
 }
 
 func (ic *invocationContext) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
@@ -493,7 +493,7 @@ func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]proof.SealVerify
 	return res, nil
 }
 
-func (s fakeSyscalls) VerifyAggregateSeals(vis []proof.SealVerifyInfo, aggregateProof []byte) error {
+func (s fakeSyscalls) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInfos) error {
 	return nil
 }
 
