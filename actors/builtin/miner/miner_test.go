@@ -897,19 +897,25 @@ func TestCommitments(t *testing.T) {
 		// confirm at sector expiration (this probably can't happen)
 		rt.SetEpoch(precommit.Info.Expiration)
 		// sector skipped but no failure occurs
-		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "all prove commits failed to validate", func() {
+			actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		})
 		rt.ExpectLogsContain("less than minimum. ignoring")
 
 		// it still skips if sector lifetime is negative
 		rt.ClearLogs()
 		rt.SetEpoch(precommit.Info.Expiration + 1)
-		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "all prove commits failed to validate", func() {
+			actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		})
 		rt.ExpectLogsContain("less than minimum. ignoring")
 
 		// it fails up to the miniumum expiration
 		rt.ClearLogs()
 		rt.SetEpoch(precommit.Info.Expiration - miner.MinSectorExpiration + 1)
-		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "all prove commits failed to validate", func() {
+			actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
+		})
 		rt.ExpectLogsContain("less than minimum. ignoring")
 		actor.checkState(rt)
 	})

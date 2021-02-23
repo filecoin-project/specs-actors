@@ -77,6 +77,7 @@ type Runtime struct {
 	expectVerifyConsensusFault     *expectVerifyConsensusFault
 	expectDeleteActor              *addr.Address
 	expectBatchVerifySeals         *expectBatchVerifySeals
+	expectAggregateVerifySeals     *expectAggregateVerifySeals
 
 	logs []string
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
@@ -87,6 +88,12 @@ type expectBatchVerifySeals struct {
 	in  map[addr.Address][]proof.SealVerifyInfo
 	out map[addr.Address][]bool
 	err error
+}
+
+type expectAggregateVerifySeals struct {
+	inSVIs  []proof.SealVerifyInfo
+	inProof []byte
+	err     error
 }
 
 type expectRandomness struct {
@@ -658,6 +665,30 @@ func (rt *Runtime) BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo)
 	}
 	rt.failTestNow("unexpected syscall to batch verify seals with %v", vis)
 	return nil, nil
+}
+
+func (rt *Runtime) ExpectAggregateVerifySeals(inSVIs []proof.SealVerifyInfo, inProof []byte, err error) {
+	rt.expectAggregateVerifySeals = &expectAggregateVerifySeals{
+		inSVIs, inProof, err,
+	}
+}
+
+func (rt *Runtime) VerifyAggregateSeals(vis []proof.SealVerifyInfo, aggregateProof []byte) error {
+	exp := rt.expectAggregateVerifySeals
+	if exp != nil {
+		if len(vis) != len(exp.inSVIs) {
+			rt.failTest("length mismatch, expected: %v, actual: %v", exp.inSVIs, vis)
+		}
+		for i, expVI := range exp.inSVIs {
+			if vis[i].SealedCID != expVI.SealedCID {
+				rt.failTest("sealed cid does not match")
+			}
+			if vis[i].UnsealedCID != expVI.UnsealedCID {
+				rt.failTest("unsealed cid does not match")
+			}
+		}
+	}
+	return nil
 }
 
 func (rt *Runtime) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
