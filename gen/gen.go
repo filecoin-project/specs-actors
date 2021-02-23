@@ -152,7 +152,9 @@ func main() {
 		//market.ActivateDealsParams{}, // Aliased from v0
 		market.VerifyDealsForActivationParams{},
 		market.VerifyDealsForActivationReturn{},
-		//market.ComputeDataCommitmentParams{}, // Aliased from v0
+		market.SectorDataSpec{},
+		market.ComputeDataCommitmentParams{},
+		market.ComputeDataCommitmentReturn{},
 		//market.OnMinerSectorsTerminateParams{}, // Aliased from v0
 		// other types
 		//market.DealProposal{}, // Aliased from v0
@@ -188,6 +190,7 @@ func main() {
 		//miner.ChangePeerIDParams{}, // Aliased from v0
 		//miner.ChangeMultiaddrsParams{}, // Aliased from v0
 		//miner.ProveCommitSectorParams{}, // Aliased from v0
+		miner.ProveCommitAggregateParams{},
 		//miner.ChangeWorkerAddressParams{},  // Aliased from v0
 		//miner.ExtendSectorExpirationParams{}, // Aliased from v0
 		//miner.DeclareFaultsParams{}, // Aliased from v0

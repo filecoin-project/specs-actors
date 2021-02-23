@@ -63,12 +63,12 @@ var _ runtime.VMActor = Actor{}
 // Changed since v2:
 // - Seal proof type replaced with PoSt proof type
 type MinerConstructorParams struct {
-	OwnerAddr            addr.Address
-	WorkerAddr           addr.Address
-	ControlAddrs         []addr.Address
-	WindowPoStProofType  abi.RegisteredPoStProof
-	PeerId               abi.PeerID
-	Multiaddrs           []abi.Multiaddrs
+	OwnerAddr           addr.Address
+	WorkerAddr          addr.Address
+	ControlAddrs        []addr.Address
+	WindowPoStProofType abi.RegisteredPoStProof
+	PeerId              abi.PeerID
+	Multiaddrs          []abi.Multiaddrs
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,11 +87,11 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 // Changed since v2:
 // - Seal proof type replaced with PoSt proof types
 type CreateMinerParams struct {
-	Owner                addr.Address
-	Worker               addr.Address
-	WindowPoStProofType  abi.RegisteredPoStProof
-	Peer                 abi.PeerID
-	Multiaddrs           []abi.Multiaddrs
+	Owner               addr.Address
+	Worker              addr.Address
+	WindowPoStProofType abi.RegisteredPoStProof
+	Peer                abi.PeerID
+	Multiaddrs          []abi.Multiaddrs
 }
 
 //type CreateMinerReturn struct {
@@ -104,11 +104,11 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
 
 	ctorParams := MinerConstructorParams{
-		OwnerAddr:  params.Owner,
-		WorkerAddr: params.Worker,
+		OwnerAddr:           params.Owner,
+		WorkerAddr:          params.Worker,
 		WindowPoStProofType: params.WindowPoStProofType,
-		PeerId:        params.Peer,
-		Multiaddrs:    params.Multiaddrs,
+		PeerId:              params.Peer,
+		Multiaddrs:          params.Multiaddrs,
 	}
 	ctorParamBuf := new(bytes.Buffer)
 	err := ctorParams.MarshalCBOR(ctorParamBuf)

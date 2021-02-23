@@ -399,37 +399,45 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 	return nil
 }
 
-//type ComputeDataCommitmentParams struct {
-//	DealIDs    []abi.DealID
-//	SectorType abi.RegisteredSealProof
-//}
-type ComputeDataCommitmentParams = market0.ComputeDataCommitmentParams
+type SectorDataSpec struct {
+	DealIDs    []abi.DealID
+	SectorType abi.RegisteredSealProof
+}
 
-func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *cbg.CborCid {
+type ComputeDataCommitmentParams struct {
+	Inputs []*SectorDataSpec
+}
+
+type ComputeDataCommitmentReturn struct {
+	CommDs []cbg.CborCid
+}
+
+func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *ComputeDataCommitmentReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 
 	var st State
 	rt.StateReadonly(&st)
 	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal dealProposals")
+	commDs := make([]cbg.CborCid, len(params.Inputs))
+	for i, commInput := range params.Inputs {
+		pieces := make([]abi.PieceInfo, 0)
+		for _, dealID := range commInput.DealIDs {
+			deal, err := getDealProposal(proposals, dealID)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
 
-	pieces := make([]abi.PieceInfo, 0)
-	for _, dealID := range params.DealIDs {
-		deal, err := getDealProposal(proposals, dealID)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
-
-		pieces = append(pieces, abi.PieceInfo{
-			PieceCID: deal.PieceCID,
-			Size:     deal.PieceSize,
-		})
+			pieces = append(pieces, abi.PieceInfo{
+				PieceCID: deal.PieceCID,
+				Size:     deal.PieceSize,
+			})
+		}
+		commD, err := rt.ComputeUnsealedSectorCID(commInput.SectorType, pieces)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to compute unsealed sectorCID: %s", err)
+		commDs[i] = (cbg.CborCid)(commD)
 	}
-
-	commd, err := rt.ComputeUnsealedSectorCID(params.SectorType, pieces)
-	if err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "failed to compute unsealed sector CID: %s", err)
+	return &ComputeDataCommitmentReturn{
+		CommDs: commDs,
 	}
-
-	return (*cbg.CborCid)(&commd)
 }
 
 //type OnMinerSectorsTerminateParams struct {

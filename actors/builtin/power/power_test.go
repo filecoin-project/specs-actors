@@ -97,11 +97,11 @@ func TestCreateMinerFailures(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 
 		createMinerParams := &power.CreateMinerParams{
-			Owner:                owner,
-			Worker:               owner,
-			WindowPoStProofType:  windowPoStProofType,
-			Peer:                 peer,
-			Multiaddrs:           mAddr,
+			Owner:               owner,
+			Worker:              owner,
+			WindowPoStProofType: windowPoStProofType,
+			Peer:                peer,
+			Multiaddrs:          mAddr,
 		}
 
 		// owner send CreateMiner to Actor
@@ -1083,18 +1083,18 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 
 type spActorHarness struct {
 	power.Actor
-	t                *testing.T
-	minerSeq         int
-	sealProof        abi.RegisteredSealProof
-	windowPoStProof  abi.RegisteredPoStProof
+	t               *testing.T
+	minerSeq        int
+	sealProof       abi.RegisteredSealProof
+	windowPoStProof abi.RegisteredPoStProof
 }
 
 func newHarness(t *testing.T) *spActorHarness {
 	return &spActorHarness{
-		Actor:            power.Actor{},
-		t:                t,
-		sealProof:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-		windowPoStProof:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Actor:           power.Actor{},
+		t:               t,
+		sealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+		windowPoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 	}
 }
 
@@ -1159,11 +1159,11 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	prevMinerCount := st.MinerCount
 
 	createMinerParams := &power.CreateMinerParams{
-		Owner:                owner,
-		Worker:               worker,
-		WindowPoStProofType:  windowPoStProofType,
-		Peer:                 peer,
-		Multiaddrs:           multiaddrs,
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: windowPoStProofType,
+		Peer:                peer,
+		Multiaddrs:          multiaddrs,
 	}
 
 	// owner send CreateMiner to Actor
@@ -1317,6 +1317,7 @@ func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, e
 }
 
 func (h *spActorHarness) submitPoRepForBulkVerify(rt *mock.Runtime, minerAddr addr.Address, sealInfo *proof.SealVerifyInfo) {
+	rt.ExpectGasCharged(power.GasOnSubmitVerifySeal)
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 	rt.SetCaller(minerAddr, builtin.StorageMinerActorCodeID)
 	rt.Call(h.Actor.SubmitPoRepForBulkVerify, sealInfo)
@@ -1349,11 +1350,11 @@ func (h *spActorHarness) checkState(rt *mock.Runtime) {
 
 func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, windowPoStProofType abi.RegisteredPoStProof) []byte {
 	params := &power.MinerConstructorParams{
-		OwnerAddr:            owner,
-		WorkerAddr:           worker,
-		WindowPoStProofType:  windowPoStProofType,
-		PeerId:               peer,
-		Multiaddrs:           multiaddrs,
+		OwnerAddr:           owner,
+		WorkerAddr:          worker,
+		WindowPoStProofType: windowPoStProofType,
+		PeerId:              peer,
+		Multiaddrs:          multiaddrs,
 	}
 
 	buf := new(bytes.Buffer)
