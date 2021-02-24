@@ -9,5 +9,4 @@ const ConsensusMinerMinMiners = 4 // PARAM_SPEC
 //
 // This limits the number of proof partitions we may need to load in the cron call path.
 // Onboarding 1EiB/year requires at least 32 prove-commits per epoch.
-const MaxMinerProveCommitsPerEpoch = 200 // PARAM_SPEC
-
+const MaxMinerProveCommitsPerEpoch = 1000 // PARAM_SPEC

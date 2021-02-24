@@ -1,7 +1,8 @@
-package test_test
+package test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -330,4 +331,172 @@ func TestCommitPoStFlow(t *testing.T) {
 		assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
 		assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 	})
+}
+
+func TestMeasurePoRepGas(t *testing.T) {
+
+	batchSize := 102
+	fmt.Printf("Batch Size = %d\n", batchSize)
+
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
+	v.SetStatsSource(metrics)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
+
+	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+
+	// create miner
+	params := power.CreateMinerParams{
+		Owner:               addrs[0],
+		Worker:              addrs[0],
+		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                abi.PeerID("not really a peer id"),
+	}
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	minerAddrs, ok := ret.(*power.CreateMinerReturn)
+	require.True(t, ok)
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	//
+	// precommit sectors
+	//
+	sectorNumberBase := 100
+	precommits := make([]*miner.SectorPreCommitOnChainInfo, 0)
+	sectorNumbers := make([]abi.SectorNumber, 0)
+	for i := 0; i <= batchSize-1; i++ {
+		sectorNumber := abi.SectorNumber(sectorNumberBase + i)
+		sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
+
+		preCommitParams := miner.PreCommitSectorParams{
+			SealProof:     sealProof,
+			SectorNumber:  sectorNumber,
+			SealedCID:     sealedCid,
+			SealRandEpoch: v.GetEpoch() - 1,
+			DealIDs:       nil,
+			Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+		}
+		vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+
+		// assert successful precommit invocation
+		vm.ExpectInvocation{
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.PreCommitSector,
+			Params: vm.ExpectObject(&preCommitParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower}},
+		}.Matches(t, v.Invocations()[i])
+
+		// find information about precommited sector
+		var minerState miner.State
+		err = v.GetState(minerAddrs.IDAddress, &minerState)
+		require.NoError(t, err)
+
+		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+		precommits = append(precommits, precommit)
+		sectorNumbers = append(sectorNumbers, sectorNumber)
+	}
+
+	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
+
+	// advance time to max seal duration
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+
+	//
+	// prove and verify
+	//
+	v, err = v.WithEpoch(proveTime)
+	require.NoError(t, err)
+	for i := 0; i <= batchSize-1; i++ {
+		// Prove commit sector after max seal duration
+
+		proveCommitParams := miner.ProveCommitSectorParams{
+			SectorNumber: sectorNumbers[i],
+		}
+		vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
+
+		vm.ExpectInvocation{
+			To:     minerAddrs.IDAddress,
+			Method: builtin.MethodsMiner.ProveCommitSector,
+			Params: vm.ExpectObject(&proveCommitParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.SubmitPoRepForBulkVerify},
+			},
+		}.Matches(t, v.Invocations()[i])
+	}
+
+	proveCommitKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.ProveCommitSector}
+	stats := v.GetCallStats()
+	printCallStats(proveCommitKey, stats[proveCommitKey], "\n")
+
+	// In the same epoch, trigger cron to validate prove commits
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	cronKey := vm.MethodKey{Code: builtin.CronActorCodeID, Method: builtin.MethodsCron.EpochTick}
+	stats = v.GetCallStats()
+	printCallStats(cronKey, stats[cronKey], "\n")
+
+	vm.ExpectInvocation{
+		To:     builtin.CronActorAddr,
+		Method: builtin.MethodsCron.EpochTick,
+		SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				// expect confirm sector proofs valid because we prove committed,
+				// but not an on deferred cron event because this is not a deadline boundary
+				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+				}},
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+			}},
+			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
+		},
+	}.Matches(t, v.Invocations()[batchSize])
+
+	// precommit deposit is released, ipr is added
+	balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
+	assert.Equal(t, big.Zero(), balances.PreCommitDeposit)
+
+	// power is unproven so network stats are unchanged
+	networkStats := vm.GetNetworkStats(t, v)
+	assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
+	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
+}
+
+func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { // nolint:unused
+	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  read: %d  written: %d  avg gets: %.2f, avg puts: %.2f\n",
+		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
+		stats.ReadBytes, stats.WriteBytes, float32(stats.Reads)/float32(stats.Calls),
+		float32(stats.Writes)/float32(stats.Calls))
+
+	gasGetObj := uint64(75242)
+	gasPutObj := uint64(84070)
+	gasPutPerByte := uint64(1)
+	gasPerCall := uint64(29233)
+
+	ipldGas := stats.Reads*gasGetObj + stats.Writes*gasPutObj + stats.WriteBytes*gasPutPerByte
+	callGas := stats.Calls * gasPerCall
+	fmt.Printf("%v:%d: ipld gas=%d call gas=%d\n", builtin.ActorNameByCode(method.Code), method.Method, ipldGas, callGas)
+
+	if stats.SubStats == nil {
+		return
+	}
+
+	for m, s := range stats.SubStats {
+		printCallStats(m, s, indent+"  ")
+	}
 }
