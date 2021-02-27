@@ -310,11 +310,11 @@ func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPowe
 }
 
 func aggregatePoRepBatchStepSize() []int {
-	return []int{26, 51, 102, 205, 410, 819}
+	return []int{13, 26, 51, 102, 205, 410, 819}
 }
 
 func aggregatePoRepBatchGasTable() []int64 {
-	return []int64{66_549_600, 74_212_400, 81_775_200, 89_468_000, 97_070_800, 104_743_600}
+	return []int64{300_000_000, 300_000_000, 350_000_000, 350_000_000, 350_000_000, 400_000_000, 450_000_000}
 }
 
 // Return gas cost of verifying `batchSize` aggregate PoReps. Batch sizes round up.

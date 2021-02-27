@@ -816,7 +816,7 @@ type ProveCommitAggregateParams struct {
 }
 
 const MaxAggregatedSectors = 819
-const MinAggregatedSectors = 26
+const MinAggregatedSectors = 1
 const MaxAggregateProofSize = 192000
 
 func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregateParams) *abi.EmptyValue {
