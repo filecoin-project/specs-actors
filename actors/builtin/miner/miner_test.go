@@ -6176,7 +6176,7 @@ func immediatelyVestingFunds(rt *mock.Runtime, st *miner.State) big.Int {
 // Construction helpers, etc
 //
 
-func builderForHarness(actor *actorHarness) *mock.RuntimeBuilder {
+func builderForHarness(actor *actorHarness) mock.RuntimeBuilder {
 	rb := mock.NewBuilder(context.Background(), actor.receiver).
 		WithActorType(actor.owner, builtin.AccountActorCodeID).
 		WithActorType(actor.worker, builtin.AccountActorCodeID).
