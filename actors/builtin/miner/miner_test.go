@@ -3250,40 +3250,6 @@ func TestExtendSectorExpiration(t *testing.T) {
 		})
 		actor.checkState(rt)
 	})
-
-	t.Run("prevents extending old seal proof types", func(t *testing.T) {
-		actor := newHarness(t, periodOffset)
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-		rt := builderForHarness(actor).
-			WithBalance(bigBalance, big.Zero()).
-			Build(t)
-		rt.SetNetworkVersion(network.Version7)
-		actor.constructAndVerify(rt)
-
-		// Commit and prove first sector with V1
-		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
-		sector := actor.commitAndProveSector(rt, 101, defaultSectorExpiration, nil)
-		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, sector.SealProof)
-
-		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
-		require.NoError(t, err)
-
-		newExpiration := sector.Expiration + abi.ChainEpoch(miner.MinSectorExpiration)
-		params := &miner.ExtendSectorExpirationParams{
-			Extensions: []miner.ExpirationExtension{{
-				Deadline:      dlIdx,
-				Partition:     pIdx,
-				Sectors:       bf(uint64(sector.SectorNumber)),
-				NewExpiration: newExpiration,
-			}},
-		}
-
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "unsupported seal type", func() {
-			actor.extendSectors(rt, params)
-		})
-		actor.checkState(rt)
-	})
 }
 
 func TestTerminateSectors(t *testing.T) {
