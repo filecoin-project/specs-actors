@@ -1,7 +1,6 @@
 package miner_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -752,7 +751,7 @@ func requireNoExpirationGroupsBefore(t *testing.T, epoch abi.ChainEpoch, queue m
 }
 
 func emptyExpirationQueueWithQuantizing(t *testing.T, quant miner.QuantSpec, bitwidth int) miner.ExpirationQueue {
-	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+	rt := mock.NewBuilder(address.Undef).Build(t)
 	store := adt.AsStore(rt)
 	emptyArray, err := adt.StoreEmptyArray(store, testAmtBitwidth)
 	require.NoError(t, err)

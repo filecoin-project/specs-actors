@@ -1,7 +1,6 @@
 package adt_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -18,7 +17,7 @@ import (
 
 func TestBalanceTable(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
-		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		rt := mock.NewBuilder(address.Undef).Build(t)
 		store := adt.AsStore(rt)
 		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
 		require.NoError(t, err)
@@ -128,7 +127,7 @@ func TestBalanceTable(t *testing.T) {
 
 func TestSubtractWithMinimum(t *testing.T) {
 	buildBalanceTable := func() *adt.BalanceTable {
-		rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+		rt := mock.NewBuilder(address.Undef).Build(t)
 		store := adt.AsStore(rt)
 		emptyMap, err := adt.MakeEmptyMap(store, builtin.DefaultHamtBitwidth)
 		require.NoError(t, err)

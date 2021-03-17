@@ -1,7 +1,6 @@
 package init_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -27,7 +26,7 @@ func TestConstructor(t *testing.T) {
 	actor := initHarness{init_.Actor{}, t}
 
 	receiver := tutil.NewIDAddr(t, 1000)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 	rt := builder.Build(t)
 	actor.constructAndVerify(rt)
 	actor.checkState(rt)
@@ -38,7 +37,7 @@ func TestExec(t *testing.T) {
 
 	receiver := tutil.NewIDAddr(t, 1000)
 	anne := tutil.NewIDAddr(t, 1001)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("abort actors that cannot call exec", func(t *testing.T) {
 		rt := builder.Build(t)

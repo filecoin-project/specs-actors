@@ -2,7 +2,6 @@ package market_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"errors"
 	"strings"
@@ -46,7 +45,7 @@ func TestExports(t *testing.T) {
 
 func TestRemoveAllError(t *testing.T) {
 	marketActor := tutil.NewIDAddr(t, 100)
-	builder := mock.NewBuilder(context.Background(), marketActor)
+	builder := mock.NewBuilder(marketActor)
 	rt := builder.Build(t)
 	store := adt.AsStore(rt)
 
@@ -70,7 +69,7 @@ func TestMarketActor(t *testing.T) {
 	t.Run("simple construction", func(t *testing.T) {
 		actor := market.Actor{}
 		receiver := tutil.NewIDAddr(t, 100)
-		builder := mock.NewBuilder(context.Background(), receiver).
+		builder := mock.NewBuilder(receiver).
 			WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
 		rt := builder.Build(t)
@@ -3199,7 +3198,7 @@ func generateDealProposal(client, provider address.Address, startEpoch, endEpoch
 }
 
 func basicMarketSetup(t *testing.T, owner, provider, worker, client address.Address) (*mock.Runtime, *marketActorTestHarness) {
-	builder := mock.NewBuilder(context.Background(), builtin.StorageMarketActorAddr).
+	builder := mock.NewBuilder(builtin.StorageMarketActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID).
 		WithBalance(big.Mul(big.NewInt(10), big.NewInt(1e18)), big.Zero()).
 		WithActorType(owner, builtin.AccountActorCodeID).

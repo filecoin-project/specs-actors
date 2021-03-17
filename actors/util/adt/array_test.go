@@ -1,7 +1,6 @@
 package adt_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/filecoin-project/go-address"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestArrayNotFound(t *testing.T) {
-	rt := mock.NewBuilder(context.Background(), address.Undef).Build(t)
+	rt := mock.NewBuilder(address.Undef).Build(t)
 	store := adt.AsStore(rt)
 	arr, err := adt.MakeEmptyArray(store, 3)
 	require.NoError(t, err)
