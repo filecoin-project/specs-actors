@@ -12,11 +12,6 @@ import (
 	vmr "github.com/filecoin-project/specs-actors/v3/actors/runtime"
 )
 
-// Store defines an interface required to back the ADTs in this package.
-// type Store interface {
-// 	Context() context.Context
-// 	ipldcbor.IpldStore
-// }
 type Store = adt2.Store
 
 // Adapts a vanilla IPLD store as an ADT store.
