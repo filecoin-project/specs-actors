@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
+	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -52,7 +53,8 @@ type VM struct {
 
 // VM types
 
-type ActorImplLookup map[cid.Cid]runtime.VMActor
+// type ActorImplLookup map[cid.Cid]runtime.VMActor
+type ActorImplLookup vm2.ActorImplLookup
 
 type InternalMessage struct {
 	from   address.Address
@@ -353,6 +355,12 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		if err := vm.rollback(priorRoot); err != nil {
 			panic(err)
 		}
+	} else {
+		// persist changes from final invocation if call is ok
+		if _, err := vm.checkpoint(); err != nil {
+			panic(err)
+		}
+
 	}
 
 	return ret.inner, exitCode
@@ -422,6 +430,10 @@ func (vm *VM) GetCirculatingSupply() abi.TokenAmount {
 	return vm.circSupply
 }
 
+func (vm *VM) GetActorImpls() map[cid.Cid]rt.VMActor {
+	return vm.ActorImpls
+}
+
 // transfer debits money from one account and credits it to another.
 // avoid calling this method with a zero amount else it will perform unnecessary actor loading.
 //
@@ -487,6 +499,10 @@ func (vm *VM) getActorImpl(code cid.Cid) runtime.VMActor {
 
 func (vm *VM) SetStatsSource(s StatsSource) {
 	vm.statsSource = s
+}
+
+func (vm *VM) GetStatsSource() StatsSource {
+	return vm.statsSource
 }
 
 func (vm *VM) StoreReads() uint64 {
