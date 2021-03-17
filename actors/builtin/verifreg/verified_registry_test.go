@@ -1,7 +1,6 @@
 package verifreg_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -26,7 +25,7 @@ func TestExports(t *testing.T) {
 func TestConstruction(t *testing.T) {
 	receiver := tutil.NewIDAddr(t, 100)
 
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
 	t.Run("successful construction with root ID address", func(t *testing.T) {
@@ -775,7 +774,7 @@ type verifRegActorTestHarness struct {
 }
 
 func basicVerifRegSetup(t *testing.T, root address.Address) (*mock.Runtime, *verifRegActorTestHarness) {
-	builder := mock.NewBuilder(context.Background(), builtin.StorageMarketActorAddr).
+	builder := mock.NewBuilder(builtin.StorageMarketActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID).
 		WithActorType(root, builtin.VerifiedRegistryActorCodeID)
 

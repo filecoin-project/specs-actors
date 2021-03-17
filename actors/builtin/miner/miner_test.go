@@ -3,7 +3,6 @@ package miner_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -73,7 +72,7 @@ func TestConstruction(t *testing.T) {
 	controlAddrs := []addr.Address{tutil.NewIDAddr(t, 999), tutil.NewIDAddr(t, 998)}
 
 	receiver := tutil.NewIDAddr(t, 1000)
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithActorType(owner, builtin.AccountActorCodeID).
 		WithActorType(worker, builtin.AccountActorCodeID).
 		WithActorType(controlAddrs[0], builtin.AccountActorCodeID).
@@ -6177,7 +6176,7 @@ func immediatelyVestingFunds(rt *mock.Runtime, st *miner.State) big.Int {
 //
 
 func builderForHarness(actor *actorHarness) mock.RuntimeBuilder {
-	rb := mock.NewBuilder(context.Background(), actor.receiver).
+	rb := mock.NewBuilder(actor.receiver).
 		WithActorType(actor.owner, builtin.AccountActorCodeID).
 		WithActorType(actor.worker, builtin.AccountActorCodeID).
 		WithHasher(fixedHasher(uint64(actor.periodOffset)))

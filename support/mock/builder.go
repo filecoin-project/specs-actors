@@ -17,10 +17,9 @@ type RuntimeBuilder struct {
 }
 
 // Initializes a new builder with a receiving actor address.
-func NewBuilder(ctx context.Context, receiver addr.Address) RuntimeBuilder {
+func NewBuilder(receiver addr.Address) RuntimeBuilder {
 	var b RuntimeBuilder
 	b.add(func(rt *Runtime) {
-		rt.ctx = ctx
 		rt.receiver = receiver
 	})
 	return b
@@ -28,8 +27,11 @@ func NewBuilder(ctx context.Context, receiver addr.Address) RuntimeBuilder {
 
 // Builds a new runtime object with the configured values.
 func (b RuntimeBuilder) Build(t testing.TB) *Runtime {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	m := &Runtime{
-		ctx:               context.Background(),
+		ctx:               ctx,
 		epoch:             0,
 		networkVersion:    network.VersionMax,
 		caller:            addr.Address{},
