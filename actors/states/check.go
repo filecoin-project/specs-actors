@@ -159,7 +159,6 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 
 func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map[addr.Address]*miner.StateSummary, powerSummary *power.StateSummary) {
 	for addr, minerSummary := range minerSummaries { // nolint:nomaprange
-
 		// check claim
 		claim, ok := powerSummary.Claims[addr]
 		acc.Require(ok, "miner %v has no power claim", addr)
@@ -174,6 +173,7 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 		// check crons
 		crons, ok := powerSummary.Crons[addr]
 		if !ok {
+			acc.Addf("miner %s has no cron events, at least one proving period cron expected", addr)
 			continue
 		}
 
