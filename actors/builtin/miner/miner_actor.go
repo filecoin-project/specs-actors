@@ -1171,6 +1171,10 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
+					if !CanExtendSealProofType(sector.SealProof, rt.NetworkVersion()) {
+						rt.Abortf(exitcode.ErrForbidden, "cannot extend expiration for sector %v with unsupported seal type %v",
+							sector.SectorNumber, sector.SealProof)
+					}
 					// This can happen if the sector should have already expired, but hasn't
 					// because the end of its deadline hasn't passed yet.
 					if sector.Expiration < currEpoch {
