@@ -3020,7 +3020,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		// and prove it once to activate it.
 		advanceAndSubmitPoSts(rt, actor, sector)
 
-		maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sector.SealProof)
+		maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sector.SealProof, network.Version0)
 		require.NoError(t, err)
 
 		st := getState(rt)
