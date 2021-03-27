@@ -11,7 +11,7 @@ type SealProofPolicy struct {
 	SectorMaxLifetime stabi.ChainEpoch
 }
 
-// For V1 Stacked DRG sectors, the max is 540 days since Network  Version 11
+// For V1 Stacked DRG sectors, the max is 540 days since Network Version 11
 // 	according to https://github.com/filecoin-project/FIPs/blob/master/FIPS/fip-0014.md
 const EpochsIn540Days = stabi.ChainEpoch(540 * EpochsInDay)
 
