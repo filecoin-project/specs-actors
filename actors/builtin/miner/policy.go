@@ -273,25 +273,9 @@ func SectorDealsMax(size abi.SectorSize) uint64 {
 	return max64(256, uint64(size/DealLimitDenominator))
 }
 
-// Initial share of consensus fault penalty allocated as reward to the reporter.
-var consensusFaultReporterInitialShare = builtin.BigFrac{
-	Numerator:   big.NewInt(1), // PARAM_SPEC
-	Denominator: big.NewInt(1000),
-}
-
-// Per-epoch growth rate of the consensus fault reporter reward.
-// consensusFaultReporterInitialShare*consensusFaultReporterShareGrowthRate^consensusFaultGrowthDuration ~= consensusFaultReporterMaxShare
-// consensusFaultGrowthDuration = 500 epochs
-var consensusFaultReporterShareGrowthRate = builtin.BigFrac{
-	Numerator:   big.NewInt(100785473384), // PARAM_SPEC
-	Denominator: big.NewInt(100000000000),
-}
-
-// Maximum share of consensus fault penalty allocated as reporter reward.
-var consensusFaultMaxReporterShare = builtin.BigFrac{
-	Numerator:   big.NewInt(1), // PARAM_SPEC
-	Denominator: big.NewInt(20),
-}
+// Default share of block reward allocated as reward to the consensus fault reporter.
+// Applied as epochReward / consensusFaultReporterDefaultShare
+const consensusFaultReporterDefaultShare int64 = 4
 
 // Specification for a linear vesting schedule.
 type VestSpec struct {
@@ -310,37 +294,8 @@ var RewardVestingSpec = VestSpec{ // PARAM_SPEC
 }
 
 // When an actor reports a consensus fault, they earn a share of the penalty paid by the miner.
-// This amount is:  Min(initialShare * growthRate^elapsed, maxReporterShare) * collateral
-// The reward grows over time until a maximum, forming an auction for the report.
-func RewardForConsensusSlashReport(elapsedEpoch abi.ChainEpoch, collateral abi.TokenAmount) abi.TokenAmount {
-	// High level description
-	// var growthRate = SLASHER_SHARE_GROWTH_RATE_NUM / SLASHER_SHARE_GROWTH_RATE_DENOM
-	// var multiplier = growthRate^elapsedEpoch
-	// var slasherProportion = min(INITIAL_SLASHER_SHARE * multiplier, 0.05)
-	// return collateral * slasherProportion
-
-	// BigInt Operation
-	// NUM = SLASHER_SHARE_GROWTH_RATE_NUM^elapsedEpoch * INITIAL_SLASHER_SHARE_NUM * collateral
-	// DENOM = SLASHER_SHARE_GROWTH_RATE_DENOM^elapsedEpoch * INITIAL_SLASHER_SHARE_DENOM
-	// slasher_amount = min(NUM/DENOM, collateral)
-	elapsed := big.NewInt(int64(elapsedEpoch))
-
-	// The following is equivalent to: slasherShare = growthRate^elapsed
-	// slasherShareNumerator = growthRateNumerator^elapsed
-	slasherShareNumerator := big.Exp(consensusFaultReporterShareGrowthRate.Numerator, elapsed)
-	// slasherShareDenominator = growthRateDenominator^elapsed
-	slasherShareDenominator := big.Exp(consensusFaultReporterShareGrowthRate.Denominator, elapsed)
-
-	// The following is equivalent to: reward = slasherShare * initialShare * collateral
-	// num = slasherShareNumerator * initialShareNumerator * collateral
-	num := big.Mul(big.Mul(slasherShareNumerator, consensusFaultReporterInitialShare.Numerator), collateral)
-	// denom = slasherShareDenominator * initialShareDenominator
-	denom := big.Mul(slasherShareDenominator, consensusFaultReporterInitialShare.Denominator)
-
-	// The following is equivalent to: Min(reward, collateral * maxReporterShare)
-	// Min(rewardNum/rewardDenom, maxReporterShareNum/maxReporterShareDen*collateral)
-	return big.Min(big.Div(num, denom), big.Div(big.Mul(collateral, consensusFaultMaxReporterShare.Numerator),
-		consensusFaultMaxReporterShare.Denominator))
+func RewardForConsensusSlashReport(epochReward abi.TokenAmount) abi.TokenAmount {
+	return big.Div(epochReward, big.NewInt(consensusFaultReporterDefaultShare))
 }
 
 // The reward given for successfully disputing a window post.
