@@ -147,16 +147,19 @@ func CanPreCommitSealProof(s abi.RegisteredSealProof, nv network.Version) bool {
 }
 
 // List of proof types for which sector lifetime may be extended.
-// From network version 7, sectors sealed with the V1 seal proof types cannot be extended.
+// From network version 7 to version 10, sectors sealed with the V1 seal proof types cannot be extended.
 var ExtensibleProofTypes = map[abi.RegisteredSealProof]struct{}{
 	abi.RegisteredSealProof_StackedDrg32GiBV1_1: {},
 	abi.RegisteredSealProof_StackedDrg64GiBV1_1: {},
 }
 
 // Checks whether a seal proof type is supported for new miners and sectors.
-func CanExtendSealProofType(s abi.RegisteredSealProof) bool {
-	_, ok := ExtensibleProofTypes[s]
-	return ok
+func CanExtendSealProofType(s abi.RegisteredSealProof, nv network.Version) bool {
+	if nv >= network.Version7 && nv <= network.Version10 {
+		_, ok := ExtensibleProofTypes[s]
+		return ok
+	}
+	return true
 }
 
 // Maximum delay to allow between sector pre-commit and subsequent proof.
