@@ -1,7 +1,6 @@
 package account_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -30,7 +29,7 @@ func TestAccountactor(t *testing.T) {
 	actor := account.Actor{}
 
 	receiver := tutil.NewIDAddr(t, 100)
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	testCases := []constructorTestCase{
 		{

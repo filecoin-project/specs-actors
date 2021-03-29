@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"sync"
+	"testing"
 
 	amt2 "github.com/filecoin-project/go-amt-ipld/v2"
 	amt3 "github.com/filecoin-project/go-amt-ipld/v3"
 	hamt2 "github.com/filecoin-project/go-hamt-ipld/v2"
 	hamt3 "github.com/filecoin-project/go-hamt-ipld/v3"
+	"github.com/filecoin-project/go-state-types/rt"
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -186,4 +188,12 @@ func (m *MemMigrationCache) Update(other *MemMigrationCache) {
 		m.MigrationMap.Store(key, value)
 		return true
 	})
+}
+
+type TestLogger struct {
+	TB testing.TB
+}
+
+func (t TestLogger) Log(_ rt.LogLevel, msg string, args ...interface{}) {
+	t.TB.Logf(msg, args...)
 }

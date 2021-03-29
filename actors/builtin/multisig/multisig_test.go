@@ -2,7 +2,6 @@ package multisig_test
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -39,7 +38,7 @@ func TestConstruction(t *testing.T) {
 
 	charlie := tutil.NewIDAddr(t, 103)
 
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple construction", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -174,7 +173,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fail to construct multisig if a signer is not resolvable to an ID address", func(t *testing.T) {
-		builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+		builder := mock.NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 		rt := builder.Build(t)
 		params := multisig.ConstructorParams{
 			Signers:               []addr.Address{anneNonId, bob, charlie},
@@ -234,7 +233,7 @@ func TestVesting(t *testing.T) {
 	const unlockDuration = abi.ChainEpoch(10)
 	var multisigInitialBalance = abi.NewTokenAmount(100)
 
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithEpoch(0).
 		WithBalance(multisigInitialBalance, multisigInitialBalance).
@@ -419,7 +418,7 @@ func TestPropose(t *testing.T) {
 	var fakeParams = builtin.CBORBytes([]byte{1, 2, 3, 4})
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("simple propose", func(t *testing.T) {
 		const numApprovals = uint64(2)
@@ -536,7 +535,7 @@ func TestApprove(t *testing.T) {
 	var fakeParams = builtin.CBORBytes([]byte{1, 2, 3, 4})
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithHasher(blake2b.Sum256)
 
@@ -911,7 +910,7 @@ func TestCancel(t *testing.T) {
 	var sendValue = abi.NewTokenAmount(10)
 	var signers = []addr.Address{anne, bob}
 
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithHasher(blake2b.Sum256)
 
@@ -1185,7 +1184,7 @@ func TestAddSigner(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+			builder := mock.NewBuilder(multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 			rt := builder.Build(t)
 			for src, target := range tc.idAddrsMapping {
 				rt.AddIDAddress(src, target)
@@ -1238,7 +1237,7 @@ func TestRemoveSigner(t *testing.T) {
 	const noUnlockDuration = abi.ChainEpoch(0)
 
 	actor := msActorHarness{multisig.Actor{}, t}
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	testCases := []removeSignerTestCase{
 		{
@@ -1479,7 +1478,7 @@ func TestSwapSigners(t *testing.T) {
 	const numApprovals = uint64(1)
 
 	actor := msActorHarness{multisig.Actor{}, t}
-	builder := mock.NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	testCases := []swapTestCase{
 		{
@@ -1685,7 +1684,7 @@ func TestChangeThreshold(t *testing.T) {
 		},
 	}
 
-	builder := mock.NewBuilder(context.Background(), multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := mock.NewBuilder(multisigWalletAdd).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			rt := builder.Build(t)
@@ -1742,7 +1741,7 @@ func TestLockBalance(t *testing.T) {
 	anne := tutil.NewIDAddr(t, 101)
 	bob := tutil.NewIDAddr(t, 102)
 
-	builder := mock.NewBuilder(context.Background(), receiver).
+	builder := mock.NewBuilder(receiver).
 		WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID).
 		WithEpoch(0).
 		WithHasher(blake2b.Sum256)
@@ -1896,7 +1895,7 @@ func TestLockBalance(t *testing.T) {
 		})
 		rt.Reset()
 	})
-	
+
 	t.Run("checks preconditions", func(t *testing.T) {
 		rt := builder.Build(t)
 

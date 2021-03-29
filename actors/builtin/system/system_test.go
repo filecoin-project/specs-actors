@@ -1,7 +1,6 @@
 package system_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +15,7 @@ func TestExports(t *testing.T) {
 }
 
 func TestConstruction(t *testing.T) {
-	rt := mock.NewBuilder(context.Background(), builtin.SystemActorAddr).Build(t)
+	rt := mock.NewBuilder(builtin.SystemActorAddr).Build(t)
 	a := system.Actor{}
 
 	rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)

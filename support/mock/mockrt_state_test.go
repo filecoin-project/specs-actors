@@ -1,7 +1,6 @@
 package mock
 
 import (
-	"context"
 	"io"
 	"testing"
 
@@ -59,7 +58,6 @@ func (s State) UnmarshalCBOR(r io.Reader) error {
 
 var _ runtime.VMActor = FakeActor{}
 
-
 func (a FakeActor) Constructor(rt runtime.Runtime, mutate *cbg.CborBool) *abi.EmptyValue {
 	st := State{Value: 0}
 	rt.StateCreate(&st)
@@ -111,11 +109,10 @@ func (a FakeActor) TransactionStateTwice(rt runtime.Runtime, mutate *cbg.CborBoo
 	return nil
 }
 
-
 func TestIllegalStateModifications(t *testing.T) {
 	actor := FakeActor{}
 	receiver := tutil.NewIDAddr(t, 100)
-	builder := NewBuilder(context.Background(), receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
+	builder := NewBuilder(receiver).WithCaller(builtin.InitActorAddr, builtin.InitActorCodeID)
 
 	t.Run("construction", func(t *testing.T) {
 		rt := builder.Build(t)
@@ -176,4 +173,3 @@ func TestIllegalStateModifications(t *testing.T) {
 		})
 	})
 }
-

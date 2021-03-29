@@ -1,7 +1,6 @@
 package verifreg_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -26,15 +25,11 @@ func TestExports(t *testing.T) {
 func TestConstruction(t *testing.T) {
 	receiver := tutil.NewIDAddr(t, 100)
 
-	runtimeSetup := func() *mock.RuntimeBuilder {
-		builder := mock.NewBuilder(context.Background(), receiver).
-			WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
-
-		return builder
-	}
+	builder := mock.NewBuilder(receiver).
+		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID)
 
 	t.Run("successful construction with root ID address", func(t *testing.T) {
-		rt := runtimeSetup().Build(t)
+		rt := builder.Build(t)
 		raddr := tutil.NewIDAddr(t, 101)
 
 		actor := verifRegActorTestHarness{t: t, rootkey: raddr}
@@ -51,7 +46,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("non-ID address root is resolved to an ID address for construction", func(t *testing.T) {
-		rt := runtimeSetup().Build(t)
+		rt := builder.Build(t)
 
 		raddr := tutil.NewBLSAddr(t, 101)
 		rootIdAddr := tutil.NewIDAddr(t, 201)
@@ -72,7 +67,7 @@ func TestConstruction(t *testing.T) {
 	})
 
 	t.Run("fails if root cannot be resolved to an ID address", func(t *testing.T) {
-		rt := runtimeSetup().Build(t)
+		rt := builder.Build(t)
 		actor := verifreg.Actor{}
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
@@ -779,7 +774,7 @@ type verifRegActorTestHarness struct {
 }
 
 func basicVerifRegSetup(t *testing.T, root address.Address) (*mock.Runtime, *verifRegActorTestHarness) {
-	builder := mock.NewBuilder(context.Background(), builtin.StorageMarketActorAddr).
+	builder := mock.NewBuilder(builtin.StorageMarketActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.InitActorCodeID).
 		WithActorType(root, builtin.VerifiedRegistryActorCodeID)
 
@@ -973,4 +968,3 @@ func mkVerifierParams(a address.Address, allowance verifreg.DataCap) *verifreg.A
 func mkClientParams(a address.Address, cap verifreg.DataCap) *verifreg.AddVerifiedClientParams {
 	return &verifreg.AddVerifiedClientParams{Address: a, Allowance: cap}
 }
-
