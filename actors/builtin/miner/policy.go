@@ -274,7 +274,7 @@ func SectorDealsMax(size abi.SectorSize) uint64 {
 }
 
 // Default share of block reward allocated as reward to the consensus fault reporter.
-// Applied as epochReward / consensusFaultReporterDefaultShare
+// Applied as epochReward / (expectedLeadersPerEpoch * consensusFaultReporterDefaultShare)
 const consensusFaultReporterDefaultShare int64 = 4
 
 // Specification for a linear vesting schedule.
@@ -295,7 +295,10 @@ var RewardVestingSpec = VestSpec{ // PARAM_SPEC
 
 // When an actor reports a consensus fault, they earn a share of the penalty paid by the miner.
 func RewardForConsensusSlashReport(epochReward abi.TokenAmount) abi.TokenAmount {
-	return big.Div(epochReward, big.NewInt(consensusFaultReporterDefaultShare))
+	return big.Div(epochReward,
+		big.Mul(big.NewInt(builtin.ExpectedLeadersPerEpoch),
+			big.NewInt(consensusFaultReporterDefaultShare)),
+	)
 }
 
 // The reward given for successfully disputing a window post.
