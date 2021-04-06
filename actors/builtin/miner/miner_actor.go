@@ -1744,8 +1744,9 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	// The policy amounts we should burn and send to reporter
 	// These may differ from actual funds send when miner goes into fee debt
-	faultPenalty := ConsensusFaultPenalty(rewardStats.ThisEpochRewardSmoothed.Estimate())
-	slasherReward := RewardForConsensusSlashReport(faultAge, faultPenalty)
+	thisEpochReward := rewardStats.ThisEpochRewardSmoothed.Estimate()
+	faultPenalty := ConsensusFaultPenalty(thisEpochReward)
+	slasherReward := RewardForConsensusSlashReport(thisEpochReward)
 	pledgeDelta := big.Zero()
 
 	// The amounts actually sent to burnt funds and reporter
