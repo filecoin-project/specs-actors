@@ -251,12 +251,12 @@ func TestAddVerifiedClient(t *testing.T) {
 		ac.addVerifier(rt, verifier2.Address, verifier2.Allowance)
 
 		// add client 1 & 2
-		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
-		ac.addVerifiedClient(rt, verifier.Address, c2.Address, c2.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance, c1.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c2.Address, c2.Allowance, c2.Allowance)
 
 		// add clients 3 & 4
-		ac.addVerifiedClient(rt, verifier2.Address, c3.Address, c3.Allowance)
-		ac.addVerifiedClient(rt, verifier2.Address, c4.Address, c4.Allowance)
+		ac.addVerifiedClient(rt, verifier2.Address, c3.Address, c3.Allowance, c3.Allowance)
+		ac.addVerifiedClient(rt, verifier2.Address, c4.Address, c4.Allowance, c4.Allowance)
 
 		// all clients should exist and verifiers should have no more allowance left
 		assert.EqualValues(t, c1.Allowance, ac.getClientCap(rt, c1.Address))
@@ -281,7 +281,7 @@ func TestAddVerifiedClient(t *testing.T) {
 		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
 
 		// add client 1 works
-		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance, c1.Allowance)
 
 		// add client 2 fails
 		rt.SetCaller(verifier.Address, builtin.VerifiedRegistryActorCodeID)
@@ -308,7 +308,7 @@ func TestAddVerifiedClient(t *testing.T) {
 
 		verifier := mkVerifierParams(verifierAddr, allowance)
 		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
-		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance, c1.Allowance)
 
 		assert.EqualValues(t, clientAllowance, ac.getClientCap(rt, clientIdAddr))
 
@@ -333,7 +333,7 @@ func TestAddVerifiedClient(t *testing.T) {
 		ac.addVerifier(rt, verifier.Address, verifier.Allowance)
 
 		// add client works
-		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+		ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance, c1.Allowance)
 		ac.checkState(rt)
 	})
 
@@ -349,7 +349,7 @@ func TestAddVerifiedClient(t *testing.T) {
 		rt.ExpectSend(clientNonIdAddr, builtin.MethodSend, nil, abi.NewTokenAmount(0), nil, exitcode.Ok)
 
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance)
+			ac.addVerifiedClient(rt, verifier.Address, c1.Address, c1.Allowance, c1.Allowance)
 		})
 		ac.checkState(rt)
 	})
@@ -404,7 +404,7 @@ func TestAddVerifiedClient(t *testing.T) {
 		client := mkClientParams(root, clientAllowance)
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			ac.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance)
+			ac.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance, client.Allowance)
 		})
 		ac.checkState(rt)
 	})
@@ -804,32 +804,20 @@ func (h *verifRegActorTestHarness) generateAndAddVerifierAndVerifiedClient(rt *m
 	// add client
 	client := mkClientParams(clientAddr, clientAllowance)
 	client.Allowance = clientAllowance
-	h.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance)
+	h.addVerifiedClient(rt, verifier.Address, client.Address, client.Allowance, client.Allowance)
 }
 
-func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier, client address.Address, caps ...verifreg.DataCap) {
-	// caps[0] expects allowance to be set
-	// caps[1] (optional) expected allowance to be verified
-	// additional args are ignored
-	var allowance, expectedAllowance verifreg.DataCap
-	switch len(caps) {
-	case 1:
-		allowance = caps[0]
-		expectedAllowance = caps[0]
-	case 2:
-		allowance, expectedAllowance = caps[0], caps[1]
-	}
-
+func (h *verifRegActorTestHarness) addVerifiedClient(rt *mock.Runtime, verifier, client address.Address, allowanceAdded, totalAllowance verifreg.DataCap) {
 	rt.SetCaller(verifier, builtin.VerifiedRegistryActorCodeID)
 	rt.ExpectValidateCallerAny()
 
-	params := &verifreg.AddVerifiedClientParams{Address: client, Allowance: allowance}
+	params := &verifreg.AddVerifiedClientParams{Address: client, Allowance: allowanceAdded}
 	rt.Call(h.AddVerifiedClient, params)
 	rt.Verify()
 
 	clientIdAddr, found := rt.GetIdAddr(client)
 	require.True(h.t, found)
-	assert.EqualValues(h.t, expectedAllowance, h.getClientCap(rt, clientIdAddr))
+	assert.EqualValues(h.t, totalAllowance, h.getClientCap(rt, clientIdAddr))
 }
 
 func (h *verifRegActorTestHarness) addVerifier(rt *mock.Runtime, verifier address.Address, datacap verifreg.DataCap) {
