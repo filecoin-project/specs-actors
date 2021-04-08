@@ -182,18 +182,19 @@ func (a Actor) AddVerifiedClient(rt runtime.Runtime, params *AddVerifiedClientPa
 		err = verifiers.Put(abi.AddrKey(verifier), &newVerifierCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update new verifier cap (%d) for %v", newVerifierCap, verifier)
 
-		// This is a one-time, upfront allocation.
-		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
-		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
-		// and then create a new verified client.
-		found, err = verifiedClients.Get(abi.AddrKey(client), nil)
+		var clientCap DataCap
+		found, err = verifiedClients.Get(abi.AddrKey(client), &clientCap)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", client)
-		if found {
-			rt.Abortf(exitcode.ErrIllegalArgument, "verified client already exists: %v", client)
-		}
 
-		err = verifiedClients.Put(abi.AddrKey(client), &params.Allowance)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified client %v with cap %d", client, params.Allowance)
+		// if verified client exists, add allowance to existing cap
+		// otherwise, create new client with allownace
+		if found {
+			clientCap = big.Add(clientCap, params.Allowance)
+		} else {
+			clientCap = params.Allowance
+		}
+		err = verifiedClients.Put(abi.AddrKey(client), &clientCap)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified client %v with cap %d", client, clientCap)
 
 		st.Verifiers, err = verifiers.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verifiers")
