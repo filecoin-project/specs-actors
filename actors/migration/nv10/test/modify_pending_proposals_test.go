@@ -22,14 +22,14 @@ import (
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 
-	builtin3 "github.com/filecoin-project/specs-actors/v3/actors/builtin"
-	exported3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/exported"
-	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
-	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v3/actors/migration/nv10"
-	states3 "github.com/filecoin-project/specs-actors/v3/actors/states"
-	tutil "github.com/filecoin-project/specs-actors/v3/support/testing"
-	vm3 "github.com/filecoin-project/specs-actors/v3/support/vm"
+	builtin3 "github.com/filecoin-project/specs-actors/v4/actors/builtin"
+	exported3 "github.com/filecoin-project/specs-actors/v4/actors/builtin/exported"
+	market3 "github.com/filecoin-project/specs-actors/v4/actors/builtin/market"
+	miner3 "github.com/filecoin-project/specs-actors/v4/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v4/actors/migration/nv10"
+	states3 "github.com/filecoin-project/specs-actors/v4/actors/states"
+	tutil "github.com/filecoin-project/specs-actors/v4/support/testing"
+	vm3 "github.com/filecoin-project/specs-actors/v4/support/vm"
 )
 
 func TestUpdatePendingDealsMigration(t *testing.T) {
