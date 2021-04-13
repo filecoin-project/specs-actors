@@ -405,6 +405,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 		precommits = append(precommits, precommit)
 		sectorNumbers = append(sectorNumbers, sectorNumber)
 	}
+	_ = precommits
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -549,6 +550,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 		precommits = append(precommits, precommit)
 		sectorNumbers = append(sectorNumbers, uint64(sectorNumber))
 	}
+	_ = precommits
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
