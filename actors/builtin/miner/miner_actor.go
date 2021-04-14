@@ -126,11 +126,6 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 	rt.StateCreate(state)
 
-	// Register first cron callback for epoch before the next deadline starts.
-	deadlineClose := periodStart + WPoStChallengeWindow*abi.ChainEpoch(1+deadlineIndex)
-	enrollCronEvent(rt, deadlineClose-1, &CronEventPayload{
-		EventType: CronEventProvingDeadline,
-	})
 	return nil
 }
 
