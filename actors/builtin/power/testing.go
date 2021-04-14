@@ -42,7 +42,7 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 	acc.Require(st.TotalRawBytePower.LessThanEqual(st.TotalBytesCommitted),
 		"total raw power %v is greater than raw power committed %v", st.TotalRawBytePower, st.TotalBytesCommitted)
 	acc.Require(st.TotalQualityAdjPower.LessThanEqual(st.TotalQABytesCommitted),
-		"total qua power %v is greater than qa power committed %v", st.TotalQualityAdjPower, st.TotalQABytesCommitted)
+		"total qa power %v is greater than qa power committed %v", st.TotalQualityAdjPower, st.TotalQABytesCommitted)
 
 	crons := CheckCronInvariants(st, store, acc)
 	claims := CheckClaimInvariants(st, store, acc)

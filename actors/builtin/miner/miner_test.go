@@ -4521,9 +4521,13 @@ func TestApplyRewards(t *testing.T) {
 			require.EqualValues(t, expectedOffset, int64(vf.Epoch)%int64(miner.RewardVestingSpec.Quantization))
 		}
 
+		st = getState(rt)
 		lockedAmt, _ := miner.LockedRewardFromReward(amt)
 		assert.Equal(t, lockedAmt, st.LockedFunds)
-		actor.checkState(rt)
+		// technically applying rewards without first activating cron is an impossible state but convenient for testing
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 1, len(msgs.Messages()))
+		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
 
 	t.Run("penalty is burnt", func(t *testing.T) {
@@ -4539,7 +4543,11 @@ func TestApplyRewards(t *testing.T) {
 		expectedLockAmt = big.Sub(expectedLockAmt, penalty)
 		assert.Equal(t, expectedLockAmt, actor.getLockedFunds(rt))
 
-		actor.checkState(rt)
+		// technically applying rewards without first activating cron is an impossible state but convenient for testing
+		st := getState(rt)
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 1, len(msgs.Messages()))
+		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
 
 	t.Run("penalty is partially burnt and stored as fee debt", func(t *testing.T) {
@@ -4573,6 +4581,7 @@ func TestApplyRewards(t *testing.T) {
 		st = getState(rt)
 		// fee debt =  penalty - reward - initial balance = 3*amt - 2*amt = amt
 		assert.Equal(t, amt, st.FeeDebt)
+		// technically applying rewards without first activating cron is an impossible state but convenient for testing
 		actor.checkState(rt)
 	})
 
@@ -4638,7 +4647,10 @@ func TestApplyRewards(t *testing.T) {
 		assert.True(t, st.IsDebtFree())
 		// remaining funds locked in vesting table
 		assert.Equal(t, remainingLocked, st.LockedFunds)
-		actor.checkState(rt)
+		// technically applying rewards without first activating cron is an impossible state but convenient for testing
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		assert.Equal(t, 1, len(msgs.Messages()))
+		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
 }
 

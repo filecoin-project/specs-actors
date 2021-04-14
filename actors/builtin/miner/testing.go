@@ -22,6 +22,7 @@ type StateSummary struct {
 	FaultyPower         PowerPair
 	Deals               map[abi.DealID]DealSummary
 	WindowPoStProofType abi.RegisteredPoStProof
+	DeadlineCronActive  bool
 }
 
 // Checks internal invariants of init state.
@@ -33,6 +34,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		ActivePower:         NewPowerPairZero(),
 		FaultyPower:         NewPowerPairZero(),
 		WindowPoStProofType: 0,
+		DeadlineCronActive:  st.DeadlineCronActive,
 	}
 
 	// Load data from linked structures.
@@ -745,6 +747,11 @@ func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount, acc
 
 	acc.Require(st.LockedFunds.Equals(vestingSum),
 		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
+
+	// Non zero funds implies that DeadlineCronActive is true.
+	if !st.LockedFunds.IsZero() || !st.PreCommitDeposits.IsZero() || !st.InitialPledge.IsZero() {
+		acc.Require(st.DeadlineCronActive, "DeadlineCronActive == false when IP+PCD+LF > 0")
+	}
 }
 
 func CheckPreCommits(st *State, store adt.Store, allocatedSectors map[uint64]bool, acc *builtin.MessageAccumulator) {
