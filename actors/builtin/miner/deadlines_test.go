@@ -19,3 +19,24 @@ func TestProvingPeriodDeadlines(t *testing.T) {
 		assert.Equal(t, d.NextNotElapsed().Last(), quant.QuantizeUp(curr))
 	})
 }
+
+func TestDeadlineInfoFromOffsetAndEpoch(t *testing.T) {
+	// All proving periods equivalent mod WPoStProving period should give equivalent
+	// dlines for a given epoch. Only the offset property should matter
+
+	pp := abi.ChainEpoch(1972)
+	ppThree := abi.ChainEpoch(1972 + 2880*3)
+	ppMillion := abi.ChainEpoch(1972 + 2880*10e6)
+
+	epochs := []abi.ChainEpoch{4, 2000, 400000, 5000000}
+	for _, epoch := range epochs {
+		dlineA := miner.NewDeadlineInfoFromOffsetAndEpoch(pp, epoch)
+		dlineB := miner.NewDeadlineInfoFromOffsetAndEpoch(ppThree, epoch)
+		dlineC := miner.NewDeadlineInfoFromOffsetAndEpoch(ppMillion, epoch)
+
+		assert.Equal(t, *dlineA, *dlineB)
+		assert.Equal(t, *dlineB, *dlineC)
+
+	}
+
+}
