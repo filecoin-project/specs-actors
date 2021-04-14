@@ -217,7 +217,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		return cid.Undef, err
 	}
 
-	return cid.Undef, nil
+	elapsed := time.Since(startTime)
+	rate := float64(doneCount) / elapsed.Seconds()
+	log.Log(rt.INFO, "All %d done after %v (%.0f/s). Flushing state tree root.", doneCount, elapsed, rate)
+	return actorsOut.Flush()
 }
 
 type actorMigrationInput struct {
