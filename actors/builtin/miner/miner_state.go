@@ -284,11 +284,8 @@ func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *dline.Info {
 
 // Returns deadline calculations for the state recorded proving period and deadline. This is out of date if the a
 // miner does not have an active miner cron
-func (st *State) RecordedDeadlineInfo(currEpoch abi.ChainEpoch) (*dline.Info, error) {
-	if !st.DeadlineCronActive {
-		return nil, xerrors.New("attempting to use recorded dline info while miner cron inactive")
-	}
-	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch), nil
+func (st *State) RecordedDeadlineInfo(currEpoch abi.ChainEpoch) *dline.Info {
+	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
 }
 
 // Returns current proving period start for the current epoch according to the current epoch and constant state offset

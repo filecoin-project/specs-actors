@@ -795,11 +795,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			st.DeadlineCronActive = true
 		}
 	})
-
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	if needsCron {
+		//		fmt.Printf("[PRECOMMIT] miner actor enrolling cron!\n")
 		newDlInfo := st.DeadlineInfo(rt.CurrEpoch())
 		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
 			EventType: CronEventProvingDeadline,
@@ -2091,8 +2091,10 @@ func handleProvingDeadline(rt Runtime) {
 		}
 
 		continueCron = st.ContinueDeadlineCron()
+		//		fmt.Printf("[CRON] continue cron: %t\n", continueCron)
 		if !continueCron {
 			st.DeadlineCronActive = false
+			//			fmt.Printf("resetting cron active to false")
 		}
 	})
 
@@ -2103,7 +2105,7 @@ func handleProvingDeadline(rt Runtime) {
 
 	// Schedule cron callback for next deadline's last epoch.
 	if continueCron {
-		newDlInfo := st.DeadlineInfo(currEpoch)
+		newDlInfo := st.DeadlineInfo(currEpoch + 1)
 		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
 			EventType: CronEventProvingDeadline,
 		})
