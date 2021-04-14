@@ -711,6 +711,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	var err error
 	newlyVested := big.Zero()
 	feeToBurn := abi.NewTokenAmount(0)
+	var needsCron bool
 	rt.StateTransaction(&st, func() {
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
@@ -791,11 +792,23 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 
 		err = st.AddPreCommitExpiry(store, expiryBound, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
+
+		// activate miner cron
+		needsCron = !st.DeadlineCronActive
+		if needsCron {
+			st.DeadlineCronActive = true
+		}
 	})
 
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	if needsCron {
+		newDlInfo := st.DeadlineInfo(rt.CurrEpoch())
+		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
+			EventType: CronEventProvingDeadline,
+		})
+	}
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
@@ -2025,6 +2038,7 @@ func handleProvingDeadline(rt Runtime) {
 	penaltyTotal := abi.NewTokenAmount(0)
 	pledgeDeltaTotal := abi.NewTokenAmount(0)
 
+	var continueCron bool
 	var st State
 	rt.StateTransaction(&st, func() {
 		{
@@ -2077,6 +2091,11 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
 			pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 		}
+
+		continueCron = st.ContinueDeadlineCron()
+		if !continueCron {
+			st.DeadlineCronActive = false
+		}
 	})
 
 	// Remove power for new faults, and burn penalties.
@@ -2085,10 +2104,14 @@ func handleProvingDeadline(rt Runtime) {
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	// Schedule cron callback for next deadline's last epoch.
-	newDlInfo := st.DeadlineInfo(currEpoch)
-	enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
-		EventType: CronEventProvingDeadline,
-	})
+	if continueCron {
+		newDlInfo := st.DeadlineInfo(currEpoch)
+		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
+			EventType: CronEventProvingDeadline,
+		})
+	} else {
+		rt.Log(rtt.INFO, "miner %s going inactive, deadline cron discontinued", rt.Receiver())
+	}
 
 	// Record whether or not we _have_ early terminations now.
 	hasEarlyTerminations := havePendingEarlyTerminations(rt, &st)

@@ -75,6 +75,9 @@ type State struct {
 
 	// Deadlines with outstanding fees for early sector termination.
 	EarlyTerminations bitfield.BitField
+
+	// True when miner cron is active, false otherwise
+	DeadlineCronActive bool
 }
 
 // Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
@@ -226,6 +229,7 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 		CurrentDeadline:           deadlineIndex,
 		Deadlines:                 emptyDeadlinesCid,
 		EarlyTerminations:         bitfield.New(),
+		DeadlineCronActive:        false,
 	}, nil
 }
 
@@ -750,6 +754,13 @@ func (st *State) SaveVestingFunds(store adt.Store, funds *VestingFunds) error {
 	}
 	st.VestingFunds = c
 	return nil
+}
+
+// Return true when the miner actor needs to continue scheduling deadline crons
+func (st *State) ContinueDeadlineCron() bool {
+	return !st.PreCommitDeposits.IsZero() ||
+		!st.InitialPledge.IsZero() ||
+		!st.LockedFunds.IsZero()
 }
 
 //
