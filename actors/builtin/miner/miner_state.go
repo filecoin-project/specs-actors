@@ -277,12 +277,27 @@ func (st *State) SaveInfo(store adt.Store, info *MinerInfo) error {
 	return nil
 }
 
-// Returns deadline calculations for the current (according to state) proving period.
+// Returns deadline calculations for the current proving period, according to the current epoch and constant state offset
 func (st *State) DeadlineInfo(currEpoch abi.ChainEpoch) *dline.Info {
-	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch)
+	return NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, currEpoch)
 }
 
-// Returns deadline calculations for the current (according to state) proving period.
+// Returns deadline calculations for the state recorded proving period and deadline. This is out of date if the a
+// miner does not have an active miner cron
+func (st *State) RecordedDeadlineInfo(currEpoch abi.ChainEpoch) (*dline.Info, error) {
+	if !st.DeadlineCronActive {
+		return nil, xerrors.New("attempting to use recorded dline info while miner cron inactive")
+	}
+	return NewDeadlineInfo(st.ProvingPeriodStart, st.CurrentDeadline, currEpoch), nil
+}
+
+// Returns current proving period start for the current epoch according to the current epoch and constant state offset
+func (st *State) CurrentProvingPeriodStart(currEpoch abi.ChainEpoch) abi.ChainEpoch {
+	dlInfo := st.DeadlineInfo(currEpoch)
+	return dlInfo.PeriodStart
+}
+
+// Returns deadline calculations for the current (according to state) proving period
 func (st *State) QuantSpecForDeadline(dlIdx uint64) QuantSpec {
 	return QuantSpecForDeadline(NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0))
 }
@@ -518,7 +533,7 @@ func (st *State) RescheduleSectorExpirations(
 
 	var allReplaced []*SectorOnChainInfo
 	if err = deadlineSectors.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-		dlInfo := NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, currEpoch).NextNotElapsed()
+		dlInfo := NewDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch).NextNotElapsed()
 		newExpiration := dlInfo.Last()
 
 		dl, err := deadlines.LoadDeadline(store, dlIdx)
@@ -560,7 +575,7 @@ func (st *State) AssignSectorsToDeadlines(
 	var deadlineArr [WPoStPeriodDeadlines]*Deadline
 	if err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
-		if deadlineIsMutable(st.ProvingPeriodStart, idx, currentEpoch) {
+		if deadlineIsMutable(st.CurrentProvingPeriodStart(currentEpoch), idx, currentEpoch) {
 			deadlineArr[int(idx)] = dl
 		}
 		return nil
@@ -1125,9 +1140,10 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	}
 
 	// Advance to the next deadline (in case we short-circuit below).
-	st.CurrentDeadline = (st.CurrentDeadline + 1) % WPoStPeriodDeadlines
+	// Maintaining this state info is a legacy operation no longer required for code correctness
+	st.CurrentDeadline = (dlInfo.Index + 1) % WPoStPeriodDeadlines
 	if st.CurrentDeadline == 0 {
-		st.ProvingPeriodStart = st.ProvingPeriodStart + WPoStProvingPeriod
+		st.ProvingPeriodStart = dlInfo.PeriodStart + WPoStProvingPeriod
 	}
 
 	deadlines, err := st.LoadDeadlines(store)

@@ -94,3 +94,14 @@ func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uin
 	return deadlineIsMutable(provingPeriodStart, dlIdx, currentEpoch) &&
 		!deadlineAvailableForOptimisticPoStDispute(provingPeriodStart, dlIdx, currentEpoch)
 }
+
+// Determine current period start and deadline index directly from current epoch and
+// the offset implied by the proving period. This works correctly even for the state
+// of a miner actor without an active deadline cron
+func NewDeadlineInfoFromOffsetAndEpoch(periodStartSeed abi.ChainEpoch, currEpoch abi.ChainEpoch) *dline.Info {
+	q := NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
+	currentPeriodStart := q.QuantizeDown(currEpoch)
+	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow) % WPoStPeriodDeadlines
+
+	return NewDeadlineInfo(currentPeriodStart, currentDeadlineIdx, currEpoch)
+}

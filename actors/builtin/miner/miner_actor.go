@@ -508,7 +508,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 	powerDelta := NewPowerPairZero()
 	var st State
 	rt.StateTransaction(&st, func() {
-		if !deadlineAvailableForOptimisticPoStDispute(st.ProvingPeriodStart, params.Deadline, currEpoch) {
+		dlInfo := st.DeadlineInfo(currEpoch)
+		if !deadlineAvailableForOptimisticPoStDispute(dlInfo.PeriodStart, params.Deadline, currEpoch) {
 			rt.Abortf(exitcode.ErrForbidden, "can only dispute window posts during the dispute window (%d epochs after the challenge window closes)", WPoStDisputeWindow)
 		}
 
@@ -519,8 +520,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 		// Check proof
 		{
 			// Find the proving period start for the deadline in question.
-			ppStart := st.ProvingPeriodStart
-			if st.CurrentDeadline < params.Deadline {
+			ppStart := dlInfo.PeriodStart
+			if dlInfo.Index < params.Deadline {
 				ppStart -= WPoStProvingPeriod
 			}
 			targetDeadline := NewDeadlineInfo(ppStart, params.Deadline, currEpoch)
@@ -1344,7 +1345,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		err = toProcess.ForEach(func(dlIdx uint64, partitionSectors PartitionSectorMap) error {
 			// If the deadline the current or next deadline to prove, don't allow terminating sectors.
 			// We assume that deadlines are immutable when being proven.
-			if !deadlineIsMutable(st.ProvingPeriodStart, dlIdx, currEpoch) {
+			if !deadlineIsMutable(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch) {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline %d", dlIdx)
 			}
 
@@ -1440,8 +1441,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
+		currEpoch := rt.CurrEpoch()
 		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
+			targetDeadline, err := declarationDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
 
 			err = validateFRDeclarationDeadline(targetDeadline)
@@ -1529,8 +1531,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
+		currEpoch := rt.CurrEpoch()
 		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
+			targetDeadline, err := declarationDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline %d", dlIdx)
 			err = validateFRDeclarationDeadline(targetDeadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed recovery declaration at deadline %d", dlIdx)
@@ -1590,7 +1593,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		if !deadlineAvailableForCompaction(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
+		if !deadlineAvailableForCompaction(st.CurrentProvingPeriodStart(rt.CurrEpoch()), params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
 				"cannot compact deadline %d during its challenge window, or the prior challenge window, or before %d epochs have passed since its last challenge window ended", params.Deadline, WPoStDisputeWindow)
 		}
