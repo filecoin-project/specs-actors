@@ -620,16 +620,13 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
-		//fmt.Printf("precommit epoch: %d, current epoch %d\n", precommitEpoch, rt.Epoch())
 
 		oldSector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
-		//fmt.Printf("finished first one\n")
 		st := getState(rt)
 		assert.True(t, st.DeadlineCronActive)
 		// Good commitment.
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, false)
-		//fmt.Printf("finished second one\n")
 		// Duplicate pre-commit sector ID
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already been allocated", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, false)
@@ -5129,10 +5126,8 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 	}
 
 	if first {
-		//fmt.Printf("internal precommit epoch: %d\n", rt.Epoch())
 		dlInfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, rt.Epoch())
 		cronParams := makeDeadlineCronEventParams(h.t, dlInfo.Last())
-		//fmt.Printf("internal expected cron params: %v\n", cronParams)
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, cronParams, big.Zero(), nil, exitcode.Ok)
 	}
 
@@ -5147,7 +5142,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 		}
 	}
 
-	//fmt.Printf("call precommit\n")
 	rt.Call(h.a.PreCommitSector, params)
 	rt.Verify()
 	return h.getPreCommit(rt, params.SectorNumber)
@@ -5303,9 +5297,7 @@ func (h *actorHarness) commitAndProveSectors(rt *mock.Runtime, n int, lifetimePe
 		precommits[i] = precommit
 		h.nextSectorNo++
 	}
-	//fmt.Printf("advancing to epoch with cron, current epoch %d, advancing to: %d\n", rt.Epoch(), precommitEpoch+miner.PreCommitChallengeDelay+1)
 	advanceToEpochWithCron(rt, h, precommitEpoch+miner.PreCommitChallengeDelay+1)
-	//fmt.Printf("finished advancing, current epoch: %d\n", rt.Epoch())
 	info := []*miner.SectorOnChainInfo{}
 	for _, pc := range precommits {
 		sector := h.proveCommitSectorAndConfirm(rt, pc, makeProveCommit(pc.Info.SectorNumber), proveCommitConf{})
@@ -6071,7 +6063,6 @@ func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *dli
 
 	rt.SetEpoch(deadline.Last())
 	config.expectedEnrollment = deadline.Last() + miner.WPoStChallengeWindow
-	//fmt.Printf("advancing to last epoch of current deadline: %d, expect enrollment to: %d\n", deadline.Last(), config.expectedEnrollment)
 	h.onDeadlineCron(rt, config)
 	rt.SetEpoch(deadline.NextOpen())
 	return h.deadline(rt)
@@ -6220,7 +6211,6 @@ func makeDeadlineCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power.Enro
 		EventEpoch: epoch,
 		Payload:    buf.Bytes(),
 	}
-	//fmt.Printf("internally expected cron params: %v\n", params)
 	return params
 }
 
