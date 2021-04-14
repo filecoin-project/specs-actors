@@ -80,7 +80,9 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.Fil
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
 	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
 	br := big.Rsh(br128, math.Precision128)
-	return big.Max(br, big.Zero()) // negative BR is clamped at 0
+	// negative BR is clamped at 1 attoFIL. This is not zero because zero valued BR derived values
+	// (PCD, IP) are used as succinct indicators of state activity.
+	return big.Max(br, big.NewInt(1))
 }
 
 // The penalty for a sector continuing faulty for another proving period.

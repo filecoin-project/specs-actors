@@ -12,9 +12,9 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/ipfs/go-cid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-	"gotest.tools/assert"
 )
 
 func TestParallelMigrationCalls(t *testing.T) {

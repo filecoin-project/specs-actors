@@ -749,7 +749,7 @@ func CheckMinerBalances(st *State, store adt.Store, balance abi.TokenAmount, acc
 		"locked funds %d is not sum of vesting table entries %d", st.LockedFunds, vestingSum)
 
 	// Non zero funds implies that DeadlineCronActive is true.
-	if !st.LockedFunds.IsZero() || !st.PreCommitDeposits.IsZero() || !st.InitialPledge.IsZero() {
+	if st.ContinueDeadlineCron() {
 		acc.Require(st.DeadlineCronActive, "DeadlineCronActive == false when IP+PCD+LF > 0")
 	}
 }

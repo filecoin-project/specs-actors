@@ -791,9 +791,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 
 		// activate miner cron
 		needsCron = !st.DeadlineCronActive
-		if needsCron {
-			st.DeadlineCronActive = true
-		}
+		st.DeadlineCronActive = true
 	})
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
