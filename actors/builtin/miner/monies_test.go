@@ -99,7 +99,7 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
 		sectorAge := abi.ChainEpoch(20 * builtin.EpochsInDay)
-		replacementAge := abi.ChainEpoch(miner.TerminationLifetimeCap+ 1) * builtin.EpochsInDay
+		replacementAge := abi.ChainEpoch(miner.TerminationLifetimeCap+1) * builtin.EpochsInDay
 
 		// use low power, so we don't test SP=SP
 		power := big.NewInt(1)
@@ -153,4 +153,45 @@ func TestNegativeBRClamp(t *testing.T) {
 
 	fourBR := miner.ExpectedRewardForPower(rewardEstimate, powerEstimate, qaSectorPower, abi.ChainEpoch(4))
 	assert.Equal(t, big.Zero(), fourBR)
+}
+
+func TestContinuedFault(t *testing.T) {
+	t.Run("zero power means zero fault penalty", func(t *testing.T) {
+		epochTargetReward := abi.NewTokenAmount(1 << 50)
+		zeroQAPower := abi.NewStoragePower(0)
+		networkQAPower := abi.NewStoragePower(1 << 10)
+		powerRateOfChange := abi.NewStoragePower(1 << 10)
+		rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
+		powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
+
+		penaltyForZeroPowerFaulted := miner.PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, zeroQAPower)
+		assert.Equal(t, big.Zero(), penaltyForZeroPowerFaulted)
+	})
+}
+
+func TestExpectedRewardForPowerClamptedAtAttoFIL(t *testing.T) {
+	t.Run("expected zero valued BR clamped at 1 attofil", func(t *testing.T) {
+		epochTargetReward := abi.NewTokenAmount(1 << 50)
+		zeroQAPower := abi.NewStoragePower(0)
+		networkQAPower := abi.NewStoragePower(1 << 10)
+		powerRateOfChange := abi.NewStoragePower(1 << 10)
+		rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
+		powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
+
+		brClamped := miner.ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, powerEstimate, zeroQAPower, abi.ChainEpoch(1))
+		assert.Equal(t, big.NewInt(1), brClamped)
+	})
+
+	t.Run("expected negative valued BR clamped at 1 atto FIL", func(t *testing.T) {
+		epochTargetReward := abi.NewTokenAmount(1 << 50)
+		qaSectorPower := abi.NewStoragePower(1 << 36)
+		networkQAPower := abi.NewStoragePower(1 << 10)
+		powerRateOfChange := abi.NewStoragePower(1 << 10).Neg()
+		rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
+		powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
+
+		fourBRClamped := miner.ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, powerEstimate, qaSectorPower, abi.ChainEpoch(4))
+		assert.Equal(t, big.NewInt(1), fourBRClamped)
+	})
+
 }
