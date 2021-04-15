@@ -195,3 +195,22 @@ func TestExpectedRewardForPowerClamptedAtAttoFIL(t *testing.T) {
 	})
 
 }
+
+func TestPrecommitDepositAndInitialPledgePostiive(t *testing.T) {
+	epochTargetReward := abi.NewTokenAmount(0) // zero reward so IP Base unclamped is 0
+	qaSectorPower := abi.NewStoragePower(1 << 36)
+	networkQAPower := abi.NewStoragePower(1 << 10)
+	baselinePower := networkQAPower
+	powerRateOfChange := abi.NewStoragePower(1 << 10)
+	rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
+	powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
+	circulatingSupply := abi.NewTokenAmount(0)
+	t.Run("IP is clamped at 1 attofil", func(t *testing.T) {
+		ip := miner.InitialPledgeForPower(qaSectorPower, baselinePower, rewardEstimate, powerEstimate, circulatingSupply)
+		assert.Equal(t, abi.NewTokenAmount(1), ip)
+	})
+	t.Run("PCD is clamped at 1 attoFIL", func(t *testing.T) {
+		pcd := miner.PreCommitDepositForPower(rewardEstimate, powerEstimate, qaSectorPower)
+		assert.Equal(t, abi.NewTokenAmount(1), pcd)
+	})
+}

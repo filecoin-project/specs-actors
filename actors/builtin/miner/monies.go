@@ -84,6 +84,7 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.Fil
 	return big.Max(br, big.Zero())
 }
 
+// BR but zero values are clamped at 1 attofil
 // Some uses of BR (PCD, IP) require a strictly positive value for BR derived values so
 // accounting variables can be used as succinct indicators of miner activity.
 func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {

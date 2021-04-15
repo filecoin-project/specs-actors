@@ -54,6 +54,7 @@ type State struct {
 	// sector belongs is compacted.
 	Sectors cid.Cid // Array, AMT[SectorNumber]SectorOnChainInfo (sparse)
 
+	// DEPRECATED. This field will change names and no longer be updated every proving period in a future upgrade
 	// The first epoch in this miner's current proving period. This is the first epoch in which a PoSt for a
 	// partition at the miner's first deadline may arrive. Alternatively, it is after the last epoch at which
 	// a PoSt for the previous window is valid.
@@ -63,6 +64,7 @@ type State struct {
 	// Updated at the end of every period by a cron callback.
 	ProvingPeriodStart abi.ChainEpoch
 
+	// DEPRECATED. This field will be removed from state in a future upgrade.
 	// Index of the deadline within the proving period beginning at ProvingPeriodStart that has not yet been
 	// finalized.
 	// Updated at the end of each deadline window by a cron callback.
