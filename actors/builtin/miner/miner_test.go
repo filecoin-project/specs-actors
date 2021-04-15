@@ -2772,6 +2772,143 @@ func TestDeadlineCron(t *testing.T) {
 	})
 }
 
+// cronControl is a convenience harness on top of the actor harness giving the caller access to common
+// sequences of miner actor actions useful for checking that cron starts, runs, stops and continues
+type cronControl struct {
+	rt           *mock.Runtime
+	actor        *actorHarness
+	preCommitNum int
+}
+
+func newCronControl(rt *mock.Runtime, actor *actorHarness) *cronControl {
+	return &cronControl{
+		rt:           rt,
+		actor:        actor,
+		preCommitNum: 0,
+	}
+}
+
+// Start cron by precommitting at preCommitEpoch, return expiry epoch.
+// Verifies that cron is not started, precommit is run and cron is enrolled.
+// Returns expiration of precommit.
+func (h *cronControl) preCommitToStartCron(t *testing.T, preCommitEpoch abi.ChainEpoch) abi.ChainEpoch {
+	h.rt.SetEpoch(preCommitEpoch)
+	st := getState(h.rt)
+	require.False(t, st.DeadlineCronActive)     // No cron running yet
+	require.False(t, st.ContinueDeadlineCron()) // State inactive
+
+	dlinfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, preCommitEpoch) // actor.deadline might be out of date
+	sectorNo := abi.SectorNumber(h.preCommitNum)
+	h.preCommitNum++
+	expiration := dlinfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+	precommitParams := h.actor.makePreCommit(sectorNo, preCommitEpoch-1, expiration, nil)
+	h.actor.preCommitSector(h.rt, precommitParams, preCommitConf{}, true)
+
+	st = getState(h.rt)
+	assert.True(t, st.DeadlineCronActive)
+	assert.True(t, st.ContinueDeadlineCron()) // PCD !=0, state active
+
+	expiryEpoch := preCommitEpoch + builtin.EpochsInDay + miner.PreCommitChallengeDelay + abi.ChainEpoch(1)
+	return expiryEpoch
+}
+
+// Stop cron by advancing to the preCommit expiry epoch.
+// Assumes no proved sectors, no vesting funds.
+// Verifies cron runs until expiry, PCD burnt and cron discontinued during last deadline
+// Return open of first deadline after expiration.
+func (h *cronControl) expirePreCommitStopCron(t *testing.T, startEpoch, expiryEpoch abi.ChainEpoch) abi.ChainEpoch {
+	st := getState(h.rt)
+	require.True(t, st.DeadlineCronActive)
+	require.True(t, st.ContinueDeadlineCron()) // PCD !=0, state active
+
+	dlinfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, startEpoch) // actor.deadline might be out of date
+
+	for dlinfo.Open <= expiryEpoch { // PCDs are quantized to expire on the *next* new deadline after the one they expire in
+		// asserts cron is rescheduled
+		dlinfo = advanceDeadline(h.rt, h.actor, &cronConfig{})
+	}
+	// We expect PCD burnt and cron not rescheduled here.
+	h.rt.SetEpoch(dlinfo.Last())
+	h.actor.onDeadlineCron(h.rt, &cronConfig{
+		noEnrollment:            true,
+		expiredPrecommitPenalty: st.PreCommitDeposits,
+	})
+	h.rt.SetEpoch(dlinfo.NextOpen())
+
+	st = getState(h.rt)
+	assert.False(t, st.DeadlineCronActive)     // No cron running now
+	assert.False(t, st.ContinueDeadlineCron()) // No reason to cron now, state inactive
+	return h.rt.Epoch()
+}
+
+func (h *cronControl) preCommitStartCronExpireStopCron(t *testing.T, startEpoch abi.ChainEpoch) abi.ChainEpoch {
+	expiryEpoch := h.preCommitToStartCron(t, startEpoch)
+	return h.expirePreCommitStopCron(t, startEpoch, expiryEpoch)
+}
+
+func TestDeadlineCronDefersStopsRestarts(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.Zero())
+
+	t.Run("cron enrolls on precommit, prove commits and continues enrolling", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+		longExpiration := uint64(500)
+		sectors := actor.commitAndProveSectors(rt, 1, longExpiration, nil, true)
+		// advance cron to activate power.
+		advanceAndSubmitPoSts(rt, actor, sectors...)
+		// advance 499 days of deadline (1 before expiration occurrs)
+		// this asserts that cron continues to enroll within advanceAndSubmitPoSt
+		for i := 0; i < 499; i++ {
+			advanceAndSubmitPoSts(rt, actor, sectors...)
+		}
+		actor.checkState(rt)
+		st := getState(rt)
+		assert.True(t, st.DeadlineCronActive)
+	})
+
+	t.Run("cron enrolls on precommit, expires on pcd expiration, re-enrolls on new precommit immediately", func(t *testing.T) {
+		rt := builder.Build(t)
+		epoch := periodOffset + 1
+		rt.SetEpoch(epoch)
+		actor.constructAndVerify(rt)
+		cronCtrl := newCronControl(rt, actor)
+
+		epoch = cronCtrl.preCommitStartCronExpireStopCron(t, epoch)
+		cronCtrl.preCommitToStartCron(t, epoch)
+	})
+
+	t.Run("cron enrolls on precommit, expires on pcd expiration, re-enrolls on new precommit after falling out of date", func(t *testing.T) {
+		rt := builder.Build(t)
+		epoch := periodOffset + 1
+		rt.SetEpoch(epoch)
+		actor.constructAndVerify(rt)
+		cronCtrl := newCronControl(rt, actor)
+
+		epoch = cronCtrl.preCommitStartCronExpireStopCron(t, epoch)
+		// Advance some epochs to fall several pp out of date, then precommit again reenrolling cron
+		epoch = epoch + 200*miner.WPoStProvingPeriod
+		epoch = cronCtrl.preCommitStartCronExpireStopCron(t, epoch)
+		// Stay within the same deadline but advance an epoch
+		epoch = epoch + 1
+		cronCtrl.preCommitToStartCron(t, epoch)
+	})
+
+	t.Run("enroll, pcd expire, re-enroll x 1000", func(t *testing.T) {
+		rt := builder.Build(t)
+		epoch := periodOffset + 1
+		rt.SetEpoch(epoch)
+		actor.constructAndVerify(rt)
+		cronCtrl := newCronControl(rt, actor)
+		for i := 0; i < 1000; i++ {
+			epoch = cronCtrl.preCommitStartCronExpireStopCron(t, epoch) + 42
+		}
+	})
+
+}
+
 func TestDeclareFaults(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
@@ -5864,6 +6001,7 @@ type cronConfig struct {
 	expiredSectorsPowerDelta  *miner.PowerPair
 	expiredSectorsPledgeDelta abi.TokenAmount
 	continuedFaultsPenalty    abi.TokenAmount // Expected amount burnt to pay continued fault penalties.
+	expiredPrecommitPenalty   abi.TokenAmount // Expected amount burnt to pay for expired precommits
 	repaidFeeDebt             abi.TokenAmount // Expected amount burnt to repay fee debt.
 	penaltyFromUnlocked       abi.TokenAmount // Expected reduction in unlocked balance from penalties exceeding vesting funds.
 }
@@ -5913,12 +6051,19 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	if !config.repaidFeeDebt.NilOrZero() {
 		penaltyTotal = big.Add(penaltyTotal, config.repaidFeeDebt)
 	}
+	if !config.expiredPrecommitPenalty.NilOrZero() {
+		penaltyTotal = big.Add(penaltyTotal, config.expiredPrecommitPenalty)
+	}
 	if !penaltyTotal.IsZero() {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, penaltyTotal, nil, exitcode.Ok)
 		penaltyFromVesting := penaltyTotal
 		// Outstanding fee debt is only repaid from unlocked balance, not vesting funds.
 		if !config.repaidFeeDebt.NilOrZero() {
 			penaltyFromVesting = big.Sub(penaltyFromVesting, config.repaidFeeDebt)
+		}
+		// Precommit deposit burns are repaid from PCD account
+		if !config.expiredPrecommitPenalty.NilOrZero() {
+			penaltyFromVesting = big.Sub(penaltyFromVesting, config.expiredPrecommitPenalty)
 		}
 		// New penalties are paid first from vesting funds but, if exhausted, overflow to unlocked balance.
 		if !config.penaltyFromUnlocked.NilOrZero() {
@@ -6058,6 +6203,7 @@ func (h *actorHarness) setMultiaddrs(rt *mock.Runtime, newMultiaddrs ...abi.Mult
 
 // Completes a deadline by moving the epoch forward to the penultimate one, calling the deadline cron handler,
 // and then advancing to the first epoch in the new deadline.
+// Asserts that the deadline schedules a new cron on the next deadline
 func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *dline.Info {
 	deadline := h.deadline(rt)
 
@@ -6077,6 +6223,11 @@ func advanceToEpochWithCron(rt *mock.Runtime, h *actorHarness, e abi.ChainEpoch)
 	rt.SetEpoch(e)
 }
 
+// Advance between 0 and 48 deadlines submitting window posts where necessary to keep
+// sectors proven.  If sectors is empty this is a noop. If sectors is a singleton this
+// will advance to that sector's proving deadline running deadline crons up to and
+// including this deadline. If sectors includes a sector assigned to the furthest
+// away deadline this will process a whole proving period.
 func advanceAndSubmitPoSts(rt *mock.Runtime, h *actorHarness, sectors ...*miner.SectorOnChainInfo) {
 	st := getState(rt)
 
