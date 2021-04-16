@@ -102,6 +102,5 @@ func NewDeadlineInfoFromOffsetAndEpoch(periodStartSeed abi.ChainEpoch, currEpoch
 	q := NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
 	currentPeriodStart := q.QuantizeDown(currEpoch)
 	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow) % WPoStPeriodDeadlines
-
 	return NewDeadlineInfo(currentPeriodStart, currentDeadlineIdx, currEpoch)
 }
