@@ -3517,8 +3517,31 @@ func TestTerminateSectors(t *testing.T) {
 		assert.Equal(t, oldSector.ExpectedDayReward, newSector.ReplacedDayReward)
 		assert.Equal(t, rt.Epoch()-oldSector.Activation, newSector.ReplacedSectorAge)
 
-		// post new sector to activate power
-		advanceAndSubmitPoSts(rt, actor, oldSector, newSector)
+		// advance to deadline of new and old sectors
+		dlInfo := actor.currentDeadline(rt)
+		for dlInfo.Index != dlIdx {
+			dlInfo = advanceDeadline(rt, actor, &cronConfig{})
+		}
+		/**/
+		// PoSt both sectors. They both gain power and no penalties are incurred.
+		rt.SetEpoch(dlInfo.Last())
+		oldPower := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), miner.QAPowerForSector(actor.sectorSize, oldSector))
+		newPower := miner.NewPowerPair(big.NewInt(int64(actor.sectorSize)), miner.QAPowerForSector(actor.sectorSize, newSector))
+		partitions := []miner.PoStPartition{
+			{Index: partIdx, Skipped: bitfield.New()},
+		}
+		actor.submitWindowPoSt(rt, dlInfo, partitions, []*miner.SectorOnChainInfo{newSector, oldSector}, &poStConfig{
+			expectedPowerDelta: newPower,
+		})
+
+		// replaced sector expires at cron, removing its power and pledge.
+		expectedPowerDelta := oldPower.Neg()
+		actor.onDeadlineCron(rt, &cronConfig{
+			expiredSectorsPowerDelta:  &expectedPowerDelta,
+			expiredSectorsPledgeDelta: oldSector.InitialPledge.Neg(),
+			expectedEnrollment:        rt.Epoch() + miner.WPoStChallengeWindow,
+		})
+		actor.checkState(rt)
 
 		// advance clock a little and terminate new sector
 		rt.SetEpoch(rt.Epoch() + 5_000)
