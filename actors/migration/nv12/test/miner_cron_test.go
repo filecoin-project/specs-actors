@@ -67,7 +67,7 @@ func TestEmptyMinersStopCronAfterMigration(t *testing.T) {
 	// check that all miners are cronning
 	stateTree, err := v4.GetStateTree()
 	require.NoError(t, err)
-	stateTree.ForEach(func(addr address.Address, act *states.Actor) error {
+	err = stateTree.ForEach(func(addr address.Address, act *states.Actor) error {
 		if act.Code.Equals(builtin.StorageMinerActorCodeID) {
 			var mSt miner.State
 			err := v4.GetState(addr, &mSt)
@@ -76,6 +76,7 @@ func TestEmptyMinersStopCronAfterMigration(t *testing.T) {
 		}
 		return nil
 	})
+	require.NoError(t, err)
 
 	// empty miners stop cronning within 1 proving period
 	v4 = AdvanceToEpochWithCron(t, v4, v4.GetEpoch()+miner.WPoStProvingPeriod)
@@ -91,7 +92,7 @@ func TestEmptyMinersStopCronAfterMigration(t *testing.T) {
 	assert.Equal(t, 0, len(msgs.Messages()), strings.Join(msgs.Messages(), "\n"))
 
 	// check that no miners are cronning
-	stateTree.ForEach(func(addr address.Address, act *states.Actor) error {
+	err = stateTree.ForEach(func(addr address.Address, act *states.Actor) error {
 		if act.Code.Equals(builtin.StorageMinerActorCodeID) {
 			var mSt miner.State
 			err := v4.GetState(addr, &mSt)
@@ -100,6 +101,7 @@ func TestEmptyMinersStopCronAfterMigration(t *testing.T) {
 		}
 		return nil
 	})
+	require.NoError(t, err)
 }
 
 // Advances to given epoch running cron for all epochs up to but not including this epoch.

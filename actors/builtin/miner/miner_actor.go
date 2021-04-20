@@ -796,13 +796,13 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	if needsCron {
 		newDlInfo := st.DeadlineInfo(rt.CurrEpoch())
 		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
 			EventType: CronEventProvingDeadline,
 		})
 	}
-	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
