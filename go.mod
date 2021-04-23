@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0
-	github.com/filecoin-project/go-amt-ipld/v3 v3.0.0
+	github.com/filecoin-project/go-amt-ipld/v3 v3.0.0-20210330175719-8a02dbd0b271
 	github.com/filecoin-project/go-bitfield v0.2.3
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.0.1
