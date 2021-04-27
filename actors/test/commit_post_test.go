@@ -32,10 +32,10 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// create miner
 	params := power.CreateMinerParams{
-		Owner:                addrs[0],
-		Worker:               addrs[0],
-		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                 abi.PeerID("not really a peer id"),
+		Owner:               addrs[0],
+		Worker:              addrs[0],
+		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                abi.PeerID("not really a peer id"),
 	}
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
@@ -72,7 +72,8 @@ func TestCommitPoStFlow(t *testing.T) {
 		Params: vm.ExpectObject(&preCommitParams),
 		SubInvocations: []vm.ExpectInvocation{
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower}},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}},
 	}.Matches(t, v.Invocations()[0])
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
@@ -114,7 +115,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 						// The call to burnt funds indicates the overdue precommit has been penalized
 						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(precommit.PreCommitDeposit)},
-						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+						// No re-enrollment of cron because burning of PCD discontinues miner cron scheduling
 					}},
 					//{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid},
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},

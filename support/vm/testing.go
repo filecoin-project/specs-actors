@@ -284,7 +284,15 @@ func MinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *dline.Info {
 	err := v.GetState(minerIDAddr, &minerState)
 	require.NoError(t, err)
 
-	return minerState.DeadlineInfo(v.GetEpoch())
+	return miner.NewDeadlineInfoFromOffsetAndEpoch(minerState.ProvingPeriodStart, v.GetEpoch())
+}
+
+func NextMinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *dline.Info {
+	var minerState miner.State
+	err := v.GetState(minerIDAddr, &minerState)
+	require.NoError(t, err)
+
+	return miner.NewDeadlineInfoFromOffsetAndEpoch(minerState.ProvingPeriodStart, v.GetEpoch()+1)
 }
 
 // AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
@@ -299,7 +307,7 @@ func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predica
 		_, code := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		require.Equal(t, exitcode.Ok, code)
 
-		dlInfo = MinerDLInfo(t, v, minerIDAddr)
+		dlInfo = NextMinerDLInfo(t, v, minerIDAddr)
 	}
 	return v, dlInfo
 }

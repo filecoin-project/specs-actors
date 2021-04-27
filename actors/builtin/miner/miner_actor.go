@@ -126,11 +126,6 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to construct state")
 	rt.StateCreate(state)
 
-	// Register first cron callback for epoch before the next deadline starts.
-	deadlineClose := periodStart + WPoStChallengeWindow*abi.ChainEpoch(1+deadlineIndex)
-	enrollCronEvent(rt, deadlineClose-1, &CronEventPayload{
-		EventType: CronEventProvingDeadline,
-	})
 	return nil
 }
 
@@ -508,7 +503,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 	powerDelta := NewPowerPairZero()
 	var st State
 	rt.StateTransaction(&st, func() {
-		if !deadlineAvailableForOptimisticPoStDispute(st.ProvingPeriodStart, params.Deadline, currEpoch) {
+		dlInfo := st.DeadlineInfo(currEpoch)
+		if !deadlineAvailableForOptimisticPoStDispute(dlInfo.PeriodStart, params.Deadline, currEpoch) {
 			rt.Abortf(exitcode.ErrForbidden, "can only dispute window posts during the dispute window (%d epochs after the challenge window closes)", WPoStDisputeWindow)
 		}
 
@@ -519,8 +515,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 		// Check proof
 		{
 			// Find the proving period start for the deadline in question.
-			ppStart := st.ProvingPeriodStart
-			if st.CurrentDeadline < params.Deadline {
+			ppStart := dlInfo.PeriodStart
+			if dlInfo.Index < params.Deadline {
 				ppStart -= WPoStProvingPeriod
 			}
 			targetDeadline := NewDeadlineInfo(ppStart, params.Deadline, currEpoch)
@@ -711,6 +707,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	var err error
 	newlyVested := big.Zero()
 	feeToBurn := abi.NewTokenAmount(0)
+	var needsCron bool
 	rt.StateTransaction(&st, func() {
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
@@ -791,12 +788,21 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 
 		err = st.AddPreCommitExpiry(store, expiryBound, params.SectorNumber)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
-	})
 
+		// activate miner cron
+		needsCron = !st.DeadlineCronActive
+		st.DeadlineCronActive = true
+	})
 	burnFunds(rt, feeToBurn)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
+	if needsCron {
+		newDlInfo := st.DeadlineInfo(rt.CurrEpoch())
+		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
+			EventType: CronEventProvingDeadline,
+		})
+	}
 
 	notifyPledgeChanged(rt, newlyVested.Neg())
 
@@ -1331,7 +1337,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		err = toProcess.ForEach(func(dlIdx uint64, partitionSectors PartitionSectorMap) error {
 			// If the deadline the current or next deadline to prove, don't allow terminating sectors.
 			// We assume that deadlines are immutable when being proven.
-			if !deadlineIsMutable(st.ProvingPeriodStart, dlIdx, currEpoch) {
+			if !deadlineIsMutable(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch) {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline %d", dlIdx)
 			}
 
@@ -1427,8 +1433,9 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
+		currEpoch := rt.CurrEpoch()
 		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
+			targetDeadline, err := declarationDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
 
 			err = validateFRDeclarationDeadline(targetDeadline)
@@ -1516,8 +1523,9 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
 
+		currEpoch := rt.CurrEpoch()
 		err = toProcess.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-			targetDeadline, err := declarationDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.CurrEpoch())
+			targetDeadline, err := declarationDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid recovery declaration deadline %d", dlIdx)
 			err = validateFRDeclarationDeadline(targetDeadline)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed recovery declaration at deadline %d", dlIdx)
@@ -1577,7 +1585,7 @@ func (a Actor) CompactPartitions(rt Runtime, params *CompactPartitionsParams) *a
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		if !deadlineAvailableForCompaction(st.ProvingPeriodStart, params.Deadline, rt.CurrEpoch()) {
+		if !deadlineAvailableForCompaction(st.CurrentProvingPeriodStart(rt.CurrEpoch()), params.Deadline, rt.CurrEpoch()) {
 			rt.Abortf(exitcode.ErrForbidden,
 				"cannot compact deadline %d during its challenge window, or the prior challenge window, or before %d epochs have passed since its last challenge window ended", params.Deadline, WPoStDisputeWindow)
 		}
@@ -2025,6 +2033,7 @@ func handleProvingDeadline(rt Runtime) {
 	penaltyTotal := abi.NewTokenAmount(0)
 	pledgeDeltaTotal := abi.NewTokenAmount(0)
 
+	var continueCron bool
 	var st State
 	rt.StateTransaction(&st, func() {
 		{
@@ -2077,6 +2086,11 @@ func handleProvingDeadline(rt Runtime) {
 			penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
 			pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 		}
+
+		continueCron = st.ContinueDeadlineCron()
+		if !continueCron {
+			st.DeadlineCronActive = false
+		}
 	})
 
 	// Remove power for new faults, and burn penalties.
@@ -2085,10 +2099,14 @@ func handleProvingDeadline(rt Runtime) {
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	// Schedule cron callback for next deadline's last epoch.
-	newDlInfo := st.DeadlineInfo(currEpoch)
-	enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
-		EventType: CronEventProvingDeadline,
-	})
+	if continueCron {
+		newDlInfo := st.DeadlineInfo(currEpoch + 1)
+		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
+			EventType: CronEventProvingDeadline,
+		})
+	} else {
+		rt.Log(rtt.INFO, "miner %s going inactive, deadline cron discontinued", rt.Receiver())
+	}
 
 	// Record whether or not we _have_ early terminations now.
 	hasEarlyTerminations := havePendingEarlyTerminations(rt, &st)

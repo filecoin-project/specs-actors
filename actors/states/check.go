@@ -172,8 +172,7 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 
 		// check crons
 		crons, ok := powerSummary.Crons[addr]
-		if !ok {
-			acc.Addf("miner %s has no cron events, at least one proving period cron expected", addr)
+		if !ok { // with deferred and discontinued crons it is normal for a miner actor to have no cron events
 			continue
 		}
 
@@ -183,6 +182,8 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 			err := payload.UnmarshalCBOR(bytes.NewReader(event.Payload))
 			acc.Require(err == nil, "miner %v registered cron at epoch %d with wrong or corrupt payload",
 				addr, event.Epoch)
+			acc.Require(payload.EventType == miner.CronEventProcessEarlyTerminations || payload.EventType == miner.CronEventProvingDeadline,
+				"miner %v has unexpected cron event type %v", addr, payload.EventType)
 
 			if payload.EventType == miner.CronEventProvingDeadline {
 				if provingPeriodCron != nil {
@@ -192,6 +193,9 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 				provingPeriodCron = &event
 			}
 		}
+		hasProvingPeriodCron := provingPeriodCron != nil
+		acc.Require(hasProvingPeriodCron == minerSummary.DeadlineCronActive, "miner %v has invalid DeadlineCronActive (%t) for hasProvingPeriodCron status (%t)",
+			addr, minerSummary.DeadlineCronActive, hasProvingPeriodCron)
 
 		acc.Require(provingPeriodCron != nil, "miner %v has no proving period cron", addr)
 	}
