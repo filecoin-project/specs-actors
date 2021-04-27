@@ -21,12 +21,12 @@ import (
 	cid "github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/exported"
-	"github.com/filecoin-project/specs-actors/v4/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v4/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v4/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v4/support/ipld"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/exported"
+	"github.com/filecoin-project/specs-actors/v5/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v5/support/ipld"
 )
 
 // A mock runtime for unit testing of actors in isolation.

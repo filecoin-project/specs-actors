@@ -20,15 +20,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/exported"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v4/actors/migration/nv10"
-	"github.com/filecoin-project/specs-actors/v4/actors/states"
-	"github.com/filecoin-project/specs-actors/v4/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v4/support/agent"
-	"github.com/filecoin-project/specs-actors/v4/support/ipld"
-	vm_test "github.com/filecoin-project/specs-actors/v4/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/exported"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v5/actors/migration/nv10"
+	"github.com/filecoin-project/specs-actors/v5/actors/states"
+	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v5/support/agent"
+	"github.com/filecoin-project/specs-actors/v5/support/ipld"
+	vm_test "github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func TestCreate20Miners(t *testing.T) {

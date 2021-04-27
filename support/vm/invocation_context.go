@@ -21,14 +21,14 @@ import (
 	"github.com/minio/blake2b-simd"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v4/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v4/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v4/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v4/actors/states"
-	"github.com/filecoin-project/specs-actors/v4/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v4/support/ipld"
-	"github.com/filecoin-project/specs-actors/v4/support/testing"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v5/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v5/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v5/actors/states"
+	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v5/support/ipld"
+	"github.com/filecoin-project/specs-actors/v5/support/testing"
 )
 
 var EmptyObjectCid cid.Cid

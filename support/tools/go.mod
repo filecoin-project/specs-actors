@@ -1,4 +1,4 @@
-module github.com/filecoin-project/specs-actors/v4/support/tools
+module github.com/filecoin-project/specs-actors/v5/support/tools
 
 go 1.13
 

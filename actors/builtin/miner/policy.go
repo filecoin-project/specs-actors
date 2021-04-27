@@ -9,7 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 )
 
 // The period over which a miner's active sectors are expected to be proven via WindowPoSt.
