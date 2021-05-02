@@ -1,6 +1,6 @@
 module github.com/filecoin-project/specs-actors/v5/support/tools
 
-go 1.13
+go 1.16
 
 require (
 	github.com/Kubuxu/go-no-map-range v0.0.1
