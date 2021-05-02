@@ -821,7 +821,7 @@ const MaxAggregateProofSize = 192000
 
 func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregateParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
-
+	checkClaimExists(rt)
 	aggSectorsCount, err := params.SectorNumbers.Count()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count aggregated sectors")
 	if aggSectorsCount > MaxAggregatedSectors {
@@ -2556,6 +2556,11 @@ func notifyPledgeChanged(rt Runtime, pledgeDelta abi.TokenAmount) {
 		code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to update total pledge")
 	}
+}
+
+func checkClaimExists(rt Runtime) {
+	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CallerHasClaim, nil, abi.NewTokenAmount(0), &builtin.Discard{})
+	builtin.RequireSuccess(rt, code, "failed to verify miner claim exists")
 }
 
 // Assigns proving period offset randomly in the range [0, WPoStProvingPeriod) by hashing

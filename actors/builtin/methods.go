@@ -73,7 +73,8 @@ var MethodsPower = struct {
 	Deprecated1              abi.MethodNum
 	SubmitPoRepForBulkVerify abi.MethodNum
 	CurrentTotalPower        abi.MethodNum
-}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
+	CallerHasClaim           abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
 var MethodsMiner = struct {
 	Constructor              abi.MethodNum

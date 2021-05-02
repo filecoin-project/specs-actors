@@ -549,6 +549,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	}
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
 	invocs := make([]vm.ExpectInvocation, 0)
+	invocs = append(invocs, vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CallerHasClaim})
 	for i := 0; i < batchSize; i++ {
 		invocs = append(invocs, vm.ExpectInvocation{
 			To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment,
