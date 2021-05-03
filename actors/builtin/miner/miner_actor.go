@@ -838,6 +838,11 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check all sector numbers below max")
 
+	if uint64(len(params.AggregateProof)) > MaxAggregateProofSize {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
+			len(params.AggregateProof), MaxAggregateProofSize)
+	}
+
 	store := adt.AsStore(rt)
 	var st State
 	rt.StateReadonly(&st)
@@ -845,23 +850,30 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	precommits, err := st.GetAllPrecommittedSectors(store, params.SectorNumbers)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get precommits")
 
-	if uint64(len(params.AggregateProof)) > MaxAggregateProofSize {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
-			len(params.AggregateProof), MaxAggregateProofSize)
+	// compute data commitments
+	computeDataCommitmentsInputs := make([]*market.SectorDataCommitmentInputs, len(precommits))
+	for i, precommit := range precommits {
+		computeDataCommitmentsInputs[i] = &market.SectorDataCommitmentInputs{
+			SectorType: precommit.Info.SealProof,
+			DealIDs:    precommit.Info.DealIDs,
+		}
 	}
+	commDs := requestUnsealedSectorCIDs(rt, computeDataCommitmentsInputs...)
+
+	builtin.RequireState(rt, len(precommits) > 0, "bitfield non-empty but zero precommits read from state")
+	sealProof := precommits[0].Info.SealProof
 
 	svis := make([]proof.AggregateSealVerifyInfo, 0)
 
 	receiver := rt.Receiver()
+	minerActorID, err := addr.IDFromAddress(receiver)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %s", receiver)
 	buf := new(bytes.Buffer)
 	err = receiver.MarshalCBOR(buf)
 	receiverBytes := buf.Bytes()
-
 	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to marshal address for seal verification challenge")
-	minerActorID, err := addr.IDFromAddress(receiver)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %s", receiver)
 
-	for _, precommit := range precommits {
+	for i, precommit := range precommits {
 		msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 		if !ok {
 			rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.SealProof)
@@ -874,32 +886,31 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		if rt.CurrEpoch() <= interactiveEpoch {
 			rt.Abortf(exitcode.ErrForbidden, "too early to prove sector %d", precommit.Info.SectorNumber)
 		}
-		commD := requestUnsealedSectorCID(rt, precommit.Info.SealProof, precommit.Info.DealIDs)
+		builtin.RequireState(rt, sealProof == precommit.Info.SealProof, "aggregate contains mismatched seal proofs %d and %d", sealProof, precommit.Info.SealProof)
 
 		svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, precommit.Info.SealRandEpoch, receiverBytes)
 		svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, receiverBytes)
 		// TODO new struct to more succinctly gather public parameters
 		svi := proof.AggregateSealVerifyInfo{
-			SealProof:             precommit.Info.SealProof, // TODO this field should be in outer wrapper
 			Number:                precommit.Info.SectorNumber,
 			DealIDs:               precommit.Info.DealIDs,
 			InteractiveRandomness: abi.InteractiveSealRandomness(svInfoInteractiveRandomness),
 			Randomness:            abi.SealRandomness(svInfoRandomness),
 			SealedCID:             precommit.Info.SealedCID,
-			UnsealedCID:           commD,
+			UnsealedCID:           commDs[i],
 		}
 		svis = append(svis, svi)
 	}
 
-	// TODO do we need to validate that miner has claim as in SubmitPoRepForBulkVerify?
 	gas, err := aggregatePoRepVerifyGas(int(aggSectorsCount))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute aggregate PoRep gas cost")
 	rt.ChargeGas("OnVerifySealAggregate", gas, 0)
 	err = rt.VerifyAggregateSeals(
 		proof.AggregateSealVerifyProofAndInfos{
-			Infos: svis,
-			Proof: params.AggregateProof,
-			Miner: abi.ActorID(minerActorID),
+			Infos:     svis,
+			Proof:     params.AggregateProof,
+			Miner:     abi.ActorID(minerActorID),
+			SealProof: sealProof,
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 	confirmSectorProofsValid(rt, precommits)
@@ -2406,7 +2417,10 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
 
-	commD := requestUnsealedSectorCID(rt, params.RegisteredSealProof, params.DealIDs)
+	commDs := requestUnsealedSectorCIDs(rt, &market.SectorDataCommitmentInputs{
+		SectorType: params.RegisteredSealProof,
+		DealIDs:    params.DealIDs,
+	})
 
 	minerActorID, err := addr.IDFromAddress(rt.Receiver())
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %v", rt.Receiver())
@@ -2430,25 +2444,32 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 		Proof:                 params.Proof,
 		Randomness:            abi.SealRandomness(svInfoRandomness),
 		SealedCID:             params.SealedCID,
-		UnsealedCID:           commD,
+		UnsealedCID:           commDs[0],
 	}
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
-func requestUnsealedSectorCID(rt Runtime, proofType abi.RegisteredSealProof, dealIDs []abi.DealID) cid.Cid {
-	var unsealedCID cbg.CborCid
+func requestUnsealedSectorCIDs(rt Runtime, dataCommitmentInputs ...*market.SectorDataCommitmentInputs) []cid.Cid {
+	if len(dataCommitmentInputs) == 0 {
+		return nil
+	}
+	var ret market.ComputeDataCommitmentReturn
 	code := rt.Send(
 		builtin.StorageMarketActorAddr,
 		builtin.MethodsMarket.ComputeDataCommitment,
 		&market.ComputeDataCommitmentParams{
-			SectorType: proofType,
-			DealIDs:    dealIDs,
+			Inputs: dataCommitmentInputs,
 		},
 		abi.NewTokenAmount(0),
-		&unsealedCID,
+		&ret,
 	)
-	builtin.RequireSuccess(rt, code, "failed request for unsealed sector CID for deals %v", dealIDs)
-	return cid.Cid(unsealedCID)
+	builtin.RequireSuccess(rt, code, "failed request for unsealed sector CIDs")
+	builtin.RequireState(rt, len(dataCommitmentInputs) == len(ret.CommDs), "number of data commitments computed %d does not match number of data commitment inputs %d", len(ret.CommDs), len(dataCommitmentInputs))
+	unsealedCIDs := make([]cid.Cid, len(ret.CommDs))
+	for i, cbgCid := range ret.CommDs {
+		unsealedCIDs[i] = cid.Cid(*cbgCid)
+	}
+	return unsealedCIDs
 }
 
 func requestDealWeights(rt Runtime, sectors []market.SectorDeals) *market.VerifyDealsForActivationReturn {

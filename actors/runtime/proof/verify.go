@@ -26,7 +26,6 @@ import (
 type SealVerifyInfo = proof0.SealVerifyInfo
 
 type AggregateSealVerifyInfo struct {
-	SealProof             abi.RegisteredSealProof
 	Number                abi.SectorNumber
 	DealIDs               []abi.DealID
 	Randomness            abi.SealRandomness
@@ -38,9 +37,10 @@ type AggregateSealVerifyInfo struct {
 }
 
 type AggregateSealVerifyProofAndInfos struct {
-	Miner abi.ActorID
-	Proof []byte
-	Infos []AggregateSealVerifyInfo
+	Miner     abi.ActorID
+	SealProof abi.RegisteredSealProof
+	Proof     []byte
+	Infos     []AggregateSealVerifyInfo
 }
 
 ///
