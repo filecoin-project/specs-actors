@@ -548,24 +548,17 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 		SectorNumbers: sectorNosBf,
 	}
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
-	invocs := make([]vm.ExpectInvocation, 0)
-	invocs = append(invocs, vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CallerHasClaim})
-	for i := 0; i < batchSize; i++ {
-		invocs = append(invocs, vm.ExpectInvocation{
-			To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment,
-		})
-	}
-	invocs = append(invocs, []vm.ExpectInvocation{
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
-	}...)
-
 	vm.ExpectInvocation{
-		To:             minerAddrs.IDAddress,
-		Method:         builtin.MethodsMiner.ProveCommitAggregate,
-		Params:         vm.ExpectObject(&proveCommitAggregateParams),
-		SubInvocations: invocs,
+		To:     minerAddrs.IDAddress,
+		Method: builtin.MethodsMiner.ProveCommitAggregate,
+		Params: vm.ExpectObject(&proveCommitAggregateParams),
+		SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CallerHasClaim},
+			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
+			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+		},
 	}.Matches(t, v.Invocations()[0])
 
 	proveCommitAggrKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.ProveCommitAggregate}

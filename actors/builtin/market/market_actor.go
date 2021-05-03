@@ -437,7 +437,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 			})
 		}
 		commD, err := rt.ComputeUnsealedSectorCID(commInput.SectorType, pieces)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute unsealed sectorCID: %s", err)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to compute unsealed sectorCID: %s", err)
 		commDs[i] = (*cbg.CborCid)(&commD)
 	}
 	return &ComputeDataCommitmentReturn{

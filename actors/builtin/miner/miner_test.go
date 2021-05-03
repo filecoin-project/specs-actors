@@ -5349,11 +5349,17 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 
 	// Prepare for and receive call to ProveCommitSector
 	{
-		cdcParams := market.ComputeDataCommitmentParams{
-			DealIDs:    precommit.Info.DealIDs,
-			SectorType: precommit.Info.SealProof,
+		inputs := []*market.SectorDataCommitmentInputs{
+			{
+				DealIDs:    precommit.Info.DealIDs,
+				SectorType: precommit.Info.SealProof,
+			},
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &commd, exitcode.Ok)
+		cdcParams := market.ComputeDataCommitmentParams{Inputs: inputs}
+		cdcRet := market.ComputeDataCommitmentReturn{
+			CommDs: []*cbg.CborCid{&commd},
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
 	}
 	{
 		var buf bytes.Buffer
