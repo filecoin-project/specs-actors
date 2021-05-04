@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v4/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v4/actors/states"
-	"github.com/filecoin-project/specs-actors/v4/support/ipld"
-	tutil "github.com/filecoin-project/specs-actors/v4/support/testing"
-	vm "github.com/filecoin-project/specs-actors/v4/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v5/actors/states"
+	"github.com/filecoin-project/specs-actors/v5/support/ipld"
+	tutil "github.com/filecoin-project/specs-actors/v5/support/testing"
+	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func TestCommitPoStFlow(t *testing.T) {
