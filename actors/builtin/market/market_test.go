@@ -2480,6 +2480,59 @@ func TestComputeDataCommitment(t *testing.T) {
 		actor.checkState(rt)
 	})
 
+	t.Run("success on empty piece info", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		param := &market.ComputeDataCommitmentParams{}
+		param.Inputs = []*market.SectorDataCommitmentInputs{{DealIDs: nil, SectorType: 1}}
+
+		c := tutil.MakeCID("UnsealedEmpty", &market.PieceCIDPrefix)
+		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{}, c, nil)
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		ret := rt.Call(actor.ComputeDataCommitment, param)
+		val, ok := ret.(*market.ComputeDataCommitmentReturn)
+		require.True(t, ok)
+		require.Equal(t, c, *(*cid.Cid)(val.CommDs[0]))
+		rt.Verify()
+
+		actor.checkState(rt)
+	})
+
+	t.Run("success with multiple sector commitments", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
+		d1 := actor.getDealProposal(rt, dealId1)
+
+		dealId2 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end+1, start)
+		d2 := actor.getDealProposal(rt, dealId2)
+
+		param := &market.ComputeDataCommitmentParams{}
+		param.Inputs = []*market.SectorDataCommitmentInputs{
+			{DealIDs: nil, SectorType: 1},
+			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
+		}
+
+		p1 := abi.PieceInfo{Size: d1.PieceSize, PieceCID: d1.PieceCID}
+		p2 := abi.PieceInfo{Size: d2.PieceSize, PieceCID: d2.PieceCID}
+
+		c1 := tutil.MakeCID("UnsealedSector1", &market.PieceCIDPrefix)
+		c2 := tutil.MakeCID("UnsealedSector2", &market.PieceCIDPrefix)
+
+		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{}, c1, nil)
+		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{p1, p2}, c2, nil)
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+
+		ret := rt.Call(actor.ComputeDataCommitment, param)
+		val, ok := ret.(*market.ComputeDataCommitmentReturn)
+		require.True(t, ok)
+		require.Equal(t, c1, *(*cid.Cid)(val.CommDs[0]))
+		require.Equal(t, c2, *(*cid.Cid)(val.CommDs[1]))
+		rt.Verify()
+
+		actor.checkState(rt)
+	})
+
 	t.Run("fail when deal proposal is absent", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
@@ -2510,6 +2563,46 @@ func TestComputeDataCommitment(t *testing.T) {
 		})
 		actor.checkState(rt)
 	})
+
+	t.Run("fail whole call when one deal proposal of one sector is absent", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
+		dealId2 := abi.DealID(2)
+
+		param := &market.ComputeDataCommitmentParams{}
+		param.Inputs = []*market.SectorDataCommitmentInputs{
+			{DealIDs: nil, SectorType: 1},
+			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
+		}
+		c1 := tutil.MakeCID("UnsealedSector1", &market.PieceCIDPrefix)
+		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{}, c1, nil) // first sector is computed
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		rt.ExpectAbort(exitcode.ErrNotFound, func() {
+			rt.Call(actor.ComputeDataCommitment, param)
+		})
+		actor.checkState(rt)
+	})
+
+	t.Run("fail whole call when one commitment fails syscall", func(t *testing.T) {
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		dealId1 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
+		dealId2 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end+1, start)
+
+		param := &market.ComputeDataCommitmentParams{}
+		param.Inputs = []*market.SectorDataCommitmentInputs{
+			{DealIDs: nil, SectorType: 1},
+			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
+		}
+		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{}, cid.Cid{}, errors.New("error"))
+		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
+		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			rt.Call(actor.ComputeDataCommitment, param)
+		})
+		actor.checkState(rt)
+	})
+
 }
 
 func TestVerifyDealsForActivation(t *testing.T) {

@@ -890,7 +890,6 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 
 		svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, precommit.Info.SealRandEpoch, receiverBytes)
 		svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, receiverBytes)
-		// TODO new struct to more succinctly gather public parameters
 		svi := proof.AggregateSealVerifyInfo{
 			Number:                precommit.Info.SectorNumber,
 			DealIDs:               precommit.Info.DealIDs,

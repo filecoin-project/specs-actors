@@ -72,7 +72,7 @@ type Runtime struct {
 	expectVerifySigs               []*expectVerifySig
 	expectCreateActor              *expectCreateActor
 	expectVerifySeal               *expectVerifySeal
-	expectComputeUnsealedSectorCID *expectComputeUnsealedSectorCID
+	expectComputeUnsealedSectorCID []*expectComputeUnsealedSectorCID
 	expectVerifyPoSt               *expectVerifyPoSt
 	expectVerifyConsensusFault     *expectVerifyConsensusFault
 	expectDeleteActor              *addr.Address
@@ -584,22 +584,22 @@ func (rt *Runtime) HashBlake2b(data []byte) [32]byte {
 }
 
 func (rt *Runtime) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error) {
-	exp := rt.expectComputeUnsealedSectorCID
-	if exp != nil {
-		if !reflect.DeepEqual(exp.reg, reg) {
-			rt.failTest("unexpected ComputeUnsealedSectorCID proof, expected: %v, got: %v", exp.reg, reg)
-		}
-		if !reflect.DeepEqual(exp.pieces, pieces) {
-			rt.failTest("unexpected ComputeUnsealedSectorCID pieces, expected: %v, got: %v", exp.pieces, pieces)
-		}
-
-		defer func() {
-			rt.expectComputeUnsealedSectorCID = nil
-		}()
-		return exp.cid, exp.resultErr
+	if len(rt.expectComputeUnsealedSectorCID) == 0 {
+		rt.failTestNow("unexpected syscall to ComputeUnsealedSectorCID %v", reg)
 	}
-	rt.failTestNow("unexpected syscall to ComputeUnsealedSectorCID %v", reg)
-	return cid.Cid{}, nil
+	exp := rt.expectComputeUnsealedSectorCID[0]
+
+	if !reflect.DeepEqual(exp.reg, reg) {
+		rt.failTest("unexpected ComputeUnsealedSectorCID proof, expected: %v, got: %v", exp.reg, reg)
+	}
+	if !reflect.DeepEqual(exp.pieces, pieces) {
+		rt.failTest("unexpected ComputeUnsealedSectorCID pieces, expected: %v, got: %v", exp.pieces, pieces)
+	}
+	defer func() {
+		rt.expectComputeUnsealedSectorCID = rt.expectComputeUnsealedSectorCID[1:]
+	}()
+
+	return exp.cid, exp.resultErr
 }
 
 func (rt *Runtime) VerifySeal(seal proof.SealVerifyInfo) error {
@@ -909,9 +909,9 @@ func (rt *Runtime) ExpectVerifySeal(seal proof.SealVerifyInfo, result error) {
 }
 
 func (rt *Runtime) ExpectComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo, cid cid.Cid, err error) {
-	rt.expectComputeUnsealedSectorCID = &expectComputeUnsealedSectorCID{
+	rt.expectComputeUnsealedSectorCID = append(rt.expectComputeUnsealedSectorCID, &expectComputeUnsealedSectorCID{
 		reg, pieces, cid, err,
-	}
+	})
 }
 
 func (rt *Runtime) ExpectVerifyPoSt(post proof.WindowPoStVerifyInfo, result error) {
@@ -956,6 +956,10 @@ func (rt *Runtime) Verify() {
 	if len(rt.expectVerifySigs) > 0 {
 		rt.failTest("missing expected verify signature %v", rt.expectVerifySigs)
 	}
+	if len(rt.expectComputeUnsealedSectorCID) > 0 {
+		rt.failTest("missing expected ComputeUnsealedSectorCID with %v", rt.expectComputeUnsealedSectorCID)
+	}
+
 	if rt.expectCreateActor != nil {
 		rt.failTest("missing expected create actor with code %s, address %s",
 			rt.expectCreateActor.codeId, rt.expectCreateActor.address)
@@ -967,10 +971,6 @@ func (rt *Runtime) Verify() {
 
 	if rt.expectBatchVerifySeals != nil {
 		rt.failTest("missing expected batch verify seals with %v", rt.expectBatchVerifySeals)
-	}
-
-	if rt.expectComputeUnsealedSectorCID != nil {
-		rt.failTest("missing expected ComputeUnsealedSectorCID with %v", rt.expectComputeUnsealedSectorCID)
 	}
 
 	if rt.expectVerifyPoSt != nil {
