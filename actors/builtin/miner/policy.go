@@ -318,7 +318,7 @@ func aggregatePoRepBatchGasTable() []int64 {
 }
 
 // Return gas cost of verifying `batchSize` aggregate PoReps. Batch sizes round up.
-func aggregatePoRepVerifyGas(batchSize int) (int64, error) {
+func AggregatePoRepVerifyGas(batchSize int) (int64, error) {
 	steps := aggregatePoRepBatchStepSize()
 	i := sort.SearchInts(steps, batchSize)
 	gasTable := aggregatePoRepBatchGasTable()

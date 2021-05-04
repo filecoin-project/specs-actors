@@ -5397,6 +5397,56 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	rt.Verify()
 }
 
+func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams) {
+
+	// Receive call to power CallerHasClaim
+	{
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CallerHasClaim, nil, big.Zero(), nil, exitcode.Ok)
+	}
+
+	// Receive call to ComputeDataCommittments
+	{
+		cdcInputs := make([]*market.SectorDataCommitmentInputs, len(precommits))
+		commDs := make([]*cbg.CborCid, len(precommits))
+		for i, precommit := range precommits {
+			cdcInputs[i] = &market.SectorDataCommitmentInputs{
+				DealIDs:    precommit.Info.DealIDs,
+				SectorType: precommit.Info.SealProof,
+			}
+			commD := cbg.CborCid(tutil.MakeCID(fmt.Sprintf("commd-%d", i), &market.PieceCIDPrefix))
+			commDs[i] = &commD
+		}
+		cdcParams := market.ComputeDataCommitmentParams{Inputs: cdcInputs}
+		cdcRet := market.ComputeDataCommitmentReturn{
+			CommDs: commDs,
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
+	}
+	// Expect randomness queries for provided precommits
+	{
+		for _, precommit := range precommits {
+			sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
+			sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
+			interactiveEpoch := precommit.PreCommitEpoch + miner.PreCommitChallengeDelay
+			var buf bytes.Buffer
+			receiver := rt.Receiver()
+			err := receiver.MarshalCBOR(&buf)
+			require.NoError(h.t, err)
+			rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_SealRandomness, precommit.Info.SealRandEpoch, buf.Bytes(), abi.Randomness(sealRand))
+			rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
+		}
+	}
+	// Gas charge for porep
+	{
+		gas := miner.AggregatePoRepVerifyGas(len(precommits))
+	}
+
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAny()
+	rt.Call(h.a.ProveCommitSector, params)
+	rt.Verify()
+}
+
 func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
 	// expect calls to get network stats
 	expectQueryNetworkInfo(rt, h)

@@ -901,7 +901,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		svis = append(svis, svi)
 	}
 
-	gas, err := aggregatePoRepVerifyGas(int(aggSectorsCount))
+	gas, err := AggregatePoRepVerifyGas(int(aggSectorsCount))
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute aggregate PoRep gas cost")
 	rt.ChargeGas("OnVerifySealAggregate", gas, 0)
 	err = rt.VerifyAggregateSeals(

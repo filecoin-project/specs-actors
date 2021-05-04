@@ -494,7 +494,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 
 func TestMeasureAggregatePorepGas(t *testing.T) {
 
-	batchSize := 819
+	batchSize := 6
 	fmt.Printf("batch size = %d\n", batchSize)
 
 	ctx := context.Background()
