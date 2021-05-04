@@ -37,10 +37,11 @@ type AggregateSealVerifyInfo struct {
 }
 
 type AggregateSealVerifyProofAndInfos struct {
-	Miner     abi.ActorID
-	SealProof abi.RegisteredSealProof
-	Proof     []byte
-	Infos     []AggregateSealVerifyInfo
+	Miner          abi.ActorID
+	SealProof      abi.RegisteredSealProof
+	AggregateProof abi.RegisteredAggregationProof
+	Proof          []byte
+	Infos          []AggregateSealVerifyInfo
 }
 
 ///

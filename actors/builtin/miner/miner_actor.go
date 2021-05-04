@@ -906,10 +906,11 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	rt.ChargeGas("OnVerifySealAggregate", gas, 0)
 	err = rt.VerifyAggregateSeals(
 		proof.AggregateSealVerifyProofAndInfos{
-			Infos:     svis,
-			Proof:     params.AggregateProof,
-			Miner:     abi.ActorID(minerActorID),
-			SealProof: sealProof,
+			Infos:          svis,
+			Proof:          params.AggregateProof,
+			Miner:          abi.ActorID(minerActorID),
+			SealProof:      sealProof,
+			AggregateProof: abi.RegisteredAggregationProof_SnarkPackV1,
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 	confirmSectorProofsValid(rt, precommits)
