@@ -2816,7 +2816,8 @@ func (h *cronControl) preCommitToStartCron(t *testing.T, preCommitEpoch abi.Chai
 
 	// PCD != 0 so cron must be active
 	h.requireCronActive(t)
-	expiryEpoch := preCommitEpoch + builtin.EpochsInDay + miner.PreCommitChallengeDelay + abi.ChainEpoch(1)
+
+	expiryEpoch := preCommitEpoch + miner.MaxProveCommitDuration[h.actor.sealProofType] + abi.ChainEpoch(1)
 	return expiryEpoch
 }
 
@@ -3496,14 +3497,17 @@ func TestTerminateSectors(t *testing.T) {
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
 
 		// Commit a sector to upgrade
-		oldSector := actor.commitAndProveSector(rt, 1, defaultSectorExpiration, nil)
+		daysBeforeUpgrade := 4
+		// push expiration so we don't hit minimum lifetime limits when upgrading with the same expiration
+		oldExpiration := defaultSectorExpiration + daysBeforeUpgrade
+		oldSector := actor.commitAndProveSector(rt, 1, uint64(oldExpiration), nil)
 		advanceAndSubmitPoSts(rt, actor, oldSector) // activate power
 		st := getState(rt)
 		dlIdx, partIdx, err := st.FindSector(rt.AdtStore(), oldSector.SectorNumber)
 		require.NoError(t, err)
 
 		// advance clock so upgrade happens later
-		for i := 0; i < 4; i++ { // 4 * 2880 = 11,520
+		for i := 0; i < daysBeforeUpgrade; i++ { // 4 * 2880 = 11,520
 			advanceAndSubmitPoSts(rt, actor, oldSector)
 		}
 
