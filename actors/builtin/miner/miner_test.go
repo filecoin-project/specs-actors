@@ -999,6 +999,133 @@ func TestCommitments(t *testing.T) {
 	})
 }
 
+func TestAggregateProveCommit(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	t.Run("valid precommits then aggregate provecommit", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+
+		// Make a good commitment for the proof to target.
+
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		// Fill the sector with verified deals
+		sectorWeight := big.Mul(big.NewInt(int64(actor.sectorSize)), big.NewInt(int64(expiration-proveCommitEpoch)))
+		dealWeight := big.Zero()
+		verifiedDealWeight := sectorWeight
+
+		var precommits []*miner.SectorPreCommitOnChainInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 10; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommitParams := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
+			precommit := actor.preCommitSector(rt, precommitParams, preCommitConf{
+				dealWeight:         dealWeight,
+				verifiedDealWeight: verifiedDealWeight,
+			}, i == 0)
+			precommits = append(precommits, precommit)
+		}
+		sectorNosBf, err := sectorNosBf.Copy() //flush map to run to match partition state
+		require.NoError(t, err)
+
+		// run prove commit logic
+		rt.SetEpoch(proveCommitEpoch)
+		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+
+		actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf))
+
+		// expect precommits to have been removed
+		st := getState(rt)
+		require.NoError(t, sectorNosBf.ForEach(func(sectorNo uint64) error {
+			_, found, err := st.GetPrecommittedSector(rt.AdtStore(), abi.SectorNumber(sectorNo))
+			require.False(t, found)
+			return err
+		}))
+
+		// expect deposit to have been transferred to initial pledges
+		assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+
+		// The sector is exactly full with verified deals, so expect fully verified power.
+		expectedPower := big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier))
+		qaPower := miner.QAPowerForWeight(actor.sectorSize, expiration-rt.Epoch(), dealWeight, verifiedDealWeight)
+		assert.Equal(t, expectedPower, qaPower)
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
+			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
+		tenSectorsInitialPledge := big.Mul(big.NewInt(10), expectedInitialPledge)
+		assert.Equal(t, tenSectorsInitialPledge, st.InitialPledge)
+
+		// expect new onchain sector
+		require.NoError(t, sectorNosBf.ForEach(func(sectorNo uint64) error {
+			sector := actor.getSector(rt, abi.SectorNumber(sectorNo))
+			// expect deal weights to be transferred to on chain info
+			assert.Equal(t, dealWeight, sector.DealWeight)
+			assert.Equal(t, verifiedDealWeight, sector.VerifiedDealWeight)
+
+			// expect activation epoch to be current epoch
+			assert.Equal(t, rt.Epoch(), sector.Activation)
+
+			// expect initial plege of sector to be set
+			assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
+
+			// expect sector to be assigned a deadline/partition
+			dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), abi.SectorNumber(sectorNo))
+			// first ten sectors should be assigned to deadline 0 partition 0
+			assert.Equal(t, uint64(0), dlIdx)
+			assert.Equal(t, uint64(0), pIdx)
+			require.NoError(t, err)
+
+			return nil
+
+		}))
+
+		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
+		tenSectorsPower := miner.NewPowerPair(big.Mul(big.NewInt(10), sectorPower.Raw), big.Mul(big.NewInt(10), sectorPower.QA))
+
+		dlIdx := uint64(0)
+		pIdx := uint64(0)
+		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, pIdx)
+		assert.Equal(t, uint64(10), deadline.LiveSectors)
+		assertEmptyBitfield(t, deadline.PartitionsPoSted)
+		assertEmptyBitfield(t, deadline.EarlyTerminations)
+
+		quant := st.QuantSpecForDeadline(dlIdx)
+		quantizedExpiration := quant.QuantizeUp(expiration)
+
+		dQueue := actor.collectDeadlineExpirations(rt, deadline)
+		assert.Equal(t, map[abi.ChainEpoch][]uint64{
+			quantizedExpiration: {pIdx},
+		}, dQueue)
+
+		assert.Equal(t, partition.Sectors, sectorNosBf)
+		assertEmptyBitfield(t, partition.Faults)
+		assertEmptyBitfield(t, partition.Recoveries)
+		assertEmptyBitfield(t, partition.Terminated)
+		assert.Equal(t, tenSectorsPower, partition.LivePower)
+		assert.Equal(t, miner.NewPowerPairZero(), partition.FaultyPower)
+		assert.Equal(t, miner.NewPowerPairZero(), partition.RecoveringPower)
+
+		pQueue := actor.collectPartitionExpirations(rt, partition)
+		entry, ok := pQueue[quantizedExpiration]
+		require.True(t, ok)
+		assert.Equal(t, entry.OnTimeSectors, sectorNosBf)
+		assertEmptyBitfield(t, entry.EarlySectors)
+		assert.Equal(t, tenSectorsInitialPledge, entry.OnTimePledge)
+		assert.Equal(t, tenSectorsPower, entry.ActivePower)
+		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
+
+		// expect 10x locked initial pledge of sector to be the same as pledge requirement
+		assert.Equal(t, tenSectorsInitialPledge, st.InitialPledge)
+
+	})
+}
+
 // Test sector lifecycle when a sector is upgraded
 func TestCCUpgrade(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
@@ -5397,7 +5524,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	rt.Verify()
 }
 
-func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams) {
+func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCommitConf, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams) {
 
 	// Receive call to power CallerHasClaim
 	{
@@ -5405,9 +5532,9 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, precommits [
 	}
 
 	// Receive call to ComputeDataCommittments
+	commDs := make([]*cbg.CborCid, len(precommits))
 	{
 		cdcInputs := make([]*market.SectorDataCommitmentInputs, len(precommits))
-		commDs := make([]*cbg.CborCid, len(precommits))
 		for i, precommit := range precommits {
 			cdcInputs[i] = &market.SectorDataCommitmentInputs{
 				DealIDs:    precommit.Info.DealIDs,
@@ -5423,10 +5550,15 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, precommits [
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
 	}
 	// Expect randomness queries for provided precommits
+	var sealRands []abi.SealRandomness
+	var sealIntRands []abi.InteractiveSealRandomness
 	{
+
 		for _, precommit := range precommits {
 			sealRand := abi.SealRandomness([]byte{1, 2, 3, 4})
+			sealRands = append(sealRands, sealRand)
 			sealIntRand := abi.InteractiveSealRandomness([]byte{5, 6, 7, 8})
+			sealIntRands = append(sealIntRands, sealIntRand)
 			interactiveEpoch := precommit.PreCommitEpoch + miner.PreCommitChallengeDelay
 			var buf bytes.Buffer
 			receiver := rt.Receiver()
@@ -5438,24 +5570,49 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, precommits [
 	}
 	// Gas charge for porep
 	{
-		gas := miner.AggregatePoRepVerifyGas(len(precommits))
+		gas, err := miner.AggregatePoRepVerifyGas(len(precommits))
+		require.NoError(h.t, err)
+		rt.ExpectGasCharged(gas)
+		svis := make([]proof.AggregateSealVerifyInfo, len(precommits))
+		for i, precommit := range precommits {
+			svis[i] = proof.AggregateSealVerifyInfo{
+				Number:                precommit.Info.SectorNumber,
+				DealIDs:               precommit.Info.DealIDs,
+				InteractiveRandomness: sealIntRands[i],
+				Randomness:            sealRands[i],
+				SealedCID:             precommit.Info.SealedCID,
+				UnsealedCID:           cid.Cid(*commDs[i]),
+			}
+		}
+		actorId, err := addr.IDFromAddress(h.receiver)
+		require.NoError(h.t, err)
+		rt.ExpectAggregateVerifySeals(proof.AggregateSealVerifyProofAndInfos{
+			Infos:          svis,
+			Proof:          params.AggregateProof,
+			Miner:          abi.ActorID(actorId),
+			SealProof:      h.sealProofType,
+			AggregateProof: abi.RegisteredAggregationProof_SnarkPackV1,
+		}, nil)
+	}
+
+	// confirmSectorProofsValid
+	{
+		h.confirmSectorProofsValidInternal(rt, conf, precommits...)
 	}
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAny()
-	rt.Call(h.a.ProveCommitSector, params)
+	rt.Call(h.a.ProveCommitAggregate, params)
 	rt.Verify()
 }
 
-func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
+func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
 	// expect calls to get network stats
 	expectQueryNetworkInfo(rt, h)
 
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitOnChainInfo
-	var allSectorNumbers []abi.SectorNumber
 	for _, precommit := range precommits {
-		allSectorNumbers = append(allSectorNumbers, precommit.Info.SectorNumber)
 		validPrecommits = append(validPrecommits, precommit)
 		if len(precommit.Info.DealIDs) > 0 {
 			vdParams := market.ActivateDealsParams{
@@ -5507,7 +5664,14 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &expectPledge, big.Zero(), nil, exitcode.Ok)
 		}
 	}
+}
 
+func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
+	h.confirmSectorProofsValidInternal(rt, conf, precommits...)
+	var allSectorNumbers []abi.SectorNumber
+	for _, precommit := range precommits {
+		allSectorNumbers = append(allSectorNumbers, precommit.Info.SectorNumber)
+	}
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{Sectors: allSectorNumbers})
@@ -6487,6 +6651,13 @@ func makeProveCommit(sectorNo abi.SectorNumber) *miner.ProveCommitSectorParams {
 	return &miner.ProveCommitSectorParams{
 		SectorNumber: sectorNo,
 		Proof:        make([]byte, 192),
+	}
+}
+
+func makeProveCommitAggregate(sectorNos bitfield.BitField) *miner.ProveCommitAggregateParams {
+	return &miner.ProveCommitAggregateParams{
+		SectorNumbers:  sectorNos,
+		AggregateProof: make([]byte, 1024),
 	}
 }
 

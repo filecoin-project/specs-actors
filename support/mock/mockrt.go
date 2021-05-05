@@ -81,7 +81,7 @@ type Runtime struct {
 
 	logs []string
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
-	gasCharged int64
+	gasCharged []int64
 }
 
 type expectBatchVerifySeals struct {
@@ -1051,9 +1051,7 @@ func (rt *Runtime) ClearLogs() {
 }
 
 func (rt *Runtime) ExpectGasCharged(gas int64) {
-	if gas != rt.gasCharged {
-		rt.failTest("expected gas charged: %d, actual gas charged: %d", gas, rt.gasCharged)
-	}
+	rt.gasCharged = append(rt.gasCharged, gas)
 }
 
 func (rt *Runtime) Call(method interface{}, params interface{}) interface{} {
@@ -1134,7 +1132,16 @@ func (rt *Runtime) failTestNow(msg string, args ...interface{}) {
 }
 
 func (rt *Runtime) ChargeGas(_ string, gas, _ int64) {
-	rt.gasCharged += gas
+	if len(rt.gasCharged) == 0 {
+		rt.failTest("unexpected gas charge %d", gas)
+	}
+	defer func() {
+		rt.gasCharged = rt.gasCharged[1:]
+	}()
+	expectedGas := rt.gasCharged[0]
+	if gas != expectedGas {
+		rt.failTest("expected gas charged: %d, actual gas charged: %d", gas, expectedGas)
+	}
 }
 
 func getMethodName(code cid.Cid, num abi.MethodNum) string {
