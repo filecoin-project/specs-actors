@@ -710,59 +710,95 @@ func TestSectorAssignment(t *testing.T) {
 }
 
 func TestSectorNumberAllocation(t *testing.T) {
-	t.Run("can't allocate the same sector number twice", func(t *testing.T) {
-		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
+	allocate := func(h *stateHarness, numbers ...uint64) error {
+		return h.s.AllocateSectorNumbers(h.store, bitfield.NewFromSet(numbers), miner.DenyCollisions)
+	}
+	mask := func(h *stateHarness, ns bitfield.BitField) error {
+		return h.s.AllocateSectorNumbers(h.store, ns, miner.AllowCollisions)
+	}
+	expect := func(h *stateHarness, expected bitfield.BitField) {
+		var b bitfield.BitField
+		err := h.store.Get(context.Background(), h.s.AllocatedSectors, &b)
+		assert.NoError(t, err)
+		assertBitfieldsEqual(t, expected, b)
+	}
 
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
+	t.Run("batch allocation", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+		assert.NoError(t, allocate(harness, 1, 2, 3))
+		assert.NoError(t, allocate(harness, 4, 5, 6))
+		expect(harness, bf(1, 2, 3, 4, 5, 6))
 	})
 
-	t.Run("can mask sector numbers", func(t *testing.T) {
+	t.Run("repeat allocation rejected", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		sectorNo := abi.SectorNumber(1)
-
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, sectorNo))
-
-		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(0, 1, 2, 3)))
-
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, 3))
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, 4))
+		assert.NoError(t, allocate(harness, 1))
+		assert.Error(t, allocate(harness, 1))
+		expect(harness, bf(1))
 	})
 
-	t.Run("can't allocate or mask out of range", func(t *testing.T) {
+	t.Run("overlapping batch rejected", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		assert.Error(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber+1))
-		assert.Error(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber+1)))
+		assert.NoError(t, allocate(harness, 1, 2, 3))
+		assert.Error(t, allocate(harness, 3, 4, 5))
+		expect(harness, bf(1, 2, 3))
 	})
 
-	t.Run("can allocate in range", func(t *testing.T) {
+	t.Run("batch masking", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		assert.NoError(t, harness.s.AllocateSectorNumber(harness.store, abi.MaxSectorNumber))
-		assert.NoError(t, harness.s.MaskSectorNumbers(harness.store, bf(99, abi.MaxSectorNumber)))
+		assert.NoError(t, allocate(harness, 1))
+
+		assert.NoError(t, mask(harness, bf(0, 1, 2, 3)))
+		expect(harness, bf(0, 1, 2, 3))
+
+		assert.Error(t, allocate(harness, 0))
+		assert.Error(t, allocate(harness, 3))
+		assert.NoError(t, allocate(harness, 4))
+		expect(harness, bf(0, 1, 2, 3, 4))
 	})
 
-	t.Run("can compact after growing too large", func(t *testing.T) {
+	t.Run("range limits", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		// keep going till we run out of space
+		assert.NoError(t, allocate(harness, 0))
+		assert.NoError(t, allocate(harness, abi.MaxSectorNumber))
+		assert.Error(t, allocate(harness, abi.MaxSectorNumber+1))
+		expect(harness, bf(0, abi.MaxSectorNumber))
+	})
+
+	t.Run("mask range limits", func(t *testing.T) {
+		harness := constructStateHarness(t, 0)
+
+		assert.NoError(t, mask(harness, bf(0)))
+		assert.NoError(t, mask(harness, bf(abi.MaxSectorNumber)))
+		assert.Error(t, mask(harness, bf(abi.MaxSectorNumber+1)))
+	})
+
+	t.Run("compaction with mask", func(t *testing.T) {
+		harness := constructStateHarness(t, abi.ChainEpoch(0))
+
+		// Allocate widely-spaced numbers to consume the run-length encoded bytes quickly,
+		// until the limit is reached.
+		limitReached := false
 		for i := uint64(0); i < math.MaxUint64; i++ {
-			no := abi.SectorNumber((i + 1) << 50)
-			err := harness.s.AllocateSectorNumber(harness.store, no)
+			no := (i + 1) << 50
+			err := allocate(harness, no)
 			if err != nil {
 				// We failed, yay!
+				limitReached = true
 				code := exitcode.Unwrap(err, exitcode.Ok)
 				assert.Equal(t, code, exitcode.ErrIllegalArgument)
 
 				// mask half the sector ranges.
-				mask := seq(t, 0, uint64(no)/2)
-				require.NoError(t, harness.s.MaskSectorNumbers(harness.store, mask))
+				toMask := seq(t, 0, uint64(no)/2)
+				require.NoError(t, mask(harness, toMask))
 
 				// try again
-				require.NoError(t, harness.s.AllocateSectorNumber(harness.store, no))
-				return
+				require.NoError(t, allocate(harness, no))
+				break
 			}
 		}
+		assert.True(t, limitReached)
 	})
 }
 

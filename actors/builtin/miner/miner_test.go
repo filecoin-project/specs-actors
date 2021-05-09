@@ -628,13 +628,13 @@ func TestCommitments(t *testing.T) {
 		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		// Duplicate pre-commit sector ID
-		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already been allocated", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already allocated", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
 
 		// Sector ID already committed
-		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already been allocated", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already allocated", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(oldSector.SectorNumber, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
