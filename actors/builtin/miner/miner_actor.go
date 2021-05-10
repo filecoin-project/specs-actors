@@ -743,7 +743,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 			rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
 		}
 
-		err = st.AllocateSectorNumber(store, params.SectorNumber)
+		err = st.AllocateSectorNumbers(store, bitfield.NewFromSet([]uint64{uint64(params.SectorNumber)}), DenyCollisions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector id %d", params.SectorNumber)
 
 		// This sector check is redundant given the allocated sectors bitfield, but remains for safety.
@@ -1655,7 +1655,7 @@ func (a Actor) CompactSectorNumbers(rt Runtime, params *CompactSectorNumbersPara
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		err := st.MaskSectorNumbers(store, params.MaskSectorNumbers)
+		err := st.AllocateSectorNumbers(store, params.MaskSectorNumbers, AllowCollisions)
 
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to mask sector numbers")
 	})

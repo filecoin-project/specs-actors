@@ -301,54 +301,48 @@ func (st *State) QuantSpecForDeadline(dlIdx uint64) QuantSpec {
 	return QuantSpecForDeadline(NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0))
 }
 
-func (st *State) AllocateSectorNumber(store adt.Store, sectorNo abi.SectorNumber) error {
-	// This will likely already have been checked, but this is a good place
-	// to catch any mistakes.
-	if sectorNo > abi.MaxSectorNumber {
-		return xc.ErrIllegalArgument.Wrapf("sector number out of range: %d", sectorNo)
+type CollisionPolicy bool
+
+const (
+	DenyCollisions  = CollisionPolicy(false)
+	AllowCollisions = CollisionPolicy(true)
+)
+
+// Marks a set of sector numbers as having been allocated.
+// If policy is `DenyCollisions`, fails if the set intersects with the sector numbers already allocated.
+func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitField, policy CollisionPolicy) error {
+	if lastSectorNo, err := sectorNos.Last(); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("invalid sector bitfield: %w", err)
+	} else if lastSectorNo > abi.MaxSectorNumber {
+		return xc.ErrIllegalArgument.Wrapf("sector number %d exceeds max %d", lastSectorNo, abi.MaxSectorNumber)
 	}
 
-	var allocatedSectors bitfield.BitField
-	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
-		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
-	}
-	if allocated, err := allocatedSectors.IsSet(uint64(sectorNo)); err != nil {
-		return xc.ErrIllegalState.Wrapf("failed to lookup sector number in allocated sectors bitfield: %w", err)
-	} else if allocated {
-		return xc.ErrIllegalArgument.Wrapf("sector number %d has already been allocated", sectorNo)
-	}
-	allocatedSectors.Set(uint64(sectorNo))
-
-	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
-		return xc.ErrIllegalArgument.Wrapf("failed to store allocated sectors bitfield after adding sector %d: %w", sectorNo, err)
-	} else {
-		st.AllocatedSectors = root
-	}
-	return nil
-}
-
-func (st *State) MaskSectorNumbers(store adt.Store, sectorNos bitfield.BitField) error {
-	lastSectorNo, err := sectorNos.Last()
-	if err != nil {
-		return xc.ErrIllegalArgument.Wrapf("invalid mask bitfield: %w", err)
-	}
-
-	if lastSectorNo > abi.MaxSectorNumber {
-		return xc.ErrIllegalArgument.Wrapf("masked sector number %d exceeded max sector number", lastSectorNo)
-	}
-
-	var allocatedSectors bitfield.BitField
-	if err := store.Get(store.Context(), st.AllocatedSectors, &allocatedSectors); err != nil {
+	var priorAllocation bitfield.BitField
+	if err := store.Get(store.Context(), st.AllocatedSectors, &priorAllocation); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)
 	}
 
-	allocatedSectors, err = bitfield.MergeBitFields(allocatedSectors, sectorNos)
+	if policy != AllowCollisions {
+		// NOTE: A fancy merge algorithm could extract this intersection while merging, below, saving
+		// one iteration of the runs.
+		collisions, err := bitfield.IntersectBitField(priorAllocation, sectorNos)
+		if err != nil {
+			return xerrors.Errorf("failed to intersect sector numbers: %w", err)
+		}
+		if empty, err := collisions.IsEmpty(); err != nil {
+			return xerrors.Errorf("failed to check if intersection is empty: %w", err)
+		} else if !empty {
+			return xc.ErrIllegalArgument.Wrapf("sector numbers %v already allocated", collisions)
+		}
+	}
+
+	newAllocation, err := bitfield.MergeBitFields(priorAllocation, sectorNos)
 	if err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to merge allocated bitfield with mask: %w", err)
 	}
 
-	if root, err := store.Put(store.Context(), allocatedSectors); err != nil {
-		return xc.ErrIllegalArgument.Wrapf("failed to mask allocated sectors bitfield: %w", err)
+	if root, err := store.Put(store.Context(), newAllocation); err != nil {
+		return xc.ErrIllegalArgument.Wrapf("failed to store allocated sectors bitfield after adding %v: %w", sectorNos, err)
 	} else {
 		st.AllocatedSectors = root
 	}
