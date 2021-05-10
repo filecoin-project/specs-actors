@@ -304,7 +304,7 @@ func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predica
 		v, err = v.WithEpoch(dlInfo.Last())
 		require.NoError(t, err)
 
-		_, code := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		_, code, _ := v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		require.Equal(t, exitcode.Ok, code)
 
 		dlInfo = NextMinerDLInfo(t, v, minerIDAddr)
@@ -480,7 +480,7 @@ func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, b
 //
 
 func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) cbor.Marshaler {
-	ret, code := v.ApplyMessage(from, to, value, method, params)
+	ret, code, _ := v.ApplyMessage(from, to, value, method, params)
 	require.Equal(t, exitcode.Ok, code)
 	return ret
 }

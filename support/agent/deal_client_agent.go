@@ -2,10 +2,11 @@ package agent
 
 import (
 	"crypto/sha256"
-	mh "github.com/multiformats/go-multihash"
 	"math/bits"
 	"math/rand"
 	"strconv"
+
+	mh "github.com/multiformats/go-multihash"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -170,7 +171,7 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 
 	provider.CreateDeal(market.ClientDealProposal{
 		Proposal:        proposal,
-		ClientSignature: crypto.Signature{},
+		ClientSignature: crypto.Signature{Type: crypto.SigTypeBLS},
 	})
 	dca.DealCount++
 	return nil

@@ -35,11 +35,13 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 
 	publishDealParams := market.PublishStorageDealsParams{
 		Deals: []market.ClientDealProposal{{
-			Proposal:        deal,
-			ClientSignature: crypto.Signature{},
+			Proposal: deal,
+			ClientSignature: crypto.Signature{
+				Type: crypto.SigTypeBLS,
+			},
 		}},
 	}
-	ret, code := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
+	ret, code, _ := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
 	require.Equal(t, exitcode.Ok, code)
 
 	expectedPublishSubinvocations := []vm.ExpectInvocation{

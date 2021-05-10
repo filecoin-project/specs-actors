@@ -155,7 +155,7 @@ func (s *Sim) Tick() error {
 
 	// run messages
 	for _, msg := range blockMessages {
-		ret, code := s.v.ApplyMessage(msg.From, msg.To, msg.Value, msg.Method, msg.Params)
+		ret, code, _ := s.v.ApplyMessage(msg.From, msg.To, msg.Value, msg.Method, msg.Params)
 
 		// for now, assume everything should work
 		if code != exitcode.Ok {
@@ -185,7 +185,7 @@ func (s *Sim) Tick() error {
 	}
 
 	// run cron
-	_, code := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	_, code, _ := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 	if code != exitcode.Ok {
 		return errors.Errorf("exitcode %d: cron message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
 	}
@@ -315,7 +315,7 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 		GasReward: big.Zero(),
 		WinCount:  int64(wins),
 	}
-	_, code := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.AwardBlockReward, &rewardParams)
+	_, code, _ := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.AwardBlockReward, &rewardParams)
 	if code != exitcode.Ok {
 		return errors.Errorf("exitcode %d: reward message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
 	}
@@ -441,7 +441,7 @@ type PowerTable struct {
 
 // VM interface allowing a simulation to operate over multiple VM versions
 type SimVM interface {
-	ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode)
+	ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode, int64)
 	GetCirculatingSupply() abi.TokenAmount
 	GetLogs() []string
 	GetState(addr address.Address, out cbor.Unmarshaler) error
@@ -458,7 +458,6 @@ type SimVM interface {
 }
 
 var _ SimVM = (*vm.VM)(nil)
-var _ SimVM = (*vm2.VM)(nil)
 
 type SimMinerState interface {
 	HasSectorNo(adt.Store, abi.SectorNumber) (bool, error)
