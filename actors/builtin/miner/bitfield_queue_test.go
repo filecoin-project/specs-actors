@@ -271,7 +271,7 @@ func (bqe *bqExpectation) Equals(t *testing.T, q miner.BitfieldQueue) {
 
 	err = q.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
 		values, ok := bqe.expected[epoch]
-		require.True(t, ok)
+		require.True(t, ok, "unexpected entry at epoch %d, expected %v", epoch, bqe.expected)
 
 		assertBitfieldEquals(t, bf, values...)
 		return nil

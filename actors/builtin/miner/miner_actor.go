@@ -767,7 +767,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 		err = st.AddPreCommitDeposit(depositReq)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositReq)
 
-		if err := st.PutPrecommittedSector(store, &SectorPreCommitOnChainInfo{
+		if err := st.PutPrecommittedSectors(store, &SectorPreCommitOnChainInfo{
 			Info:               SectorPreCommitInfo(*params),
 			PreCommitDeposit:   depositReq,
 			PreCommitEpoch:     rt.CurrEpoch(),
@@ -786,7 +786,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 		// ConfirmSectorProofsValid would fail to find it.
 		expiryBound := rt.CurrEpoch() + msd + 1
 
-		err = st.AddPreCommitExpiry(store, expiryBound, params.SectorNumber)
+		err = st.AddPreCommitExpirations(store, map[abi.ChainEpoch][]uint64{expiryBound: {uint64(params.SectorNumber)}})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 
 		// activate miner cron
