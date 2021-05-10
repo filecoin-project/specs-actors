@@ -308,7 +308,7 @@ const (
 	AllowCollisions = CollisionPolicy(true)
 )
 
-// Marks a set of sector numbers has having been allocated.
+// Marks a set of sector numbers as having been allocated.
 // If policy is `DenyCollisions`, fails if the set intersects with the sector numbers already allocated.
 func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitField, policy CollisionPolicy) error {
 	if lastSectorNo, err := sectorNos.Last(); err != nil {
