@@ -309,7 +309,7 @@ const (
 )
 
 // Marks a set of sector numbers has having been allocated.
-// If allowCollision is false, fails if the set intersects with the sector numbers already allocated.
+// If policy is `DenyCollisions`, fails if the set intersects with the sector numbers already allocated.
 func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitField, policy CollisionPolicy) error {
 	if lastSectorNo, err := sectorNos.Last(); err != nil {
 		return xc.ErrIllegalArgument.Wrapf("invalid sector bitfield: %w", err)
