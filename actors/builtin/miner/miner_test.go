@@ -15,6 +15,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
@@ -4438,6 +4439,19 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 	return sectors
 }
 
+func (h *actorHarness) collectPrecommitExpirations(rt *mock.Runtime, st *miner.State) map[abi.ChainEpoch][]uint64 {
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), st.PreCommittedSectorsExpiry, miner.NoQuantization, miner.PrecommitExpiryAmtBitwidth)
+	require.NoError(h.t, err)
+	expirations := map[abi.ChainEpoch][]uint64{}
+	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
+		expanded, err := bf.All(miner.AddressedSectorsMax)
+		require.NoError(h.t, err)
+		expirations[epoch] = expanded
+		return nil
+	})
+	return expirations
+}
+
 func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *miner.Deadline) map[abi.ChainEpoch][]uint64 {
 	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization, miner.DeadlineExpirationAmtBitwidth)
 	require.NoError(h.t, err)
@@ -4579,7 +4593,6 @@ type preCommitConf struct {
 	dealWeight         abi.DealWeight
 	verifiedDealWeight abi.DealWeight
 	dealSpace          abi.SectorSize
-	pledgeDelta        *abi.TokenAmount
 }
 
 func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommitSectorParams, conf preCommitConf, first bool) *miner.SectorPreCommitOnChainInfo {
@@ -4590,7 +4603,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 		expectQueryNetworkInfo(rt, h)
 	}
 	if len(params.DealIDs) > 0 {
-		// If there are any deal IDs, allocate half the weight to non-verified and half to verified.
 		vdParams := market.VerifyDealsForActivationParams{
 			Sectors: []market.SectorDeals{{
 				SectorExpiry: params.Expiration,
@@ -4612,6 +4624,11 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 			}},
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+	} else {
+		// Ensure the deal IDs and configured deal weight returns are consistent.
+		require.Equal(h.t, abi.SectorSize(0), conf.dealSpace, "no deals but positive deal space configured")
+		require.True(h.t, conf.dealWeight.NilOrZero(), "no deals but positive deal weight configured")
+		require.True(h.t, conf.verifiedDealWeight.NilOrZero(), "no deals but positive deal weight configured")
 	}
 	st := getState(rt)
 	if st.FeeDebt.GreaterThan(big.Zero()) {
@@ -4624,11 +4641,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, cronParams, big.Zero(), nil, exitcode.Ok)
 	}
 
-	if conf.pledgeDelta != nil {
-		if !conf.pledgeDelta.IsZero() {
-			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, conf.pledgeDelta, big.Zero(), nil, exitcode.Ok)
-		}
-	} else if rt.NetworkVersion() < network.Version7 {
+	if rt.NetworkVersion() < network.Version7 {
 		pledgeDelta := immediatelyVestingFunds(rt, st).Neg()
 		if !pledgeDelta.IsZero() {
 			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
@@ -4638,6 +4651,70 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 	rt.Call(h.a.PreCommitSector, params)
 	rt.Verify()
 	return h.getPreCommit(rt, params.SectorNumber)
+}
+
+type preCommitBatchConf struct {
+	sectorWeights []market.SectorWeights
+}
+
+func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreCommitSectorBatchParams, conf preCommitBatchConf, first bool) []*miner.SectorPreCommitOnChainInfo {
+	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
+	{
+		expectQueryNetworkInfo(rt, h)
+	}
+	sectorDeals := make([]market.SectorDeals, len(params.Sectors))
+	sectorWeights := make([]market.SectorWeights, len(params.Sectors))
+	anyDeals := false
+	for i, sector := range params.Sectors {
+		sectorDeals[i] = market.SectorDeals{
+			SectorExpiry: sector.Expiration,
+			DealIDs:      sector.DealIDs,
+		}
+
+		if len(conf.sectorWeights) > i {
+			sectorWeights[i] = conf.sectorWeights[i]
+		} else {
+			sectorWeights[i] = market.SectorWeights{
+				DealSpace:          0,
+				DealWeight:         big.Zero(),
+				VerifiedDealWeight: big.Zero(),
+			}
+		}
+		// Sanity check on expectations
+		sectorHasDeals := len(sector.DealIDs) > 0
+		dealTotalWeight := big.Add(sectorWeights[i].DealWeight, sectorWeights[i].VerifiedDealWeight)
+		require.True(h.t, sectorHasDeals == !dealTotalWeight.Equals(big.Zero()), "sector deals inconsistent with configured weight")
+		require.True(h.t, sectorHasDeals == (sectorWeights[i].DealSpace != 0), "sector deals inconsistent with configured space")
+		anyDeals = anyDeals || sectorHasDeals
+	}
+	if anyDeals {
+		vdParams := market.VerifyDealsForActivationParams{
+			Sectors: sectorDeals,
+		}
+		vdReturn := market.VerifyDealsForActivationReturn{
+			Sectors: sectorWeights,
+		}
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+	}
+	st := getState(rt)
+	if st.FeeDebt.GreaterThan(big.Zero()) {
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
+	}
+
+	if first {
+		dlInfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, rt.Epoch())
+		cronParams := makeDeadlineCronEventParams(h.t, dlInfo.Last())
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, cronParams, big.Zero(), nil, exitcode.Ok)
+	}
+
+	rt.Call(h.a.PreCommitSectorBatch, params)
+	rt.Verify()
+	precommits := make([]*miner.SectorPreCommitOnChainInfo, len(params.Sectors))
+	for i, sector := range params.Sectors {
+		precommits[i] = h.getPreCommit(rt, sector.SectorNumber)
+	}
+	return precommits
 }
 
 // Options for proveCommitSector behaviour.
@@ -5509,7 +5586,7 @@ func (h *actorHarness) powerPairForSectors(sectors []*miner.SectorOnChainInfo) m
 	return miner.NewPowerPair(rawPower, qaPower)
 }
 
-func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch, dealIDs []abi.DealID) *miner.PreCommitSectorParams {
+func (h *actorHarness) makePreCommit(sectorNo abi.SectorNumber, challenge, expiration abi.ChainEpoch, dealIDs []abi.DealID) *miner0.SectorPreCommitInfo {
 	return &miner.PreCommitSectorParams{
 		SealProof:     h.sealProofType,
 		SectorNumber:  sectorNo,

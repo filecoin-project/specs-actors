@@ -1017,11 +1017,6 @@ func newPreCommitOnChain(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.
 	}
 }
 
-const (
-	sectorSealRandEpochValue = abi.ChainEpoch(1)
-	sectorExpiration         = abi.ChainEpoch(1)
-)
-
 // returns a unique SectorOnChainInfo with each invocation with SectorNumber set to `sectorNo`.
 func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.Int, activation abi.ChainEpoch) *miner.SectorOnChainInfo {
 	return &miner.SectorOnChainInfo{
@@ -1030,7 +1025,7 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 		SealedCID:             sealed,
 		DealIDs:               nil,
 		Activation:            activation,
-		Expiration:            sectorExpiration,
+		Expiration:            abi.ChainEpoch(1),
 		DealWeight:            weight,
 		VerifiedDealWeight:    weight,
 		InitialPledge:         abi.NewTokenAmount(0),
@@ -1047,8 +1042,8 @@ func newSectorPreCommitInfo(sectorNo abi.SectorNumber, sealed cid.Cid) *miner.Se
 		SealProof:     abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		SectorNumber:  sectorNo,
 		SealedCID:     sealed,
-		SealRandEpoch: sectorSealRandEpochValue,
+		SealRandEpoch: abi.ChainEpoch(1),
 		DealIDs:       nil,
-		Expiration:    sectorExpiration,
+		Expiration:    abi.ChainEpoch(1),
 	}
 }

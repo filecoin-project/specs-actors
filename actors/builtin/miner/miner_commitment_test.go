@@ -9,7 +9,9 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v5/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/smoothing"
@@ -22,6 +24,95 @@ import (
 // Test for sector precommitment and proving.
 func TestCommitments(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
+
+	// Simple pre-commits
+	for _, test := range []struct {
+		name             string
+		sectorNo         abi.SectorNumber
+		dealSize         uint64
+		verifiedDealSize uint64
+		dealIds          []abi.DealID
+	}{{
+		name:             "no deals",
+		sectorNo:         0,
+		dealSize:         0,
+		verifiedDealSize: 0,
+		dealIds:          nil,
+	}, {
+		name:             "max sector number",
+		sectorNo:         abi.MaxSectorNumber,
+		dealSize:         0,
+		verifiedDealSize: 0,
+		dealIds:          nil,
+	}, {
+		name:             "unverified deal",
+		sectorNo:         100,
+		dealSize:         32 << 30,
+		verifiedDealSize: 0,
+		dealIds:          []abi.DealID{1},
+	}, {
+		name:             "verified deal",
+		sectorNo:         100,
+		dealSize:         0,
+		verifiedDealSize: 32 << 30,
+		dealIds:          []abi.DealID{1},
+	}, {
+		name:             "two deals",
+		sectorNo:         100,
+		dealSize:         16 << 30,
+		verifiedDealSize: 16 << 30,
+		dealIds:          []abi.DealID{1, 2},
+	},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			actor := newHarness(t, periodOffset)
+			rt := builderForHarness(actor).
+				WithBalance(bigBalance, big.Zero()).
+				Build(t)
+			precommitEpoch := periodOffset + 1
+			rt.SetEpoch(precommitEpoch)
+			actor.constructAndVerify(rt)
+			dlInfo := actor.deadline(rt)
+
+			expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // on deadline boundary but > 180 days
+			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+			dealLifespan := expiration - proveCommitEpoch
+			dealSpace := test.dealSize + test.verifiedDealSize
+			dealWeight := big.Mul(big.NewIntUnsigned(test.dealSize), big.NewInt(int64(dealLifespan)))
+			verifiedDealWeight := big.Mul(big.NewIntUnsigned(test.verifiedDealSize), big.NewInt(int64(dealLifespan)))
+
+			precommitParams := actor.makePreCommit(test.sectorNo, precommitEpoch-1, expiration, test.dealIds)
+			precommit := actor.preCommitSector(rt, precommitParams, preCommitConf{
+				dealWeight:         dealWeight,
+				verifiedDealWeight: verifiedDealWeight,
+				dealSpace:          abi.SectorSize(dealSpace),
+			}, true)
+
+			// Check precommit expectations.
+			assert.Equal(t, precommitEpoch, precommit.PreCommitEpoch)
+			assert.Equal(t, dealWeight, precommit.DealWeight)
+			assert.Equal(t, verifiedDealWeight, precommit.VerifiedDealWeight)
+
+			assert.Equal(t, test.sectorNo, precommit.Info.SectorNumber)
+			assert.Equal(t, precommitParams.SealProof, precommit.Info.SealProof)
+			assert.Equal(t, precommitParams.SealedCID, precommit.Info.SealedCID)
+			assert.Equal(t, precommitParams.SealRandEpoch, precommit.Info.SealRandEpoch)
+			assert.Equal(t, precommitParams.DealIDs, precommit.Info.DealIDs)
+			assert.Equal(t, precommitParams.Expiration, precommit.Info.Expiration)
+
+			pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
+			expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+			assert.Equal(t, expectedDeposit, precommit.PreCommitDeposit)
+
+			st := getState(rt)
+			assert.True(t, expectedDeposit.GreaterThan(big.Zero()))
+			assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + 1)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: {uint64(test.sectorNo)}}, expirations)
+		})
+	}
 
 	t.Run("insufficient funds for pre-commit", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
@@ -177,6 +268,17 @@ func TestCommitments(t *testing.T) {
 		})
 		rt.Reset()
 
+		// Deals too large for sector
+		dealWeight := big.Mul(big.NewIntUnsigned(32<<30), big.NewInt(int64(expiration-rt.Epoch())))
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large", func() {
+			actor.preCommitSector(rt, actor.makePreCommit(0, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
+				dealWeight:         dealWeight,
+				verifiedDealWeight: big.Zero(),
+				dealSpace:          32<<30 + 1,
+			}, false)
+		})
+		rt.Reset()
+
 		// Try to precommit while in fee debt with insufficient balance
 		st = getState(rt)
 		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
@@ -191,13 +293,12 @@ func TestCommitments(t *testing.T) {
 
 		// Try to precommit with an active consensus fault
 		st = getState(rt)
-
 		actor.reportConsensusFault(rt, addr.TestAddress, &runtime.ConsensusFault{
 			Target: actor.receiver,
 			Epoch:  rt.Epoch() - 1,
 			Type:   runtime.ConsensusFaultDoubleForkMining,
 		})
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "precommit not allowed during active consensus fault", func() {
+		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "active consensus fault", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
 		// reset state back to normal
@@ -227,9 +328,7 @@ func TestCommitments(t *testing.T) {
 			return ids
 		}
 
-		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-
 		dealLimits := map[abi.RegisteredSealProof]int{
 			abi.RegisteredSealProof_StackedDrg2KiBV1_1:  256,
 			abi.RegisteredSealProof_StackedDrg32GiBV1_1: 256,
@@ -237,7 +336,7 @@ func TestCommitments(t *testing.T) {
 		}
 
 		for proof, limit := range dealLimits {
-			// attempt to pre-commmit a sector with too many sectors
+			// attempt to pre-commmit a sector with too many deals
 			rt, actor, deadline := setup(proof)
 			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
@@ -285,15 +384,13 @@ func TestCommitments(t *testing.T) {
 	})
 
 	for _, test := range []struct {
-		name                string
-		version             network.Version
-		expectedPledgeDelta abi.TokenAmount
-		sealProofType       abi.RegisteredSealProof
+		name          string
+		version       network.Version
+		sealProofType abi.RegisteredSealProof
 	}{{
-		name:                "precommit does not vest funds in version 8",
-		version:             network.Version8,
-		expectedPledgeDelta: abi.NewTokenAmount(0),
-		sealProofType:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+		name:          "precommit does not vest funds in version 8",
+		version:       network.Version8,
+		sealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 	}} {
 		t.Run(test.name, func(t *testing.T) {
 			actor := newHarness(t, periodOffset)
@@ -326,20 +423,220 @@ func TestCommitments(t *testing.T) {
 
 			// Pre-commit with a deal in order to exercise non-zero deal weights.
 			precommitParams := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
-			actor.preCommitSector(rt, precommitParams, preCommitConf{
-				pledgeDelta: &test.expectedPledgeDelta,
-			}, true)
+			actor.preCommitSector(rt, precommitParams, preCommitConf{}, true)
 		})
 	}
 }
 
+func TestPreCommitBatch(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	type dealSpec struct {
+		size         uint64
+		verifiedSize uint64
+		IDs          []abi.DealID
+	}
+
+	// Simple batches
+	for _, test := range []struct {
+		name           string
+		batchSize      int
+		balanceSurplus abi.TokenAmount
+		deals          []dealSpec
+		exit           exitcode.ExitCode
+		error          string
+	}{{
+		name:           "one sector",
+		batchSize:      1,
+		balanceSurplus: big.Zero(),
+	}, {
+		name:           "max sectors",
+		batchSize:      32,
+		balanceSurplus: big.Zero(),
+	}, {
+		name:           "one deal",
+		batchSize:      3,
+		balanceSurplus: big.Zero(),
+		deals: []dealSpec{{
+			size:         32 << 30,
+			verifiedSize: 0,
+			IDs:          []abi.DealID{1},
+		}},
+	}, {
+		name:           "many deals",
+		batchSize:      3,
+		balanceSurplus: big.Zero(),
+		deals: []dealSpec{{
+			size:         32 << 30,
+			verifiedSize: 0,
+			IDs:          []abi.DealID{1},
+		}, {
+			size:         0,
+			verifiedSize: 32 << 30,
+			IDs:          []abi.DealID{1},
+		}, {
+			size:         16 << 30,
+			verifiedSize: 16 << 30,
+			IDs:          []abi.DealID{1, 2},
+		}},
+	}, {
+		name:           "empty batch",
+		batchSize:      0,
+		balanceSurplus: big.Zero(),
+		exit:           exitcode.ErrIllegalArgument,
+		error:          "batch empty",
+	}, {
+		name:           "too many sectors",
+		batchSize:      33,
+		balanceSurplus: big.Zero(),
+		exit:           exitcode.ErrIllegalArgument,
+		error:          "batch of 33 too large",
+	}, {
+		name:           "insufficient balance",
+		batchSize:      10,
+		balanceSurplus: abi.NewTokenAmount(1).Neg(),
+		exit:           exitcode.ErrInsufficientFunds,
+		error:          "insufficient funds",
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			actor := newHarness(t, periodOffset)
+			rt := builderForHarness(actor).
+				Build(t)
+			precommitEpoch := periodOffset + 1
+			rt.SetEpoch(precommitEpoch)
+			actor.constructAndVerify(rt)
+			dlInfo := actor.deadline(rt)
+
+			batchSize := test.batchSize
+			sectorNos := make([]abi.SectorNumber, batchSize)
+			sectorNoAsUints := make([]uint64, batchSize)
+			for i := 0; i < batchSize; i++ {
+				sectorNos[i] = abi.SectorNumber(100 + i)
+				sectorNoAsUints[i] = uint64(100 + i)
+			}
+			sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // on deadline boundary but > 180 days
+			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+			dealLifespan := sectorExpiration - proveCommitEpoch
+
+			sectors := make([]*miner0.SectorPreCommitInfo, batchSize)
+			conf := preCommitBatchConf{
+				sectorWeights: make([]market.SectorWeights, batchSize),
+			}
+			deposits := make([]big.Int, batchSize)
+			for i := 0; i < batchSize; i++ {
+				deals := dealSpec{}
+				if len(test.deals) > i {
+					deals = test.deals[i]
+				}
+				sectors[i] = actor.makePreCommit(sectorNos[i], precommitEpoch-1, sectorExpiration, deals.IDs)
+
+				dealSpace := deals.size + deals.verifiedSize
+				dealWeight := big.Mul(big.NewIntUnsigned(deals.size), big.NewInt(int64(dealLifespan)))
+				verifiedDealWeight := big.Mul(big.NewIntUnsigned(deals.verifiedSize), big.NewInt(int64(dealLifespan)))
+				conf.sectorWeights[i] = market.SectorWeights{
+					DealSpace:          dealSpace,
+					DealWeight:         dealWeight,
+					VerifiedDealWeight: verifiedDealWeight,
+				}
+				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, sectors[i].Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
+				deposits[i] = miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+			}
+			totalDeposit := big.Sum(deposits...)
+			rt.SetBalance(big.Add(totalDeposit, test.balanceSurplus))
+
+			if test.exit != exitcode.Ok {
+				rt.ExpectAbortContainsMessage(test.exit, test.error, func() {
+					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+
+					// State untouched.
+					st := getState(rt)
+					assert.True(t, st.PreCommitDeposits.IsZero())
+					expirations := actor.collectPrecommitExpirations(rt, st)
+					assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+				})
+				return
+			}
+			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+
+			// Check precommits
+			st := getState(rt)
+			for i := 0; i < batchSize; i++ {
+				assert.Equal(t, precommitEpoch, precommits[i].PreCommitEpoch)
+				assert.Equal(t, conf.sectorWeights[i].DealWeight, precommits[i].DealWeight)
+				assert.Equal(t, conf.sectorWeights[i].VerifiedDealWeight, precommits[i].VerifiedDealWeight)
+
+				assert.Equal(t, sectorNos[i], precommits[i].Info.SectorNumber)
+				assert.Equal(t, sectors[i].SealProof, precommits[i].Info.SealProof)
+				assert.Equal(t, sectors[i].SealedCID, precommits[i].Info.SealedCID)
+				assert.Equal(t, sectors[i].SealRandEpoch, precommits[i].Info.SealRandEpoch)
+				assert.Equal(t, sectors[i].DealIDs, precommits[i].Info.DealIDs)
+				assert.Equal(t, sectors[i].Expiration, precommits[i].Info.Expiration)
+
+				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommits[i].Info.Expiration-precommitEpoch,
+					conf.sectorWeights[i].DealWeight, conf.sectorWeights[i].VerifiedDealWeight)
+				expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+				assert.Equal(t, expectedDeposit, precommits[i].PreCommitDeposit)
+			}
+
+			assert.True(t, totalDeposit.GreaterThan(big.Zero()))
+			assert.Equal(t, totalDeposit, st.PreCommitDeposits)
+
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + 1)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: sectorNoAsUints}, expirations)
+		})
+	}
+
+	t.Run("one bad apple ruins batch", func(t *testing.T) {
+		// This test does not enumerate all the individual conditions that could cause a single precommit
+		// to be rejected. Those are covered in the PreCommitSector tests, and we know that that
+		// method is implemented in terms of a batch of one.
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		sectors := []*miner0.SectorPreCommitInfo{
+			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
+			actor.makePreCommit(102, precommitEpoch-1, rt.Epoch(), nil), // Expires too soon
+		}
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sector expiration", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{}, true)
+		})
+	})
+
+	t.Run("duplicate sector rejects batch", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		sectors := []*miner0.SectorPreCommitInfo{
+			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
+			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+		}
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "duplicate sector number 100", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{}, true)
+		})
+	})
+}
+
 func TestProveCommit(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
-	actor := newHarness(t, periodOffset)
-	builder := builderForHarness(actor).
-		WithBalance(bigBalance, big.Zero())
 
-	t.Run("valid precommit then provecommit", func(t *testing.T) {
+	t.Run("prove single sector", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero()).
@@ -366,16 +663,14 @@ func TestProveCommit(t *testing.T) {
 			verifiedDealWeight: verifiedDealWeight,
 		}, true)
 
-		// assert precommit exists and meets expectations
-		onChainPrecommit := actor.getPreCommit(rt, sectorNo)
-
+		// Check precommit
 		// deal weights must be set in precommit onchain info
-		assert.Equal(t, dealWeight, onChainPrecommit.DealWeight)
-		assert.Equal(t, verifiedDealWeight, onChainPrecommit.VerifiedDealWeight)
+		assert.Equal(t, dealWeight, precommit.DealWeight)
+		assert.Equal(t, verifiedDealWeight, precommit.VerifiedDealWeight)
 
-		pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-precommitEpoch, onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
+		pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-precommitEpoch, precommit.DealWeight, precommit.VerifiedDealWeight)
 		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
-		assert.Equal(t, expectedDeposit, onChainPrecommit.PreCommitDeposit)
+		assert.Equal(t, expectedDeposit, precommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
 		st := getState(rt)
@@ -384,7 +679,15 @@ func TestProveCommit(t *testing.T) {
 		// run prove commit logic
 		rt.SetEpoch(proveCommitEpoch)
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
-		actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
+		sector := actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
+
+		assert.Equal(t, precommit.Info.SealProof, sector.SealProof)
+		assert.Equal(t, precommit.Info.SealedCID, sector.SealedCID)
+		assert.Equal(t, precommit.Info.DealIDs, sector.DealIDs)
+		assert.Equal(t, rt.Epoch(), sector.Activation)
+		assert.Equal(t, precommit.Info.Expiration, sector.Expiration)
+		assert.Equal(t, precommit.DealWeight, sector.DealWeight)
+		assert.Equal(t, precommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
 		// expect precommit to have been removed
 		st = getState(rt)
@@ -397,27 +700,17 @@ func TestProveCommit(t *testing.T) {
 
 		// The sector is exactly full with verified deals, so expect fully verified power.
 		expectedPower := big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier))
-		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-rt.Epoch(), onChainPrecommit.DealWeight, onChainPrecommit.VerifiedDealWeight)
+		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-rt.Epoch(), precommit.DealWeight, precommit.VerifiedDealWeight)
 		assert.Equal(t, expectedPower, qaPower)
-		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth,
-			actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
-		assert.Equal(t, expectedInitialPledge, st.InitialPledge)
-
-		// expect new onchain sector
-		sector := actor.getSector(rt, sectorNo)
 		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
 
 		// expect deal weights to be transferred to on chain info
-		assert.Equal(t, onChainPrecommit.DealWeight, sector.DealWeight)
-		assert.Equal(t, onChainPrecommit.VerifiedDealWeight, sector.VerifiedDealWeight)
+		assert.Equal(t, precommit.DealWeight, sector.DealWeight)
+		assert.Equal(t, precommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
-		// expect activation epoch to be current epoch
-		assert.Equal(t, rt.Epoch(), sector.Activation)
-
-		// expect initial plege of sector to be set
+		// expect initial plege of sector to be set, and be total pledge requirement
+		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
 		assert.Equal(t, expectedInitialPledge, sector.InitialPledge)
-
-		// expect locked initial pledge of sector to be the same as pledge requirement
 		assert.Equal(t, expectedInitialPledge, st.InitialPledge)
 
 		// expect sector to be assigned a deadline/partition
@@ -452,6 +745,96 @@ func TestProveCommit(t *testing.T) {
 		assert.Equal(t, expectedInitialPledge, entry.OnTimePledge)
 		assert.Equal(t, sectorPower, entry.ActivePower)
 		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
+	})
+
+	t.Run("prove sectors from batch pre-commit", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+
+		sectors := []*miner0.SectorPreCommitInfo{
+			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, []abi.DealID{1}),    // 1 * 32GiB verified deal
+			actor.makePreCommit(102, precommitEpoch-1, sectorExpiration, []abi.DealID{2, 3}), // 2 * 16GiB verified deals
+		}
+
+		dealSpace := uint64(32 << 30)
+		dealWeight := big.Zero()
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+		dealLifespan := sectorExpiration - proveCommitEpoch
+		verifiedDealWeight := big.Mul(big.NewIntUnsigned(dealSpace), big.NewInt(int64(dealLifespan)))
+
+		// Power estimates made a pre-commit time
+		noDealPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-precommitEpoch, big.Zero(), big.Zero())
+		fullDealPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-precommitEpoch, dealWeight, verifiedDealWeight)
+
+		deposits := []big.Int{
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, noDealPowerEstimate),
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, fullDealPowerEstimate),
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, fullDealPowerEstimate),
+		}
+		conf := preCommitBatchConf{
+			sectorWeights: []market.SectorWeights{
+				{DealSpace: 0, DealWeight: big.Zero(), VerifiedDealWeight: big.Zero()},
+				{DealSpace: dealSpace, DealWeight: dealWeight, VerifiedDealWeight: verifiedDealWeight},
+				{DealSpace: dealSpace, DealWeight: dealWeight, VerifiedDealWeight: verifiedDealWeight},
+			},
+		}
+
+		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+
+		rt.SetEpoch(proveCommitEpoch)
+		noDealPower := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-proveCommitEpoch, big.Zero(), big.Zero())
+		noDealPledge := miner.InitialPledgeForPower(noDealPower, actor.baselinePower, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
+		fullDealPower := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-proveCommitEpoch, dealWeight, verifiedDealWeight)
+		assert.Equal(t, big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier)), fullDealPower)
+		fullDealPledge := miner.InitialPledgeForPower(fullDealPower, actor.baselinePower, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())
+
+		// Prove just the first sector, with no deals
+		{
+			precommit := precommits[0]
+			sector := actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(precommit.Info.SectorNumber), proveCommitConf{})
+			assert.Equal(t, rt.Epoch(), sector.Activation)
+			st := getState(rt)
+			expectedDeposit := big.Sum(deposits[1:]...) // First sector deposit released
+			assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+
+			// Expect power/pledge for a sector with no deals
+			assert.Equal(t, noDealPledge, sector.InitialPledge)
+			assert.Equal(t, noDealPledge, st.InitialPledge)
+		}
+		// Prove the next, with one deal
+		{
+			precommit := precommits[1]
+			sector := actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(precommit.Info.SectorNumber), proveCommitConf{})
+			assert.Equal(t, rt.Epoch(), sector.Activation)
+			st := getState(rt)
+			expectedDeposit := big.Sum(deposits[2:]...) // First and second sector deposits released
+			assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+
+			// Expect power/pledge for the two sectors (only this one having any deal weight)
+			assert.Equal(t, fullDealPledge, sector.InitialPledge)
+			assert.Equal(t, big.Add(noDealPledge, fullDealPledge), st.InitialPledge)
+		}
+		// Prove the last
+		{
+			precommit := precommits[2]
+			sector := actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(precommit.Info.SectorNumber), proveCommitConf{})
+			assert.Equal(t, rt.Epoch(), sector.Activation)
+			st := getState(rt)
+			assert.Equal(t, big.Zero(), st.PreCommitDeposits)
+
+			// Expect power/pledge for the three sectors
+			assert.Equal(t, fullDealPledge, sector.InitialPledge)
+			assert.Equal(t, big.Sum(noDealPledge, fullDealPledge, fullDealPledge), st.InitialPledge)
+		}
 	})
 
 	t.Run("invalid proof rejected", func(t *testing.T) {
@@ -528,7 +911,10 @@ func TestProveCommit(t *testing.T) {
 	})
 
 	t.Run("prove commit aborts if pledge requirement not met", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		// Set the circulating supply high and expected reward low in order to coerce
 		// pledge requirements (BR + share of money supply, but capped at 1FIL)
@@ -566,7 +952,10 @@ func TestProveCommit(t *testing.T) {
 	})
 
 	t.Run("drop invalid prove commit while processing valid one", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 
 		// make two precommits
