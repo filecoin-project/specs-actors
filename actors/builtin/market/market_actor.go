@@ -399,22 +399,17 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 	return nil
 }
 
-//type ComputeDataCommitmentParams struct {
-//	DealIDs    []abi.DealID
-//	SectorType abi.RegisteredSealProof
-//}
-//type ComputeDataCommitmentParams = market0.ComputeDataCommitmentParams
-type SectorDataCommitmentInputs struct {
+type SectorDataSpec struct {
 	DealIDs    []abi.DealID
 	SectorType abi.RegisteredSealProof
 }
 
 type ComputeDataCommitmentParams struct {
-	Inputs []*SectorDataCommitmentInputs
+	Inputs []*SectorDataSpec
 }
 
 type ComputeDataCommitmentReturn struct {
-	CommDs []*cbg.CborCid
+	CommDs []cbg.CborCid
 }
 
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *ComputeDataCommitmentReturn {
@@ -424,7 +419,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 	rt.StateReadonly(&st)
 	proposals, err := AsDealProposalArray(adt.AsStore(rt), st.Proposals)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal dealProposals")
-	commDs := make([]*cbg.CborCid, len(params.Inputs))
+	commDs := make([]cbg.CborCid, len(params.Inputs))
 	for i, commInput := range params.Inputs {
 		pieces := make([]abi.PieceInfo, 0)
 		for _, dealID := range commInput.DealIDs {
@@ -438,7 +433,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 		}
 		commD, err := rt.ComputeUnsealedSectorCID(commInput.SectorType, pieces)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to compute unsealed sectorCID: %s", err)
-		commDs[i] = (*cbg.CborCid)(&commD)
+		commDs[i] = (cbg.CborCid)(commD)
 	}
 	return &ComputeDataCommitmentReturn{
 		CommDs: commDs,

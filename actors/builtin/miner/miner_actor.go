@@ -851,9 +851,9 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get precommits")
 
 	// compute data commitments
-	computeDataCommitmentsInputs := make([]*market.SectorDataCommitmentInputs, len(precommits))
+	computeDataCommitmentsInputs := make([]*market.SectorDataSpec, len(precommits))
 	for i, precommit := range precommits {
-		computeDataCommitmentsInputs[i] = &market.SectorDataCommitmentInputs{
+		computeDataCommitmentsInputs[i] = &market.SectorDataSpec{
 			SectorType: precommit.Info.SealProof,
 			DealIDs:    precommit.Info.DealIDs,
 		}
@@ -2417,7 +2417,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 		rt.Abortf(exitcode.ErrForbidden, "too early to prove sector")
 	}
 
-	commDs := requestUnsealedSectorCIDs(rt, &market.SectorDataCommitmentInputs{
+	commDs := requestUnsealedSectorCIDs(rt, &market.SectorDataSpec{
 		SectorType: params.RegisteredSealProof,
 		DealIDs:    params.DealIDs,
 	})
@@ -2449,7 +2449,7 @@ func getVerifyInfo(rt Runtime, params *SealVerifyStuff) *proof.SealVerifyInfo {
 }
 
 // Requests the storage market actor compute the unsealed sector CID from a sector's deals.
-func requestUnsealedSectorCIDs(rt Runtime, dataCommitmentInputs ...*market.SectorDataCommitmentInputs) []cid.Cid {
+func requestUnsealedSectorCIDs(rt Runtime, dataCommitmentInputs ...*market.SectorDataSpec) []cid.Cid {
 	if len(dataCommitmentInputs) == 0 {
 		return nil
 	}
@@ -2467,7 +2467,7 @@ func requestUnsealedSectorCIDs(rt Runtime, dataCommitmentInputs ...*market.Secto
 	builtin.RequireState(rt, len(dataCommitmentInputs) == len(ret.CommDs), "number of data commitments computed %d does not match number of data commitment inputs %d", len(ret.CommDs), len(dataCommitmentInputs))
 	unsealedCIDs := make([]cid.Cid, len(ret.CommDs))
 	for i, cbgCid := range ret.CommDs {
-		unsealedCIDs[i] = cid.Cid(*cbgCid)
+		unsealedCIDs[i] = cid.Cid(cbgCid)
 	}
 	return unsealedCIDs
 }

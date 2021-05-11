@@ -413,14 +413,14 @@ func (t *VerifyDealsForActivationReturn) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorDataCommitmentInputs = []byte{130}
+var lengthBufSectorDataSpec = []byte{130}
 
-func (t *SectorDataCommitmentInputs) MarshalCBOR(w io.Writer) error {
+func (t *SectorDataSpec) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write(lengthBufSectorDataCommitmentInputs); err != nil {
+	if _, err := w.Write(lengthBufSectorDataSpec); err != nil {
 		return err
 	}
 
@@ -453,8 +453,8 @@ func (t *SectorDataCommitmentInputs) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *SectorDataCommitmentInputs) UnmarshalCBOR(r io.Reader) error {
-	*t = SectorDataCommitmentInputs{}
+func (t *SectorDataSpec) UnmarshalCBOR(r io.Reader) error {
+	*t = SectorDataSpec{}
 
 	br := cbg.GetPeeker(r)
 	scratch := make([]byte, 8)
@@ -545,7 +545,7 @@ func (t *ComputeDataCommitmentParams) MarshalCBOR(w io.Writer) error {
 
 	scratch := make([]byte, 9)
 
-	// t.Inputs ([]*market.SectorDataCommitmentInputs) (slice)
+	// t.Inputs ([]*market.SectorDataSpec) (slice)
 	if len(t.Inputs) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Inputs was too long")
 	}
@@ -579,7 +579,7 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Inputs ([]*market.SectorDataCommitmentInputs) (slice)
+	// t.Inputs ([]*market.SectorDataSpec) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -595,12 +595,12 @@ func (t *ComputeDataCommitmentParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Inputs = make([]*SectorDataCommitmentInputs, extra)
+		t.Inputs = make([]*SectorDataSpec, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
 
-		var v SectorDataCommitmentInputs
+		var v SectorDataSpec
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
@@ -674,7 +674,7 @@ func (t *ComputeDataCommitmentReturn) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.CommDs = make([]*cbg.CborCid, extra)
+		t.CommDs = make([]cbg.CborCid, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
@@ -684,7 +684,7 @@ func (t *ComputeDataCommitmentReturn) UnmarshalCBOR(r io.Reader) error {
 			return err
 		}
 
-		t.CommDs[i] = &v
+		t.CommDs[i] = v
 	}
 
 	return nil

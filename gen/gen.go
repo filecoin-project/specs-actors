@@ -152,7 +152,7 @@ func main() {
 		//market.ActivateDealsParams{}, // Aliased from v0
 		market.VerifyDealsForActivationParams{},
 		market.VerifyDealsForActivationReturn{},
-		market.SectorDataCommitmentInputs{},
+		market.SectorDataSpec{},
 		market.ComputeDataCommitmentParams{},
 		market.ComputeDataCommitmentReturn{},
 		//market.OnMinerSectorsTerminateParams{}, // Aliased from v0

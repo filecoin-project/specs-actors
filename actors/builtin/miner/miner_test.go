@@ -5480,7 +5480,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 
 	// Prepare for and receive call to ProveCommitSector
 	{
-		inputs := []*market.SectorDataCommitmentInputs{
+		inputs := []*market.SectorDataSpec{
 			{
 				DealIDs:    precommit.Info.DealIDs,
 				SectorType: precommit.Info.SealProof,
@@ -5488,7 +5488,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 		}
 		cdcParams := market.ComputeDataCommitmentParams{Inputs: inputs}
 		cdcRet := market.ComputeDataCommitmentReturn{
-			CommDs: []*cbg.CborCid{&commd},
+			CommDs: []cbg.CborCid{commd},
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
 	}
@@ -5532,16 +5532,16 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 	}
 
 	// Receive call to ComputeDataCommittments
-	commDs := make([]*cbg.CborCid, len(precommits))
+	commDs := make([]cbg.CborCid, len(precommits))
 	{
-		cdcInputs := make([]*market.SectorDataCommitmentInputs, len(precommits))
+		cdcInputs := make([]*market.SectorDataSpec, len(precommits))
 		for i, precommit := range precommits {
-			cdcInputs[i] = &market.SectorDataCommitmentInputs{
+			cdcInputs[i] = &market.SectorDataSpec{
 				DealIDs:    precommit.Info.DealIDs,
 				SectorType: precommit.Info.SealProof,
 			}
 			commD := cbg.CborCid(tutil.MakeCID(fmt.Sprintf("commd-%d", i), &market.PieceCIDPrefix))
-			commDs[i] = &commD
+			commDs[i] = commD
 		}
 		cdcParams := market.ComputeDataCommitmentParams{Inputs: cdcInputs}
 		cdcRet := market.ComputeDataCommitmentReturn{
@@ -5581,7 +5581,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 				InteractiveRandomness: sealIntRands[i],
 				Randomness:            sealRands[i],
 				SealedCID:             precommit.Info.SealedCID,
-				UnsealedCID:           cid.Cid(*commDs[i]),
+				UnsealedCID:           cid.Cid(commDs[i]),
 			}
 		}
 		actorId, err := addr.IDFromAddress(h.receiver)

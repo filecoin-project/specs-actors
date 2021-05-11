@@ -2460,7 +2460,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		d2 := actor.getDealProposal(rt, dealId2)
 
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1}}
+		param.Inputs = []*market.SectorDataSpec{{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1}}
 
 		p1 := abi.PieceInfo{Size: d1.PieceSize, PieceCID: d1.PieceCID}
 		p2 := abi.PieceInfo{Size: d2.PieceSize, PieceCID: d2.PieceCID}
@@ -2474,7 +2474,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		ret := rt.Call(actor.ComputeDataCommitment, param)
 		val, ok := ret.(*market.ComputeDataCommitmentReturn)
 		require.True(t, ok)
-		require.Equal(t, c, *(*cid.Cid)(val.CommDs[0]))
+		require.Equal(t, c, (cid.Cid)(val.CommDs[0]))
 		rt.Verify()
 
 		actor.checkState(rt)
@@ -2483,7 +2483,7 @@ func TestComputeDataCommitment(t *testing.T) {
 	t.Run("success on empty piece info", func(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{{DealIDs: nil, SectorType: 1}}
+		param.Inputs = []*market.SectorDataSpec{{DealIDs: nil, SectorType: 1}}
 
 		c := tutil.MakeCID("UnsealedEmpty", &market.PieceCIDPrefix)
 		rt.ExpectComputeUnsealedSectorCID(1, []abi.PieceInfo{}, c, nil)
@@ -2492,7 +2492,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		ret := rt.Call(actor.ComputeDataCommitment, param)
 		val, ok := ret.(*market.ComputeDataCommitmentReturn)
 		require.True(t, ok)
-		require.Equal(t, c, *(*cid.Cid)(val.CommDs[0]))
+		require.Equal(t, c, (cid.Cid)(val.CommDs[0]))
 		rt.Verify()
 
 		actor.checkState(rt)
@@ -2507,7 +2507,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		d2 := actor.getDealProposal(rt, dealId2)
 
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{
+		param.Inputs = []*market.SectorDataSpec{
 			{DealIDs: nil, SectorType: 1},
 			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
 		}
@@ -2526,8 +2526,8 @@ func TestComputeDataCommitment(t *testing.T) {
 		ret := rt.Call(actor.ComputeDataCommitment, param)
 		val, ok := ret.(*market.ComputeDataCommitmentReturn)
 		require.True(t, ok)
-		require.Equal(t, c1, *(*cid.Cid)(val.CommDs[0]))
-		require.Equal(t, c2, *(*cid.Cid)(val.CommDs[1]))
+		require.Equal(t, c1, (cid.Cid)(val.CommDs[0]))
+		require.Equal(t, c2, (cid.Cid)(val.CommDs[1]))
 		rt.Verify()
 
 		actor.checkState(rt)
@@ -2537,7 +2537,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{{DealIDs: []abi.DealID{1}, SectorType: 1}}
+		param.Inputs = []*market.SectorDataSpec{{DealIDs: []abi.DealID{1}, SectorType: 1}}
 		rt.SetCaller(provider, builtin.StorageMinerActorCodeID)
 		rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
@@ -2551,7 +2551,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, start, end, start)
 		d := actor.getDealProposal(rt, dealId)
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{{DealIDs: []abi.DealID{dealId}, SectorType: 1}}
+		param.Inputs = []*market.SectorDataSpec{{DealIDs: []abi.DealID{dealId}, SectorType: 1}}
 
 		pi := abi.PieceInfo{Size: d.PieceSize, PieceCID: d.PieceCID}
 
@@ -2570,7 +2570,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		dealId2 := abi.DealID(2)
 
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{
+		param.Inputs = []*market.SectorDataSpec{
 			{DealIDs: nil, SectorType: 1},
 			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
 		}
@@ -2590,7 +2590,7 @@ func TestComputeDataCommitment(t *testing.T) {
 		dealId2 := actor.generateAndPublishDeal(rt, client, mAddrs, start, end+1, start)
 
 		param := &market.ComputeDataCommitmentParams{}
-		param.Inputs = []*market.SectorDataCommitmentInputs{
+		param.Inputs = []*market.SectorDataSpec{
 			{DealIDs: nil, SectorType: 1},
 			{DealIDs: []abi.DealID{dealId1, dealId2}, SectorType: 1},
 		}
