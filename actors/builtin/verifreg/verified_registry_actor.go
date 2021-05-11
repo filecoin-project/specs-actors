@@ -296,7 +296,7 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 
 		// validate we are NOT attempting to do this for a verifier
 		found, err := verifiers.Get(abi.AddrKey(client), nil)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed tp get verifier")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verifier")
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "cannot restore allowance for a verifier")
 		}
