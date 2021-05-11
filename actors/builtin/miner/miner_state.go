@@ -350,16 +350,19 @@ func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitFi
 }
 
 // Stores a pre-committed sector info, failing if the sector number is already present.
-func (st *State) PutPrecommittedSector(store adt.Store, info *SectorPreCommitOnChainInfo) error {
+func (st *State) PutPrecommittedSectors(store adt.Store, precommits ... *SectorPreCommitOnChainInfo) error {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return err
 	}
 
-	if modified, err := precommitted.PutIfAbsent(SectorKey(info.Info.SectorNumber), info); err != nil {
-		return errors.Wrapf(err, "failed to store pre-commitment for %v", info)
-	} else if !modified {
-		return xerrors.Errorf("sector %v already pre-committed", info.Info.SectorNumber)
+	for _, precommit := range precommits {
+		// NOTE: HAMT batch operations could reduce total state read/write cost of this batch.
+		if modified, err := precommitted.PutIfAbsent(SectorKey(precommit.Info.SectorNumber), precommit); err != nil {
+			return xerrors.Errorf("failed to store pre-commitment for %v: %w", precommit, err)
+		} else if !modified {
+			return xerrors.Errorf("sector %v already pre-committed", precommit.Info.SectorNumber)
+		}
 	}
 	st.PreCommittedSectors, err = precommitted.Root()
 	return err
@@ -1006,7 +1009,7 @@ func (st *State) QuantSpecEveryDeadline() QuantSpec {
 	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
 }
 
-func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch, sectorNum abi.SectorNumber) error {
+func (st *State) AddPreCommitExpirations(store adt.Store, expirations map[abi.ChainEpoch][]uint64) error {
 	// Load BitField Queue for sector expiry
 	quant := st.QuantSpecEveryDeadline()
 	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant, PrecommitExpiryAmtBitwidth)
@@ -1014,16 +1017,27 @@ func (st *State) AddPreCommitExpiry(store adt.Store, expireEpoch abi.ChainEpoch,
 		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
 	}
 
-	// add entry for this sector to the queue
-	if err := queue.AddToQueueValues(expireEpoch, uint64(sectorNum)); err != nil {
-		return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+	// Sort the epoch keys for stable iteration when manipulating the queue
+	epochs := make([]abi.ChainEpoch, len(expirations))
+	i := 0
+	for expireEpoch := range expirations { // nolint: nomaprange
+		epochs[i] = expireEpoch
+		i++
+	}
+	sort.Slice(epochs, func(i, j int) bool {
+		return epochs[i] < epochs[j]
+	})
+
+	for _, expireEpoch := range epochs {
+		if err := queue.AddToQueueValues(expireEpoch, expirations[expireEpoch]...); err != nil {
+			return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+		}
 	}
 
 	st.PreCommittedSectorsExpiry, err = queue.Root()
 	if err != nil {
 		return xerrors.Errorf("failed to save pre-commit sector queue: %w", err)
 	}
-
 	return nil
 }
 
