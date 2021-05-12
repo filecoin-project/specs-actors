@@ -18,7 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v5/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v5/support/testing"
-	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 // This scenario hits all Market Actor methods.

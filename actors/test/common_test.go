@@ -13,7 +13,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
 	tutil "github.com/filecoin-project/specs-actors/v5/support/testing"
-	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,

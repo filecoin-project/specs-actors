@@ -1,4 +1,4 @@
-package vm_test
+package vm
 
 import (
 	"bytes"

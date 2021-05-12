@@ -29,7 +29,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/states"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v5/support/ipld"
-	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 // Sim is a simulation framework to exercise actor code in a network-like environment.
