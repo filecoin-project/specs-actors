@@ -350,11 +350,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		// Verify that the miner has passed 0 or 1 proofs. If they've
-		// passed 1, verify that it's a good proof.
-		//
-		// This can be 0 if the miner isn't actually proving anything,
-		// just skipping all sectors.
+		// Verify that the miner has passed exactly 1 proof.
 		if len(params.Proofs) != 1 {
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
 		}
