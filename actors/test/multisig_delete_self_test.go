@@ -15,7 +15,7 @@ import (
 	init_ "github.com/filecoin-project/specs-actors/v5/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/multisig"
 	"github.com/filecoin-project/specs-actors/v5/support/ipld"
-	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func TestMultisigDeleteSelf2Of3RemovedIsProposer(t *testing.T) {

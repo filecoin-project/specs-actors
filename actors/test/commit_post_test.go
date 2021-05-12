@@ -19,7 +19,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/states"
 	"github.com/filecoin-project/specs-actors/v5/support/ipld"
 	tutil "github.com/filecoin-project/specs-actors/v5/support/testing"
-	vm "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func TestCommitPoStFlow(t *testing.T) {
