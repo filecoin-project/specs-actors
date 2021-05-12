@@ -18,7 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/states"
 	"github.com/filecoin-project/specs-actors/v5/support/agent"
 	"github.com/filecoin-project/specs-actors/v5/support/ipld"
-	vm_test "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func TestCreate20Miners(t *testing.T) {
@@ -29,7 +29,7 @@ func TestCreate20Miners(t *testing.T) {
 	rnd := rand.New(rand.NewSource(42))
 
 	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
-	accounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	accounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
@@ -70,7 +70,7 @@ func TestCreate20Miners(t *testing.T) {
 func Test500Epochs(t *testing.T) {
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
-	cumulativeStats := make(vm_test.StatsByCall)
+	cumulativeStats := make(vm.StatsByCall)
 	minerCount := 10
 	clientCount := 9
 
@@ -82,7 +82,7 @@ func Test500Epochs(t *testing.T) {
 	})
 
 	// create miners
-	workerAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	workerAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		workerAccounts,
 		agent.MinerAgentConfig{
@@ -99,7 +99,7 @@ func Test500Epochs(t *testing.T) {
 		rnd.Int63(),
 	))
 
-	clientAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
+	clientAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
 	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
 		DealRate:         .05,
 		MinPieceSize:     1 << 29,
@@ -155,7 +155,7 @@ func TestCommitPowerAndCheckInvariants(t *testing.T) {
 
 	rnd := rand.New(rand.NewSource(42))
 	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
-	accounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	accounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		accounts,
 		agent.MinerAgentConfig{
@@ -203,7 +203,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	t.Skip("this is slow")
 	ctx := context.Background()
 	initialBalance := big.Mul(big.NewInt(1e8), big.NewInt(1e18))
-	cumulativeStats := make(vm_test.StatsByCall)
+	cumulativeStats := make(vm.StatsByCall)
 	minerCount := 10
 	clientCount := 9
 
@@ -215,7 +215,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 	})
 
 	// create miners
-	workerAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	workerAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		workerAccounts,
 		agent.MinerAgentConfig{
@@ -232,7 +232,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 		rnd.Int63(),
 	))
 
-	clientAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
+	clientAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
 	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
 		DealRate:         .05,
 		MinPieceSize:     1 << 29,
@@ -272,7 +272,7 @@ func TestCommitAndCheckReadWriteStats(t *testing.T) {
 			for method, stats := range cumulativeStats {
 				printCallStats(method, stats, "")
 			}
-			cumulativeStats = make(vm_test.StatsByCall)
+			cumulativeStats = make(vm.StatsByCall)
 		}
 	}
 }
@@ -289,7 +289,7 @@ func TestCreateDeals(t *testing.T) {
 	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
 
 	// create miners
-	workerAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	workerAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		workerAccounts,
 		agent.MinerAgentConfig{
@@ -305,7 +305,7 @@ func TestCreateDeals(t *testing.T) {
 		rnd.Int63(),
 	))
 
-	clientAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
+	clientAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
 	dealAgents := agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
 		DealRate:         .01,
 		MinPieceSize:     1 << 29,
@@ -362,7 +362,7 @@ func TestCCUpgrades(t *testing.T) {
 	sim := agent.NewSim(ctx, t, newBlockStore, agent.SimConfig{Seed: rnd.Int63()})
 
 	// create miners
-	workerAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
+	workerAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), minerCount, initialBalance, rnd.Int63())
 	sim.AddAgent(agent.NewMinerGenerator(
 		workerAccounts,
 		agent.MinerAgentConfig{
@@ -379,7 +379,7 @@ func TestCCUpgrades(t *testing.T) {
 		rnd.Int63(),
 	))
 
-	clientAccounts := vm_test.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
+	clientAccounts := vm.CreateAccounts(ctx, t, getV5VM(t, sim), clientCount, initialBalance, rnd.Int63())
 	agent.AddDealClientsForAccounts(sim, clientAccounts, rnd.Int63(), agent.DealClientConfig{
 		DealRate:         .01,
 		MinPieceSize:     1 << 29,
@@ -436,7 +436,7 @@ func newBlockStore() cbor.IpldBlockstore {
 	return ipld.NewBlockStoreInMemory()
 }
 
-func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent string) { // nolint:unused
+func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { // nolint:unused
 	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  read: %d  written: %d  avg gets: %.2f, avg puts: %.2f\n",
 		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
 		stats.ReadBytes, stats.WriteBytes, float32(stats.Reads)/float32(stats.Calls),
@@ -451,8 +451,8 @@ func printCallStats(method vm_test.MethodKey, stats *vm_test.CallStats, indent s
 	}
 }
 
-func getV5VM(t *testing.T, sim *agent.Sim) *vm_test.VM {
-	vm, ok := sim.GetVM().(*vm_test.VM)
+func getV5VM(t *testing.T, sim *agent.Sim) *vm.VM {
+	vm, ok := sim.GetVM().(*vm.VM)
 	require.True(t, ok)
 	return vm
 }
