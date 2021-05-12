@@ -815,28 +815,20 @@ type ProveCommitAggregateParams struct {
 	AggregateProof []byte
 }
 
-const MaxAggregatedSectors = 819
-const MinAggregatedSectors = 1
-const MaxAggregateProofSize = 192000
-
+// Checks state of the corresponding sector pre-commitments and verifies aggregate proof of replication
+// of these sectors. If valid, the sectors' deals are activated, sectors are assigned a deadline and charged pledge
+// and precommit state is removed.
 func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregateParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
+	// Do not allow miners in a bad state to add storage to the system
 	checkClaimExists(rt)
 	aggSectorsCount, err := params.SectorNumbers.Count()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count aggregated sectors")
 	if aggSectorsCount > MaxAggregatedSectors {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too many sectors addressed")
+		rt.Abortf(exitcode.ErrIllegalArgument, "too many sectors addressed, addressed %d want <= %d", aggSectorsCount, MaxAggregatedSectors)
 	} else if aggSectorsCount < MinAggregatedSectors {
-		rt.Abortf(exitcode.ErrIllegalArgument, "too few sectors addressed")
+		rt.Abortf(exitcode.ErrIllegalArgument, "too few sectors addressed, addressed %d want >= %d", aggSectorsCount, MinAggregatedSectors)
 	}
-
-	err = params.SectorNumbers.ForEach(func(sectorNo uint64) error {
-		if sectorNo > abi.MaxSectorNumber {
-			rt.Abortf(exitcode.ErrIllegalArgument, "sector number greater than maximum")
-		}
-		return nil
-	})
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check all sector numbers below max")
 
 	if uint64(len(params.AggregateProof)) > MaxAggregateProofSize {
 		rt.Abortf(exitcode.ErrIllegalArgument, "sector prove-commit proof of size %d exceeds max size of %d",
@@ -850,29 +842,8 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	precommits, err := st.GetAllPrecommittedSectors(store, params.SectorNumbers)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get precommits")
 
-	// compute data commitments
+	// compute data commitments and validate each precommit
 	computeDataCommitmentsInputs := make([]*market.SectorDataSpec, len(precommits))
-	for i, precommit := range precommits {
-		computeDataCommitmentsInputs[i] = &market.SectorDataSpec{
-			SectorType: precommit.Info.SealProof,
-			DealIDs:    precommit.Info.DealIDs,
-		}
-	}
-	commDs := requestUnsealedSectorCIDs(rt, computeDataCommitmentsInputs...)
-
-	builtin.RequireState(rt, len(precommits) > 0, "bitfield non-empty but zero precommits read from state")
-	sealProof := precommits[0].Info.SealProof
-
-	svis := make([]proof.AggregateSealVerifyInfo, 0)
-
-	receiver := rt.Receiver()
-	minerActorID, err := addr.IDFromAddress(receiver)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %s", receiver)
-	buf := new(bytes.Buffer)
-	err = receiver.MarshalCBOR(buf)
-	receiverBytes := buf.Bytes()
-	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to marshal address for seal verification challenge")
-
 	for i, precommit := range precommits {
 		msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 		if !ok {
@@ -882,11 +853,34 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		if rt.CurrEpoch() > proveCommitDue {
 			rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
 		}
+		// All sealProof types should match
+		if i >= 1 {
+			prevSealProof := precommits[i-1].Info.SealProof
+			builtin.RequireState(rt, prevSealProof == precommit.Info.SealProof, "aggregate contains mismatched seal proofs %d and %d", prevSealProof, precommit.Info.SealProof)
+		}
+
+		computeDataCommitmentsInputs[i] = &market.SectorDataSpec{
+			SectorType: precommit.Info.SealProof,
+			DealIDs:    precommit.Info.DealIDs,
+		}
+	}
+
+	// compute shared verification inputs
+	commDs := requestUnsealedSectorCIDs(rt, computeDataCommitmentsInputs...)
+	svis := make([]proof.AggregateSealVerifyInfo, 0)
+	receiver := rt.Receiver()
+	minerActorID, err := addr.IDFromAddress(receiver)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "runtime provided non-ID receiver address %s", receiver)
+	buf := new(bytes.Buffer)
+	err = receiver.MarshalCBOR(buf)
+	receiverBytes := buf.Bytes()
+	builtin.RequireNoErr(rt, err, exitcode.ErrSerialization, "failed to marshal address for seal verification challenge")
+
+	for i, precommit := range precommits {
 		interactiveEpoch := precommit.PreCommitEpoch + PreCommitChallengeDelay
 		if rt.CurrEpoch() <= interactiveEpoch {
 			rt.Abortf(exitcode.ErrForbidden, "too early to prove sector %d", precommit.Info.SectorNumber)
 		}
-		builtin.RequireState(rt, sealProof == precommit.Info.SealProof, "aggregate contains mismatched seal proofs %d and %d", sealProof, precommit.Info.SealProof)
 
 		svInfoRandomness := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_SealRandomness, precommit.Info.SealRandEpoch, receiverBytes)
 		svInfoInteractiveRandomness := rt.GetRandomnessFromBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, receiverBytes)
@@ -901,9 +895,8 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		svis = append(svis, svi)
 	}
 
-	gas, err := AggregatePoRepVerifyGas(int(aggSectorsCount))
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute aggregate PoRep gas cost")
-	rt.ChargeGas("OnVerifySealAggregate", gas, 0)
+	sealProof := precommits[0].Info.SealProof
+	builtin.RequireState(rt, len(precommits) > 0, "bitfield non-empty but zero precommits read from state")
 	err = rt.VerifyAggregateSeals(
 		proof.AggregateSealVerifyProofAndInfos{
 			Infos:          svis,
@@ -1030,15 +1023,15 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 	activation := rt.CurrEpoch()
 	// Pre-commits for new sectors.
 	var validPreCommits []*SectorPreCommitOnChainInfo
-	for _, preCommit := range preCommits {
-		duration := preCommit.Info.Expiration - activation
+	for _, precommit := range preCommits {
+		duration := precommit.Info.Expiration - activation
 		// This should have been caught in precommit, but don't let other sectors fail because of it.
 		if duration < MinSectorExpiration {
-			rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", preCommit.Info.SectorNumber, duration, MinSectorExpiration)
+			rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 			continue
 		}
 
-		if len(preCommit.Info.DealIDs) > 0 {
+		if len(precommit.Info.DealIDs) > 0 {
 			// Check (and activate) storage deals associated to sector. Abort if checks failed.
 			// TODO: we should batch these calls...
 			// https://github.com/filecoin-project/specs-actors/issues/474
@@ -1046,26 +1039,26 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 				builtin.StorageMarketActorAddr,
 				builtin.MethodsMarket.ActivateDeals,
 				&market.ActivateDealsParams{
-					DealIDs:      preCommit.Info.DealIDs,
-					SectorExpiry: preCommit.Info.Expiration,
+					DealIDs:      precommit.Info.DealIDs,
+					SectorExpiry: precommit.Info.Expiration,
 				},
 				abi.NewTokenAmount(0),
 				&builtin.Discard{},
 			)
 
 			if code != exitcode.Ok {
-				rt.Log(rtt.INFO, "failed to activate deals on sector %d, dropping from prove commit set", preCommit.Info.SectorNumber)
+				rt.Log(rtt.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 				continue
 			}
 		}
 
-		validPreCommits = append(validPreCommits, preCommit)
+		validPreCommits = append(validPreCommits, precommit)
 
-		if preCommit.Info.ReplaceCapacity {
+		if precommit.Info.ReplaceCapacity {
 			err := replaceSectors.AddValues(
-				preCommit.Info.ReplaceSectorDeadline,
-				preCommit.Info.ReplaceSectorPartition,
-				uint64(preCommit.Info.ReplaceSectorNumber),
+				precommit.Info.ReplaceSectorDeadline,
+				precommit.Info.ReplaceSectorPartition,
+				uint64(precommit.Info.ReplaceSectorNumber),
 			)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
 		}
@@ -2580,7 +2573,8 @@ func notifyPledgeChanged(rt Runtime, pledgeDelta abi.TokenAmount) {
 }
 
 func checkClaimExists(rt Runtime) {
-	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CallerHasClaim, nil, abi.NewTokenAmount(0), &builtin.Discard{})
+	var claim power.Claim
+	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.GetCallerClaim, nil, abi.NewTokenAmount(0), &claim)
 	builtin.RequireSuccess(rt, code, "failed to verify miner claim exists")
 }
 

@@ -41,7 +41,7 @@ func (a Actor) Exports() []interface{} {
 		7:                         nil, // deprecated
 		8:                         a.SubmitPoRepForBulkVerify,
 		9:                         a.CurrentTotalPower,
-		10:                        a.CallerHasClaim,
+		10:                        a.GetCallerClaim,
 	}
 }
 
@@ -325,15 +325,18 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *abi.EmptyValue) *CurrentTotalPow
 // Fails if the caller does not have a claim.
 // ErrIllegalState signals an internal error in the power actor claim table
 // ErrForbidden indicates the claim is not found in claims table
-func (a Actor) CallerHasClaim(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
+func (a Actor) GetCallerClaim(rt Runtime, _ *abi.EmptyValue) *Claim {
 	rt.ValidateImmediateCallerAcceptAny()
 	minerAddr := rt.Caller()
 
 	var st State
 	rt.StateReadonly(&st)
-
-	validateMinerHasClaim(rt, st, minerAddr)
-	return nil
+	claim, found, err := st.GetClaim(adt.AsStore(rt), minerAddr)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
+	if !found {
+		rt.Abortf(exitcode.ErrForbidden, "unknown miner %s with no claim in power table", minerAddr)
+	}
+	return claim
 }
 
 ////////////////////////////////////////////////////////////////////////////////

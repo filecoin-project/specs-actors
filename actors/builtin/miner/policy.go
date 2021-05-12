@@ -2,14 +2,12 @@ package miner
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
-	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 )
@@ -309,21 +307,6 @@ func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPowe
 	return BaseRewardForDisputedWindowPoSt
 }
 
-func aggregatePoRepBatchStepSize() []int {
-	return []int{13, 26, 51, 102, 205, 410, 819}
-}
-
-func aggregatePoRepBatchGasTable() []int64 {
-	return []int64{300_000_000, 300_000_000, 350_000_000, 350_000_000, 350_000_000, 400_000_000, 450_000_000}
-}
-
-// Return gas cost of verifying `batchSize` aggregate PoReps. Batch sizes round up.
-func AggregatePoRepVerifyGas(batchSize int) (int64, error) {
-	steps := aggregatePoRepBatchStepSize()
-	i := sort.SearchInts(steps, batchSize)
-	gasTable := aggregatePoRepBatchGasTable()
-	if i >= len(gasTable) {
-		return 0, xerrors.Errorf("batchSize %d unsupported by gas table", batchSize)
-	}
-	return gasTable[i], nil
-}
+const MaxAggregatedSectors = 819
+const MinAggregatedSectors = 1
+const MaxAggregateProofSize = 192000

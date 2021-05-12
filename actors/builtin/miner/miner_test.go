@@ -5526,9 +5526,9 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 
 func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCommitConf, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams) {
 
-	// Receive call to power CallerHasClaim
+	// Receive call to power GetCallerClaim
 	{
-		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CallerHasClaim, nil, big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.GetCallerClaim, nil, big.Zero(), &power.Claim{}, exitcode.Ok)
 	}
 
 	// Receive call to ComputeDataCommittments
@@ -5568,11 +5568,8 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 			rt.ExpectGetRandomnessBeacon(crypto.DomainSeparationTag_InteractiveSealChallengeSeed, interactiveEpoch, buf.Bytes(), abi.Randomness(sealIntRand))
 		}
 	}
-	// Gas charge for porep
+	// Verify syscall
 	{
-		gas, err := miner.AggregatePoRepVerifyGas(len(precommits))
-		require.NoError(h.t, err)
-		rt.ExpectGasCharged(gas)
 		svis := make([]proof.AggregateSealVerifyInfo, len(precommits))
 		for i, precommit := range precommits {
 			svis[i] = proof.AggregateSealVerifyInfo{

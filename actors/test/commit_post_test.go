@@ -553,7 +553,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 		Method: builtin.MethodsMiner.ProveCommitAggregate,
 		Params: vm.ExpectObject(&proveCommitAggregateParams),
 		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CallerHasClaim},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.GetCallerClaim},
 			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
