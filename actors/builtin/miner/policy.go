@@ -314,3 +314,4 @@ func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPowe
 const MaxAggregatedSectors = 819
 const MinAggregatedSectors = 1
 const MaxAggregateProofSize = 192000
+const PreCommitExpiryDelay = 8 * builtin.EpochsInHour

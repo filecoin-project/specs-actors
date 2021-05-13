@@ -2123,7 +2123,7 @@ func (h *cronControl) preCommitToStartCron(t *testing.T, preCommitEpoch abi.Chai
 	// PCD != 0 so cron must be active
 	h.requireCronActive(t)
 
-	expiryEpoch := preCommitEpoch + miner.MaxProveCommitDuration[h.actor.sealProofType] + abi.ChainEpoch(1)
+	expiryEpoch := preCommitEpoch + miner.MaxProveCommitDuration[h.actor.sealProofType] + miner.PreCommitExpiryDelay
 	return expiryEpoch
 }
 

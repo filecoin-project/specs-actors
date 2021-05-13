@@ -811,7 +811,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 			// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
 			// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
 			// ConfirmSectorProofsValid would fail to find it.
-			expiryBound := currEpoch + msd + 1
+			expiryBound := currEpoch + msd + PreCommitExpiryDelay
 			expirations[expiryBound] = append(expirations[expiryBound], uint64(precommit.SectorNumber))
 		}
 
@@ -882,6 +882,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 
 	// compute data commitments and validate each precommit
 	computeDataCommitmentsInputs := make([]*market.SectorDataSpec, len(precommits))
+	precommitsToConfirm := []*SectorPreCommitOnChainInfo{}
 	for i, precommit := range precommits {
 		msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 		if !ok {
@@ -889,7 +890,9 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		}
 		proveCommitDue := precommit.PreCommitEpoch + msd
 		if rt.CurrEpoch() > proveCommitDue {
-			rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
+			rt.Log(rtt.WARN, "skipping commitment for sector %d, too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
+		} else {
+			precommitsToConfirm = append(precommitsToConfirm, precommit)
 		}
 		// All sealProof types should match
 		if i >= 1 {
@@ -943,7 +946,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 			AggregateProof: abi.RegisteredAggregationProof_SnarkPackV1,
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
-	confirmSectorProofsValid(rt, precommits)
+	confirmSectorProofsValid(rt, precommitsToConfirm)
 
 	return nil
 }
