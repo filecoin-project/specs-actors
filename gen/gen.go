@@ -200,6 +200,7 @@ func main() {
 		//miner.CompactSectorNumbersParams{}, // Aliased from v0
 		//miner.CronEventPayload{}, // Aliased from v0
 		// miner.DisputeWindowedPoStParams{}, // Aliased from v3
+		miner.PreCommitSectorBatchParams{},
 		// other types
 		//miner.FaultDeclaration{}, // Aliased from v0
 		//miner.RecoveryDeclaration{}, // Aliased from v0

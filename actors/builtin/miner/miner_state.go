@@ -311,12 +311,6 @@ const (
 // Marks a set of sector numbers as having been allocated.
 // If policy is `DenyCollisions`, fails if the set intersects with the sector numbers already allocated.
 func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitField, policy CollisionPolicy) error {
-	if lastSectorNo, err := sectorNos.Last(); err != nil {
-		return xc.ErrIllegalArgument.Wrapf("invalid sector bitfield: %w", err)
-	} else if lastSectorNo > abi.MaxSectorNumber {
-		return xc.ErrIllegalArgument.Wrapf("sector number %d exceeds max %d", lastSectorNo, abi.MaxSectorNumber)
-	}
-
 	var priorAllocation bitfield.BitField
 	if err := store.Get(store.Context(), st.AllocatedSectors, &priorAllocation); err != nil {
 		return xc.ErrIllegalState.Wrapf("failed to load allocated sectors bitfield: %w", err)

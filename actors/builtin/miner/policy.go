@@ -178,6 +178,10 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  builtin.EpochsInDay + PreCommitChallengeDelay,
 }
 
+// The maximum number of sector pre-commitments in a single batch.
+// 32 sectors per epoch would support a single miner onboarding 1EiB of 32GiB sectors in 1 year.
+const PreCommitSectorBatchMaxSize = 32
+
 // Maximum delay between challenge and pre-commitment.
 // This prevents a miner sealing sectors far in advance of committing them to the chain, thus committing to a
 // particular chain.
