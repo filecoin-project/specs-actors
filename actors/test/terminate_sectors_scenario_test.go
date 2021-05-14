@@ -1,4 +1,4 @@
-package test_test
+package test
 
 import (
 	"context"
@@ -36,10 +36,10 @@ func TestTerminateSectors(t *testing.T) {
 
 	// create miner
 	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &power.CreateMinerParams{
-		Owner:                owner,
-		Worker:               worker,
-		WindowPoStProofType:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                 abi.PeerID("not really a peer id"),
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                abi.PeerID("not really a peer id"),
 	})
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)

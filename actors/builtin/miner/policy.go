@@ -171,11 +171,11 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg512MiBV1: builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay,
 
-	abi.RegisteredSealProof_StackedDrg32GiBV1_1:  builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
-	abi.RegisteredSealProof_StackedDrg2KiBV1_1:   builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg8MiBV1_1:   builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg512MiBV1_1: builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1:  6*builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
+	abi.RegisteredSealProof_StackedDrg2KiBV1_1:   6*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg8MiBV1_1:   6*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg512MiBV1_1: 6*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  6*builtin.EpochsInDay + PreCommitChallengeDelay,
 }
 
 // The maximum number of sector pre-commitments in a single batch.
@@ -310,3 +310,7 @@ func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPowe
 	// This is currently just the base. In the future, the fee may scale based on the disputed power.
 	return BaseRewardForDisputedWindowPoSt
 }
+
+const MaxAggregatedSectors = 819
+const MinAggregatedSectors = 1
+const MaxAggregateProofSize = 192000
