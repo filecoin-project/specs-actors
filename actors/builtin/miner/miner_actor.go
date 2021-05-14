@@ -660,7 +660,7 @@ type PreCommitSectorBatchParams struct {
 
 // Pledges the miner to seal and commit some new sectors.
 // The caller specifies sector numbers, sealed sector data CIDs, seal randomness epoch, expiration, and the IDs
-// of any storage marge deals contained in the sector data. The storage deal proposals must be already submitted
+// of any storage deals contained in the sector data. The storage deal proposals must be already submitted
 // to the storage market actor.
 // A pre-commitment may specify an existing committed-capacity sector that the committed sector will replace
 // when proven.

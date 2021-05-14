@@ -798,7 +798,6 @@ func TestSectorNumberAllocation(t *testing.T) {
 
 		assert.NoError(t, allocate(harness, 0))
 		assert.NoError(t, allocate(harness, abi.MaxSectorNumber))
-		assert.Error(t, allocate(harness, abi.MaxSectorNumber+1))
 		expect(harness, bf(0, abi.MaxSectorNumber))
 	})
 
@@ -807,7 +806,7 @@ func TestSectorNumberAllocation(t *testing.T) {
 
 		assert.NoError(t, mask(harness, bf(0)))
 		assert.NoError(t, mask(harness, bf(abi.MaxSectorNumber)))
-		assert.Error(t, mask(harness, bf(abi.MaxSectorNumber+1)))
+		expect(harness, bf(0, abi.MaxSectorNumber))
 	})
 
 	t.Run("compaction with mask", func(t *testing.T) {

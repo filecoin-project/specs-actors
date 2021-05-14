@@ -4228,6 +4228,20 @@ func TestCompactSectorNumbers(t *testing.T) {
 		actor.checkState(rt)
 	})
 
+	t.Run("sector number range limits", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		// Limits ok
+		actor.compactSectorNumbers(rt, bf(0, abi.MaxSectorNumber))
+
+		// Out of range fails
+		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			actor.compactSectorNumbers(rt, bf(abi.MaxSectorNumber+1))
+		})
+		actor.checkState(rt)
+	})
+
 	t.Run("compacting no sector numbers aborts", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -4654,10 +4668,14 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 }
 
 type preCommitBatchConf struct {
+	// Weights to be returned from the market actor for sectors 0..len(sectorWeights).
+	// Any remaining sectors are taken to have zero deal weight.
 	sectorWeights []market.SectorWeights
+	// Set if this is the first commitment by this miner, hence should expect scheduling end-of-deadline cron.
+	firstForMiner bool
 }
 
-func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreCommitSectorBatchParams, conf preCommitBatchConf, first bool) []*miner.SectorPreCommitOnChainInfo {
+func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreCommitSectorBatchParams, conf preCommitBatchConf) []*miner.SectorPreCommitOnChainInfo {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 	{
@@ -4702,7 +4720,7 @@ func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreC
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
 	}
 
-	if first {
+	if conf.firstForMiner {
 		dlInfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, rt.Epoch())
 		cronParams := makeDeadlineCronEventParams(h.t, dlInfo.Last())
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, cronParams, big.Zero(), nil, exitcode.Ok)

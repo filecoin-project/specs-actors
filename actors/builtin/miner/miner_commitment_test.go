@@ -520,6 +520,7 @@ func TestPreCommitBatch(t *testing.T) {
 			sectors := make([]*miner0.SectorPreCommitInfo, batchSize)
 			conf := preCommitBatchConf{
 				sectorWeights: make([]market.SectorWeights, batchSize),
+				firstForMiner: true,
 			}
 			deposits := make([]big.Int, batchSize)
 			for i := 0; i < batchSize; i++ {
@@ -545,7 +546,7 @@ func TestPreCommitBatch(t *testing.T) {
 
 			if test.exit != exitcode.Ok {
 				rt.ExpectAbortContainsMessage(test.exit, test.error, func() {
-					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
 
 					// State untouched.
 					st := getState(rt)
@@ -555,7 +556,7 @@ func TestPreCommitBatch(t *testing.T) {
 				})
 				return
 			}
-			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
 
 			// Check precommits
 			st := getState(rt)
@@ -607,7 +608,7 @@ func TestPreCommitBatch(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sector expiration", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{}, true)
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
 		})
 	})
 
@@ -628,7 +629,7 @@ func TestPreCommitBatch(t *testing.T) {
 			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 		}
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "duplicate sector number 100", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{}, true)
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
 		})
 	})
 }
@@ -786,9 +787,10 @@ func TestProveCommit(t *testing.T) {
 				{DealSpace: dealSpace, DealWeight: dealWeight, VerifiedDealWeight: verifiedDealWeight},
 				{DealSpace: dealSpace, DealWeight: dealWeight, VerifiedDealWeight: verifiedDealWeight},
 			},
+			firstForMiner: true,
 		}
 
-		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, true)
+		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
 
 		rt.SetEpoch(proveCommitEpoch)
 		noDealPower := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-proveCommitEpoch, big.Zero(), big.Zero())
