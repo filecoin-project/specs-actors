@@ -384,49 +384,39 @@ func TestCommitments(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	for _, test := range []struct {
-		name          string
-		version       network.Version
-		sealProofType abi.RegisteredSealProof
-	}{{
-		name:          "precommit does not vest funds in version 8",
-		version:       network.Version8,
-		sealProofType: abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-	}} {
-		t.Run(test.name, func(t *testing.T) {
-			actor := newHarness(t, periodOffset)
-			actor.setProofType(test.sealProofType)
-			rt := builderForHarness(actor).
-				WithBalance(bigBalance, big.Zero()).
-				WithNetworkVersion(test.version).
-				Build(t)
-			precommitEpoch := periodOffset + 1
-			rt.SetEpoch(precommitEpoch)
-			actor.constructAndVerify(rt)
-			dlInfo := actor.deadline(rt)
+	t.Run("precommit does not vest funds", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
 
-			// Make a good commitment for the proof to target.
-			sectorNo := abi.SectorNumber(100)
-			expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		// Make a good commitment for the proof to target.
+		sectorNo := abi.SectorNumber(100)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 
-			// add 1000 tokens that vest immediately
-			st := getState(rt)
-			_, err := st.AddLockedFunds(rt.AdtStore(), rt.Epoch(), abi.NewTokenAmount(1000), &miner.VestSpec{
-				InitialDelay: 0,
-				VestPeriod:   1,
-				StepDuration: 1,
-				Quantization: 1,
-			})
-			require.NoError(t, err)
-			rt.ReplaceState(st)
-
-			rt.SetEpoch(rt.Epoch() + 2)
-
-			// Pre-commit with a deal in order to exercise non-zero deal weights.
-			precommitParams := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
-			actor.preCommitSector(rt, precommitParams, preCommitConf{}, true)
+		// add 1000 tokens that vest immediately
+		st := getState(rt)
+		_, err := st.AddLockedFunds(rt.AdtStore(), rt.Epoch(), abi.NewTokenAmount(1000), &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   1,
+			StepDuration: 1,
+			Quantization: 1,
 		})
-	}
+		require.NoError(t, err)
+		rt.ReplaceState(st)
+
+		rt.SetEpoch(rt.Epoch() + 2)
+
+		// Pre-commit with a deal in order to exercise non-zero deal weights.
+		precommitParams := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
+		// The below call expects no pledge delta.
+		actor.preCommitSector(rt, precommitParams, preCommitConf{}, true)
+	})
 }
 
 func TestPreCommitBatch(t *testing.T) {
@@ -1046,57 +1036,42 @@ func TestProveCommit(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	for _, test := range []struct {
-		name               string
-		version            network.Version
-		vestingPledgeDelta abi.TokenAmount
-		sealProofType      abi.RegisteredSealProof
-	}{{
-		name:               "verify proof does not vest at version 8",
-		version:            network.Version8,
-		vestingPledgeDelta: abi.NewTokenAmount(0),
-		sealProofType:      abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-	}} {
-		t.Run(test.name, func(t *testing.T) {
-			actor := newHarness(t, periodOffset)
-			actor.setProofType(test.sealProofType)
-			rt := builderForHarness(actor).
-				WithNetworkVersion(test.version).
-				WithBalance(bigBalance, big.Zero()).
-				Build(t)
-			precommitEpoch := periodOffset + 1
-			rt.SetEpoch(precommitEpoch)
-			actor.constructAndVerify(rt)
-			deadline := actor.deadline(rt)
+	t.Run("verify proof does not vest funds", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1_1)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		deadline := actor.deadline(rt)
 
-			// Make a good commitment for the proof to target.
-			sectorNo := abi.SectorNumber(100)
-			params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
-			precommit := actor.preCommitSector(rt, params, preCommitConf{}, true)
+		// Make a good commitment for the proof to target.
+		sectorNo := abi.SectorNumber(100)
+		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
+		precommit := actor.preCommitSector(rt, params, preCommitConf{}, true)
 
-			// add 1000 tokens that vest immediately
-			st := getState(rt)
-			_, err := st.AddLockedFunds(rt.AdtStore(), rt.Epoch(), abi.NewTokenAmount(1000), &miner.VestSpec{
-				InitialDelay: 0,
-				VestPeriod:   1,
-				StepDuration: 1,
-				Quantization: 1,
-			})
-			require.NoError(t, err)
-			rt.ReplaceState(st)
-
-			// Set the right epoch for all following tests
-			rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
-			rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
-
-			// Too big at version 4
-			proveCommit := makeProveCommit(sectorNo)
-			proveCommit.Proof = make([]byte, 192)
-			actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{
-				vestingPledgeDelta: &test.vestingPledgeDelta,
-			})
+		// add 1000 tokens that vest immediately
+		st := getState(rt)
+		_, err := st.AddLockedFunds(rt.AdtStore(), rt.Epoch(), abi.NewTokenAmount(1000), &miner.VestSpec{
+			InitialDelay: 0,
+			VestPeriod:   1,
+			StepDuration: 1,
+			Quantization: 1,
 		})
-	}
+		require.NoError(t, err)
+		rt.ReplaceState(st)
+
+		// Set the right epoch for all following tests
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+
+		proveCommit := makeProveCommit(sectorNo)
+		proveCommit.Proof = make([]byte, 192)
+		// The below call expects exactly the pledge delta for the proven sector, zero for any other vesting.
+		actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
+	})
 }
 
 func TestAggregateProveCommit(t *testing.T) {

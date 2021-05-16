@@ -2704,40 +2704,6 @@ func TestExtendSectorExpiration(t *testing.T) {
 		assert.False(t, st.DeadlineCronActive)
 		actor.checkState(rt)
 	})
-
-	t.Run("prevents extending old seal proof types", func(t *testing.T) {
-		actor := newHarness(t, periodOffset)
-		actor.setProofType(abi.RegisteredSealProof_StackedDrg32GiBV1)
-		rt := builderForHarness(actor).
-			WithBalance(bigBalance, big.Zero()).
-			Build(t)
-		rt.SetNetworkVersion(network.Version7)
-		actor.constructAndVerify(rt)
-
-		// Commit and prove first sector with V1
-		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
-		sector := actor.commitAndProveSector(rt, 101, defaultSectorExpiration, nil)
-		assert.Equal(t, abi.RegisteredSealProof_StackedDrg32GiBV1, sector.SealProof)
-
-		st := getState(rt)
-		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), sector.SectorNumber)
-		require.NoError(t, err)
-
-		newExpiration := sector.Expiration + abi.ChainEpoch(miner.MinSectorExpiration)
-		params := &miner.ExtendSectorExpirationParams{
-			Extensions: []miner.ExpirationExtension{{
-				Deadline:      dlIdx,
-				Partition:     pIdx,
-				Sectors:       bf(uint64(sector.SectorNumber)),
-				NewExpiration: newExpiration,
-			}},
-		}
-
-		rt.ExpectAbortContainsMessage(exitcode.ErrForbidden, "unsupported seal type", func() {
-			actor.extendSectors(rt, params)
-		})
-		actor.checkState(rt)
-	})
 }
 
 func TestTerminateSectors(t *testing.T) {
@@ -4659,13 +4625,6 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, cronParams, big.Zero(), nil, exitcode.Ok)
 	}
 
-	if rt.NetworkVersion() < network.Version7 {
-		pledgeDelta := immediatelyVestingFunds(rt, st).Neg()
-		if !pledgeDelta.IsZero() {
-			rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.UpdatePledgeTotal, &pledgeDelta, big.Zero(), nil, exitcode.Ok)
-		}
-	}
-
 	rt.Call(h.a.PreCommitSector, params)
 	rt.Verify()
 	return h.getPreCommit(rt, params.SectorNumber)
@@ -4743,7 +4702,6 @@ func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreC
 // Default zero values should let everything be ok.
 type proveCommitConf struct {
 	verifyDealsExit    map[abi.SectorNumber]exitcode.ExitCode
-	vestingPledgeDelta *abi.TokenAmount
 }
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitSectorParams) {
@@ -4918,10 +4876,6 @@ func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf p
 
 				expectPledge = big.Add(expectPledge, pledge)
 			}
-		}
-
-		if conf.vestingPledgeDelta != nil {
-			expectPledge = big.Add(expectPledge, *conf.vestingPledgeDelta)
 		}
 
 		if !expectPledge.IsZero() {

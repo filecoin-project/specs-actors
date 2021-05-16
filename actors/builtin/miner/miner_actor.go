@@ -689,7 +689,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		}
 		sectorNumbers.Set(uint64(precommit.SectorNumber))
 
-		if !CanPreCommitSealProof(precommit.SealProof, nv) {
+		if !CanPreCommitSealProof(precommit.SealProof) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type %v at network version %v", precommit.SealProof, nv)
 		}
 		if precommit.SectorNumber > abi.MaxSectorNumber {
@@ -1322,7 +1322,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
-					if !CanExtendSealProofType(sector.SealProof, rt.NetworkVersion()) {
+					if !CanExtendSealProofType(sector.SealProof) {
 						rt.Abortf(exitcode.ErrForbidden, "cannot extend expiration for sector %v with unsupported seal type %v",
 							sector.SectorNumber, sector.SealProof)
 					}
