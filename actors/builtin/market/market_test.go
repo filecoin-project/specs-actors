@@ -391,8 +391,7 @@ func TestMarketActor(t *testing.T) {
 			require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
 
 			// slash the deal
-			newEpoch := publishEpoch + 1
-			rt.SetEpoch(newEpoch)
+			rt.SetEpoch(publishEpoch + 1)
 			actor.terminateDeals(rt, provider, dealID)
 			st = actor.getDealState(rt, dealID)
 			require.EqualValues(t, publishEpoch+1, st.SlashEpoch)
@@ -536,8 +535,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		require.EqualValues(t, publishEpoch, st.SectorStartEpoch)
 
 		// now publish a second deal and activate it
-		newEpoch := publishEpoch + 1
-		rt.SetEpoch(newEpoch)
+		newEpoch := rt.SetEpoch(publishEpoch + 1)
 		deal2ID := actor.generateAndPublishDeal(rt, client, mAddr, startEpoch+1, endEpoch+1, startEpoch+1)
 		actor.activateDeals(rt, endEpoch+1, provider, newEpoch, deal2ID)
 
@@ -1265,8 +1263,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.activateDeals(rt, sectorExpiry, provider, currentEpoch, dealId1, dealId2, dealId3)
 
 		// set current epoch such that deal3 expires but the other two do not
-		newEpoch := endEpoch - 1
-		rt.SetEpoch(newEpoch)
+		newEpoch := rt.SetEpoch(endEpoch - 1)
 
 		// terminating all three deals ONLY terminates deal1 and deal2 because deal3 has expired
 		actor.terminateDeals(rt, provider, dealId1, dealId2, dealId3)
@@ -1287,8 +1284,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.terminateDeals(rt, provider, dealId1)
 
 		// set a new epoch and terminate again -> however slash epoch will still be the old epoch.
-		newEpoch := currentEpoch + 1
-		rt.SetEpoch(newEpoch)
+		rt.SetEpoch(currentEpoch + 1)
 		actor.terminateDeals(rt, provider, dealId1)
 		st := actor.getDealState(rt, dealId1)
 		require.EqualValues(t, currentEpoch, st.SlashEpoch)
@@ -1310,8 +1306,7 @@ func TestOnMinerSectorsTerminate(t *testing.T) {
 		actor.terminateDeals(rt, provider, dealId1)
 
 		// set a new epoch and terminate again -> however slash epoch will still be the old epoch.
-		newEpoch := currentEpoch + 1
-		rt.SetEpoch(newEpoch)
+		newEpoch := rt.SetEpoch(currentEpoch + 1)
 		actor.terminateDeals(rt, provider, dealId1, dealId2, dealId3)
 
 		st := actor.getDealState(rt, dealId1)
@@ -1475,8 +1470,7 @@ func TestCronTick(t *testing.T) {
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, 0, sectorExpiry, startEpoch)
 
 		// move the current epoch to startEpoch
-		current := startEpoch
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Zero(), pay)
 		require.EqualValues(t, big.Zero(), slashed)
@@ -1497,13 +1491,11 @@ func TestCronTick(t *testing.T) {
 		dealId2 := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch+1, endEpoch+1, 0, sectorExpiry, startEpoch+1)
 
 		// slash deal1
-		slashEpoch := abi.ChainEpoch(150)
-		rt.SetEpoch(slashEpoch)
+		slashEpoch := rt.SetEpoch(150)
 		actor.terminateDeals(rt, provider, dealId1)
 
 		// cron tick will slash deal1 and make payment for deal2
-		current := abi.ChainEpoch(151)
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(slashEpoch + 1)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d1.ProviderCollateral, nil, exitcode.Ok)
 		actor.cronTick(rt)
 
@@ -1577,8 +1569,7 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 
 		// payment at next epoch
-		current := processEpoch + market.DealUpdatesInterval
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(processEpoch + market.DealUpdatesInterval)
 		pay, _ = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		duration = big.Sub(big.NewInt(int64(current)), big.NewInt(int64(processEpoch)))
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
@@ -1595,8 +1586,7 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		actor.activateDeals(rt, sectorExpiry, provider, d.StartEpoch-1, dealId)
 
 		// a cron tick at end epoch -1 schedules the deal for later than end epoch
-		curr := endEpoch - 1
-		rt.SetEpoch(curr)
+		curr := rt.SetEpoch(endEpoch - 1)
 		duration := big.NewInt(int64(curr - startEpoch))
 		pay, _ := actor.cronTickAndAssertBalances(rt, client, provider, curr, dealId)
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
@@ -1607,8 +1597,7 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		require.NotNil(t, actor.getDealProposal(rt, dealId))
 
 		// cron tick at nextEpoch expires the deal -> payment is ONLY for one epoch
-		curr = curr + market.DealUpdatesInterval
-		rt.SetEpoch(curr)
+		curr = rt.SetEpoch(curr + market.DealUpdatesInterval)
 		pay, _ = actor.cronTickAndAssertBalances(rt, client, provider, curr, dealId)
 		require.EqualValues(t, d.StoragePricePerEpoch, pay)
 		actor.assertDealDeleted(rt, dealId, d)
@@ -1620,8 +1609,7 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
 		processEpoch := endEpoch + 100
 
-		activationEpoch := startEpoch - 1
-		rt.SetEpoch(activationEpoch)
+		activationEpoch := rt.SetEpoch(startEpoch - 1)
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, activationEpoch, sectorExpiry, processEpoch)
 		d := actor.getDealProposal(rt, dealId)
 
@@ -1642,10 +1630,10 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		dealId := actor.generateAndPublishDeal(rt, client, mAddrs, startEpoch, endEpoch, processEpoch)
 
 		// activate the deal after the start epoch
-		rt.SetEpoch(startEpoch + 1)
+		currEpoch := rt.SetEpoch(startEpoch + 1)
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.activateDeals(rt, sectorExpiry, provider, startEpoch+1, dealId)
+			actor.activateDeals(rt, sectorExpiry, provider, currEpoch, dealId)
 		})
 
 		actor.checkState(rt)
@@ -1716,16 +1704,14 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// activation dosen't change anything
-	curr := startEpoch - 1
-	rt.SetEpoch(curr)
+	curr := rt.SetEpoch(startEpoch - 1)
 	actor.activateDeals(rt, sectorExpiry, p1, curr, dealId1)
 	actor.activateDeals(rt, sectorExpiry, p2, curr, dealId2)
 
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// make payment for p1 and p2, p3 times out as it has not been activated
-	curr = 51 // startEpoch + 1
-	rt.SetEpoch(curr)
+	curr = rt.SetEpoch(startEpoch + 1)
 	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d3.ProviderCollateral, nil, exitcode.Ok)
 	actor.cronTick(rt)
 	payment := big.Product(big.NewInt(2), d1.StoragePricePerEpoch)
@@ -1735,22 +1721,20 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// deal1 and deal2 will now be charged at epoch curr + market.DealUpdatesInterval, so nothing changes before that.
-	rt.SetEpoch(curr + market.DealUpdatesInterval - 1)
+	curr = rt.SetEpoch(curr + market.DealUpdatesInterval - 1)
 	actor.cronTick(rt)
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// one more round of payment for deal1 and deal2
-	curr2 := curr + market.DealUpdatesInterval
-	rt.SetEpoch(curr2)
-	duration := big.NewInt(int64(curr2 - curr))
+	curr = rt.SetEpoch(curr + 1)
+	duration := big.NewInt(market.DealUpdatesInterval)
 	payment = big.Product(big.NewInt(2), d1.StoragePricePerEpoch, duration)
 	csf = big.Sub(csf, payment)
 	actor.cronTick(rt)
 	actor.assertLockedFundStates(rt, csf, plc, clc)
 
 	// slash deal1 at 201
-	slashEpoch := curr2 + 1
-	rt.SetEpoch(slashEpoch)
+	rt.SetEpoch(curr + 1)
 	actor.terminateDeals(rt, m1.provider, dealId1)
 
 	// cron tick to slash deal1 and expire deal2
@@ -1897,8 +1881,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch and scheduled next epoch at endepoch -1
-		current := startEpoch
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Zero(), pay)
 		require.EqualValues(t, big.Zero(), slashed)
@@ -1907,8 +1890,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 
 		// move the epoch to endEpoch+5(anything greater than endEpoch), so deal is first processed at endEpoch - 1 AND then at it's end epoch
 		// total payment = (end - start)
-		current = endEpoch + 5
-		rt.SetEpoch(current)
+		current = rt.SetEpoch(endEpoch + 5)
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		duration := big.NewInt(int64(endEpoch - startEpoch))
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
@@ -1927,22 +1909,20 @@ func TestCronTickDealExpiry(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch + 5 so payment is made
-		current := startEpoch + 5 // 55
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch + 5) // 55
 		// assert payment
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// Setting the current epoch to anything less than next schedule wont make any payment
-		rt.SetEpoch(current + market.DealUpdatesInterval - 1)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval - 1)
 		actor.cronTickNoChange(rt, client, provider)
 
 		// however setting the current epoch to next schedle will make the payment
-		current2 := current + market.DealUpdatesInterval
-		rt.SetEpoch(current2)
-		duration := big.NewInt(int64(current2 - current))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		current = rt.SetEpoch(current + 1)
+		duration := big.NewInt(market.DealUpdatesInterval)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
@@ -1950,24 +1930,21 @@ func TestCronTickDealExpiry(t *testing.T) {
 		actor.cronTickNoChange(rt, client, provider)
 
 		// next epoch schedule
-		current3 := current2 + market.DealUpdatesInterval
-		rt.SetEpoch(current3)
-		duration = big.NewInt(int64(current3 - current2))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current3, dealId)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval)
+		duration = big.NewInt(market.DealUpdatesInterval)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// setting epoch to greater than end will expire the deal, make the payment and unlock all funds
-		current4 := endEpoch + 300
-		rt.SetEpoch(current4)
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current4, dealId)
-		duration = big.NewInt(int64(endEpoch - current3))
+		duration = big.NewInt(int64(endEpoch - current))
+		current = rt.SetEpoch(endEpoch + 300)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// deal should be deleted as it should have expired
 		actor.assertDealDeleted(rt, dealId, d)
-
 		actor.checkState(rt)
 	})
 
@@ -1980,8 +1957,7 @@ func TestCronTickDealExpiry(t *testing.T) {
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, start, end, 0, sectorExpiry, startEpoch)
 		d := actor.getDealProposal(rt, dealId)
 
-		current := end + 25
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(end + 25)
 
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(int64(end-start)), d.StoragePricePerEpoch))
@@ -2161,13 +2137,11 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 		// set current epoch to deal end epoch and attempt to slash it -> should not be slashed
 		// as deal is considered to be expired.
-		current := endEpoch
-		rt.SetEpoch(current)
+		rt.SetEpoch(endEpoch)
 		actor.terminateDeals(rt, provider, dealId)
 
 		// on the next cron tick, it will be processed as expired
-		current = endEpoch + 300
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(endEpoch + 300)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		duration := big.NewInt(int64(endEpoch - startEpoch)) // end - start
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
@@ -2186,27 +2160,23 @@ func TestCronTickDealSlashing(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch so next cron epoch will be start + Interval
-		current := startEpoch
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch)
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Zero(), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// set slash epoch of deal
-		slashEpoch := current + market.DealUpdatesInterval + 1
-		rt.SetEpoch(slashEpoch)
+		slashEpoch := rt.SetEpoch(current + market.DealUpdatesInterval + 1)
 		actor.terminateDeals(rt, provider, dealId)
 
-		current2 := current + market.DealUpdatesInterval + 2
-		rt.SetEpoch(current2)
 		duration := big.NewInt(int64(slashEpoch - current))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval + 2)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
 		actor.assertDealDeleted(rt, dealId, d)
-
 		actor.checkState(rt)
 	})
 
@@ -2226,13 +2196,11 @@ func TestCronTickDealSlashing(t *testing.T) {
 		d3 := actor.getDealProposal(rt, dealId3)
 
 		// set slash epoch of deal at 151
-		current := abi.ChainEpoch(151)
-		rt.SetEpoch(current)
+		rt.SetEpoch(151)
 		actor.terminateDeals(rt, provider, dealId1, dealId2, dealId3)
 
 		// process slashing of deals
-		current = 300
-		rt.SetEpoch(current)
+		rt.SetEpoch(300)
 		totalSlashed := big.Sum(d1.ProviderCollateral, d2.ProviderCollateral, d3.ProviderCollateral)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalSlashed, nil, exitcode.Ok)
 
@@ -2241,7 +2209,6 @@ func TestCronTickDealSlashing(t *testing.T) {
 		actor.assertDealDeleted(rt, dealId1, d1)
 		actor.assertDealDeleted(rt, dealId2, d2)
 		actor.assertDealDeleted(rt, dealId3, d3)
-
 		actor.checkState(rt)
 	})
 
@@ -2252,8 +2219,7 @@ func TestCronTickDealSlashing(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch + 5 so payment is made
-		current := startEpoch + 5
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch + 5)
 		// assert payment
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
@@ -2261,18 +2227,16 @@ func TestCronTickDealSlashing(t *testing.T) {
 
 		// Setting the current epoch to before the next schedule will NOT make any changes as the deal
 		// is still not scheduled
-		current2 := current + market.DealUpdatesInterval - 1
-		rt.SetEpoch(current2)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval - 1)
 		actor.cronTickNoChange(rt, client, provider)
 
 		// a second cron tick for the same epoch should not change anything
 		actor.cronTickNoChange(rt, client, provider)
 
 		//  make another payment
-		current3 := current2 + 1
-		rt.SetEpoch(current3)
-		duration := big.NewInt(int64(current3 - current))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current3, dealId)
+		current = rt.SetEpoch(current + 1)
+		duration := big.NewInt(market.DealUpdatesInterval)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
@@ -2280,26 +2244,22 @@ func TestCronTickDealSlashing(t *testing.T) {
 		actor.cronTickNoChange(rt, client, provider)
 
 		// now terminate the deal
-		slashEpoch := current3 + 1
-		rt.SetEpoch(slashEpoch)
+		slashEpoch := rt.SetEpoch(current + 1)
+		duration = big.NewInt(int64(slashEpoch - current))
 		actor.terminateDeals(rt, provider, dealId)
 
 		// Setting the epoch to anything less than next schedule will not make any change even though the deal is slashed
-		current4 := current3 + market.DealUpdatesInterval - 1
-		rt.SetEpoch(current4)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval - 1)
 		actor.cronTickNoChange(rt, client, provider)
 
 		// next epoch for cron schedule  -> payment will be made and deal will be slashed
-		current5 := current4 + 1
-		rt.SetEpoch(current5)
-		duration = big.NewInt(int64(slashEpoch - current3))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current5, dealId)
+		current = rt.SetEpoch(current + 1)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, d.ProviderCollateral, slashed)
 
 		// deal should be deleted as it should have expired
 		actor.assertDealDeleted(rt, dealId, d)
-
 		actor.checkState(rt)
 	})
 
@@ -2311,38 +2271,35 @@ func TestCronTickDealSlashing(t *testing.T) {
 		d := actor.getDealProposal(rt, dealId)
 
 		// move the current epoch to startEpoch + 5 so payment is made and assert payment
-		current := startEpoch + 5 // 55
-		rt.SetEpoch(current)
+		current := rt.SetEpoch(startEpoch + 5) // 55
 		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(big.NewInt(5), d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		//  Setting the current epoch to 155 will make another payment
-		current2 := current + market.DealUpdatesInterval
-		rt.SetEpoch(current2)
-		duration := big.NewInt(int64(current2 - current))
-		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current2, dealId)
+		current = rt.SetEpoch(current + market.DealUpdatesInterval)
+		duration := big.NewInt(market.DealUpdatesInterval)
+		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
 		require.EqualValues(t, pay, big.Mul(duration, d.StoragePricePerEpoch))
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// set current epoch to deal end epoch and attempt to slash it -> should not be slashed
 		// as deal is considered to be expired.
+		duration = big.NewInt(int64(endEpoch - current))
 		rt.SetEpoch(endEpoch)
 		actor.terminateDeals(rt, provider, dealId)
 
 		// next epoch for cron schedule is endEpoch + 300 ->
 		// setting epoch to higher than that will cause deal to be expired, payment will be made
 		// and deal will NOT be slashed
-		current = endEpoch + 300
-		rt.SetEpoch(current)
+		current = rt.SetEpoch(endEpoch + 300)
 		pay, slashed = actor.cronTickAndAssertBalances(rt, client, provider, current, dealId)
-		duration = big.NewInt(int64(endEpoch - current2))
+
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
 		require.EqualValues(t, big.Zero(), slashed)
 
 		// deal should be deleted as it should have expired
 		actor.assertDealDeleted(rt, dealId, d)
-
 		actor.checkState(rt)
 	})
 }
