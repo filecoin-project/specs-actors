@@ -2224,13 +2224,13 @@ func TestDeadlineCronDefersStopsRestarts(t *testing.T) {
 		cronCtrl.preCommitToStartCron(t, epoch)
 	})
 
-	t.Run("enroll, pcd expire, re-enroll x 1000", func(t *testing.T) {
+	t.Run("enroll, pcd expire, re-enroll x 3", func(t *testing.T) {
 		rt := builder.Build(t)
 		epoch := periodOffset + 1
 		rt.SetEpoch(epoch)
 		actor.constructAndVerify(rt)
 		cronCtrl := newCronControl(rt, actor)
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 3; i++ {
 			epoch = cronCtrl.preCommitStartCronExpireStopCron(t, epoch) + 42
 		}
 	})
