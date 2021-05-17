@@ -42,8 +42,8 @@ type State struct {
 	// Sectors that have been pre-committed but not yet proven.
 	PreCommittedSectors cid.Cid // Map, HAMT[SectorNumber]SectorPreCommitOnChainInfo
 
-	// PreCommittedSectorsExpiry maintains the state required to expire PreCommittedSectors.
-	PreCommittedSectorsExpiry cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
+	// PreCommittedSectorsCleanUp maintains the state required to cleanup expired PreCommittedSectors.
+	PreCommittedSectorsCleanUp cid.Cid // BitFieldQueue (AMT[Epoch]*BitField)
 
 	// Allocated sector IDs. Sector IDs can never be reused once allocated.
 	AllocatedSectors cid.Cid // BitField
@@ -83,7 +83,7 @@ type State struct {
 }
 
 // Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
-const PrecommitExpiryAmtBitwidth = 6
+const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
 type MinerInfo struct {
@@ -180,7 +180,7 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty map: %w", err)
 	}
-	emptyPrecommitsExpiryArrayCid, err := adt.StoreEmptyArray(store, PrecommitExpiryAmtBitwidth)
+	emptyPrecommitsCleanUpArrayCid, err := adt.StoreEmptyArray(store, PrecommitCleanUpAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty precommits array: %w", err)
 	}
@@ -223,15 +223,15 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 
 		InitialPledge: abi.NewTokenAmount(0),
 
-		PreCommittedSectors:       emptyPrecommitMapCid,
-		PreCommittedSectorsExpiry: emptyPrecommitsExpiryArrayCid,
-		AllocatedSectors:          emptyBitfieldCid,
-		Sectors:                   emptySectorsArrayCid,
-		ProvingPeriodStart:        periodStart,
-		CurrentDeadline:           deadlineIndex,
-		Deadlines:                 emptyDeadlinesCid,
-		EarlyTerminations:         bitfield.New(),
-		DeadlineCronActive:        false,
+		PreCommittedSectors:        emptyPrecommitMapCid,
+		PreCommittedSectorsCleanUp: emptyPrecommitsCleanUpArrayCid,
+		AllocatedSectors:           emptyBitfieldCid,
+		Sectors:                    emptySectorsArrayCid,
+		ProvingPeriodStart:         periodStart,
+		CurrentDeadline:            deadlineIndex,
+		Deadlines:                  emptyDeadlinesCid,
+		EarlyTerminations:          bitfield.New(),
+		DeadlineCronActive:         false,
 	}, nil
 }
 
@@ -344,7 +344,7 @@ func (st *State) AllocateSectorNumbers(store adt.Store, sectorNos bitfield.BitFi
 }
 
 // Stores a pre-committed sector info, failing if the sector number is already present.
-func (st *State) PutPrecommittedSectors(store adt.Store, precommits ... *SectorPreCommitOnChainInfo) error {
+func (st *State) PutPrecommittedSectors(store adt.Store, precommits ...*SectorPreCommitOnChainInfo) error {
 	precommitted, err := adt.AsMap(store, st.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return err
@@ -1023,23 +1023,23 @@ func (st *State) IsDebtFree() bool {
 	return st.FeeDebt.LessThanEqual(big.Zero())
 }
 
-// pre-commit expiry
+// pre-commit clean up
 func (st *State) QuantSpecEveryDeadline() QuantSpec {
 	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
 }
 
-func (st *State) AddPreCommitExpirations(store adt.Store, expirations map[abi.ChainEpoch][]uint64) error {
+func (st *State) AddPreCommitCleanUps(store adt.Store, cleanUpEvents map[abi.ChainEpoch][]uint64) error {
 	// Load BitField Queue for sector expiry
 	quant := st.QuantSpecEveryDeadline()
-	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, quant, PrecommitExpiryAmtBitwidth)
+	queue, err := LoadBitfieldQueue(store, st.PreCommittedSectorsCleanUp, quant, PrecommitCleanUpAmtBitwidth)
 	if err != nil {
-		return xerrors.Errorf("failed to load pre-commit expiry queue: %w", err)
+		return xerrors.Errorf("failed to load pre-commit clean up queue: %w", err)
 	}
 
 	// Sort the epoch keys for stable iteration when manipulating the queue
-	epochs := make([]abi.ChainEpoch, len(expirations))
+	epochs := make([]abi.ChainEpoch, len(cleanUpEvents))
 	i := 0
-	for expireEpoch := range expirations { // nolint: nomaprange
+	for expireEpoch := range cleanUpEvents { // nolint: nomaprange
 		epochs[i] = expireEpoch
 		i++
 	}
@@ -1047,37 +1047,37 @@ func (st *State) AddPreCommitExpirations(store adt.Store, expirations map[abi.Ch
 		return epochs[i] < epochs[j]
 	})
 
-	for _, expireEpoch := range epochs {
-		if err := queue.AddToQueueValues(expireEpoch, expirations[expireEpoch]...); err != nil {
-			return xerrors.Errorf("failed to add pre-commit sector expiry to queue: %w", err)
+	for _, cleanUpEpoch := range epochs {
+		if err := queue.AddToQueueValues(cleanUpEpoch, cleanUpEvents[cleanUpEpoch]...); err != nil {
+			return xerrors.Errorf("failed to add pre-commit sector clean up to queue: %w", err)
 		}
 	}
 
-	st.PreCommittedSectorsExpiry, err = queue.Root()
+	st.PreCommittedSectorsCleanUp, err = queue.Root()
 	if err != nil {
 		return xerrors.Errorf("failed to save pre-commit sector queue: %w", err)
 	}
 	return nil
 }
 
-func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (depositToBurn abi.TokenAmount, err error) {
+func (st *State) CleanUpExpiredPreCommits(store adt.Store, currEpoch abi.ChainEpoch) (depositToBurn abi.TokenAmount, err error) {
 	depositToBurn = abi.NewTokenAmount(0)
 
-	// expire pre-committed sectors
-	expiryQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsExpiry, st.QuantSpecEveryDeadline(), PrecommitExpiryAmtBitwidth)
+	// cleanup expired pre-committed sectors
+	cleanUpQ, err := LoadBitfieldQueue(store, st.PreCommittedSectorsCleanUp, st.QuantSpecEveryDeadline(), PrecommitCleanUpAmtBitwidth)
 	if err != nil {
 		return depositToBurn, xerrors.Errorf("failed to load sector expiry queue: %w", err)
 	}
 
-	sectors, modified, err := expiryQ.PopUntil(currEpoch)
+	sectors, modified, err := cleanUpQ.PopUntil(currEpoch)
 	if err != nil {
 		return depositToBurn, xerrors.Errorf("failed to pop expired sectors: %w", err)
 	}
 
 	if modified {
-		st.PreCommittedSectorsExpiry, err = expiryQ.Root()
+		st.PreCommittedSectorsCleanUp, err = cleanUpQ.Root()
 		if err != nil {
-			return depositToBurn, xerrors.Errorf("failed to save expiry queue: %w", err)
+			return depositToBurn, xerrors.Errorf("failed to save pre commit clean up queue: %w", err)
 		}
 	}
 
@@ -1112,7 +1112,7 @@ func (st *State) ExpirePreCommits(store adt.Store, currEpoch abi.ChainEpoch) (de
 
 	st.PreCommitDeposits = big.Sub(st.PreCommitDeposits, depositToBurn)
 	if st.PreCommitDeposits.LessThan(big.Zero()) {
-		return big.Zero(), xerrors.Errorf("pre-commit expiry caused negative deposits: %v", st.PreCommitDeposits)
+		return big.Zero(), xerrors.Errorf("pre-commit clean up caused negative deposits: %v", st.PreCommitDeposits)
 	}
 
 	// This deposit was locked separately to pledge collateral so there's no pledge change here.

@@ -761,7 +761,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 
 		chainInfos := make([]*SectorPreCommitOnChainInfo, len(params.Sectors))
 		totalDepositRequired := big.Zero()
-		expirations := map[abi.ChainEpoch][]uint64{}
+		cleanUpEvents := map[abi.ChainEpoch][]uint64{}
 		dealCountMax := SectorDealsMax(info.SectorSize)
 		for i, precommit := range params.Sectors {
 			// Sector must have the same Window PoSt proof type as the miner's recorded seal type.
@@ -803,16 +803,16 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 			}
 			totalDepositRequired = big.Add(totalDepositRequired, depositReq)
 
-			// Calculate pre-commit expiry
+			// Calculate pre-commit cleanup
 			msd, ok := MaxProveCommitDuration[precommit.SealProof]
 			if !ok {
 				rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", precommit.SealProof)
 			}
-			// The +1 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
+			// PreCommitCleanUpDelay > 0 here is critical for the batch verification of proofs. Without it, if a proof arrived exactly on the
 			// due epoch, ProveCommitSector would accept it, then the expiry event would remove it, and then
 			// ConfirmSectorProofsValid would fail to find it.
-			expiryBound := currEpoch + msd + 1
-			expirations[expiryBound] = append(expirations[expiryBound], uint64(precommit.SectorNumber))
+			cleanUpBound := currEpoch + msd + ExpiredPreCommitCleanUpDelay
+			cleanUpEvents[cleanUpBound] = append(cleanUpEvents[cleanUpBound], uint64(precommit.SectorNumber))
 		}
 
 		// Batch update actor state.
@@ -828,7 +828,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		err = st.PutPrecommittedSectors(store, chainInfos...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to write pre-committed sectors")
 
-		err = st.AddPreCommitExpirations(store, expirations)
+		err = st.AddPreCommitCleanUps(store, cleanUpEvents)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit expiry to queue")
 
 		// Activate miner cron
@@ -882,6 +882,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 
 	// compute data commitments and validate each precommit
 	computeDataCommitmentsInputs := make([]*market.SectorDataSpec, len(precommits))
+	precommitsToConfirm := []*SectorPreCommitOnChainInfo{}
 	for i, precommit := range precommits {
 		msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 		if !ok {
@@ -889,7 +890,9 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		}
 		proveCommitDue := precommit.PreCommitEpoch + msd
 		if rt.CurrEpoch() > proveCommitDue {
-			rt.Abortf(exitcode.ErrIllegalArgument, "commitment proof for %d too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
+			rt.Log(rtt.WARN, "skipping commitment for sector %d, too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
+		} else {
+			precommitsToConfirm = append(precommitsToConfirm, precommit)
 		}
 		// All sealProof types should match
 		if i >= 1 {
@@ -943,7 +946,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 			AggregateProof: abi.RegisteredAggregationProof_SnarkPackV1,
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
-	confirmSectorProofsValid(rt, precommits)
+	confirmSectorProofsValid(rt, precommitsToConfirm)
 
 	return nil
 }
@@ -2193,7 +2196,7 @@ func handleProvingDeadline(rt Runtime) {
 		}
 
 		{
-			depositToBurn, err := st.ExpirePreCommits(store, currEpoch)
+			depositToBurn, err := st.CleanUpExpiredPreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
 
 			err = st.ApplyPenalty(depositToBurn)

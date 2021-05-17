@@ -314,3 +314,8 @@ func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPowe
 const MaxAggregatedSectors = 819
 const MinAggregatedSectors = 1
 const MaxAggregateProofSize = 192000
+
+// The delay between pre commit expiration and clean up from state. This enforces that expired pre-commits
+// stay in state for a period of time creating a grace period during which a late-running aggregated prove-commit
+// can still prove its non-expired precommits without resubmitting a message
+const ExpiredPreCommitCleanUpDelay = 8 * builtin.EpochsInHour
