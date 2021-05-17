@@ -110,7 +110,7 @@ func TestCommitments(t *testing.T) {
 			assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
 
 			expirations := actor.collectPrecommitExpirations(rt, st)
-			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.PreCommitExpiryDelay)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay)
 			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: {uint64(test.sectorNo)}}, expirations)
 		})
 	}
@@ -583,7 +583,7 @@ func TestPreCommitBatch(t *testing.T) {
 			assert.Equal(t, totalDeposit, st.PreCommitDeposits)
 
 			expirations := actor.collectPrecommitExpirations(rt, st)
-			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.PreCommitExpiryDelay)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay)
 			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: sectorNoAsUints}, expirations)
 		})
 	}

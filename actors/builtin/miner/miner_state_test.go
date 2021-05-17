@@ -608,33 +608,33 @@ func TestVestingFunds_UnvestedFunds(t *testing.T) {
 }
 
 func TestAddPreCommitExpiry(t *testing.T) {
-	t.Run("simple pre-commit expiry", func(t *testing.T) {
+	t.Run("simple pre-commit expiry and cleanup", func(t *testing.T) {
 		harness := constructStateHarness(t, 0)
-		err := harness.s.AddPreCommitExpirations(harness.store, map[abi.ChainEpoch][]uint64{100: {1}})
+		err := harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{100: {1}})
 		require.NoError(t, err)
 
 		quant := harness.s.QuantSpecEveryDeadline()
 		ExpectBQ().
 			Add(quant.QuantizeUp(100), 1).
-			Equals(t, harness.loadPreCommitExpiries())
+			Equals(t, harness.loadPreCommitCleanUps())
 
-		err = harness.s.AddPreCommitExpirations(harness.store, map[abi.ChainEpoch][]uint64{100: {2}})
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{100: {2}})
 		require.NoError(t, err)
 		ExpectBQ().
 			Add(quant.QuantizeUp(100), 1, 2).
-			Equals(t, harness.loadPreCommitExpiries())
+			Equals(t, harness.loadPreCommitCleanUps())
 
-		err = harness.s.AddPreCommitExpirations(harness.store, map[abi.ChainEpoch][]uint64{200: {3}})
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{200: {3}})
 		require.NoError(t, err)
 		ExpectBQ().
 			Add(quant.QuantizeUp(100), 1, 2).
 			Add(quant.QuantizeUp(200), 3).
-			Equals(t, harness.loadPreCommitExpiries())
+			Equals(t, harness.loadPreCommitCleanUps())
 	})
 
 	t.Run("batch pre-commit expiry", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
-		err := harness.s.AddPreCommitExpirations(harness.store, map[abi.ChainEpoch][]uint64{
+		err := harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{
 			100: {1},
 			200: {2, 3},
 			300: {},
@@ -645,9 +645,9 @@ func TestAddPreCommitExpiry(t *testing.T) {
 		ExpectBQ().
 			Add(quant.QuantizeUp(100), 1).
 			Add(quant.QuantizeUp(200), 2, 3).
-			Equals(t, harness.loadPreCommitExpiries())
+			Equals(t, harness.loadPreCommitCleanUps())
 
-		err = harness.s.AddPreCommitExpirations(harness.store, map[abi.ChainEpoch][]uint64{
+		err = harness.s.AddPreCommitCleanUps(harness.store, map[abi.ChainEpoch][]uint64{
 			100: {1}, // Redundant
 			200: {4},
 			300: {5, 6},
@@ -657,7 +657,7 @@ func TestAddPreCommitExpiry(t *testing.T) {
 			Add(quant.QuantizeUp(100), 1).
 			Add(quant.QuantizeUp(200), 2, 3, 4).
 			Add(quant.QuantizeUp(300), 5, 6).
-			Equals(t, harness.loadPreCommitExpiries())
+			Equals(t, harness.loadPreCommitCleanUps())
 	})
 }
 
@@ -955,8 +955,8 @@ func (h *stateHarness) deletePreCommit(sectorNo abi.SectorNumber) {
 	require.NoError(h.t, err)
 }
 
-func (h *stateHarness) loadPreCommitExpiries() miner.BitfieldQueue {
-	queue, err := miner.LoadBitfieldQueue(h.store, h.s.PreCommittedSectorsExpiry, h.s.QuantSpecEveryDeadline(), miner.PrecommitExpiryAmtBitwidth)
+func (h *stateHarness) loadPreCommitCleanUps() miner.BitfieldQueue {
+	queue, err := miner.LoadBitfieldQueue(h.store, h.s.PreCommittedSectorsCleanUp, h.s.QuantSpecEveryDeadline(), miner.PrecommitCleanUpAmtBitwidth)
 	require.NoError(h.t, err)
 	return queue
 }

@@ -2105,9 +2105,9 @@ func newCronControl(rt *mock.Runtime, actor *actorHarness) *cronControl {
 	}
 }
 
-// Start cron by precommitting at preCommitEpoch, return expiry epoch.
+// Start cron by precommitting at preCommitEpoch, return clean up epoch.
 // Verifies that cron is not started, precommit is run and cron is enrolled.
-// Returns expiration of precommit.
+// Returns epoch at which precommit is scheduled for clean up and removed from state by cron.
 func (h *cronControl) preCommitToStartCron(t *testing.T, preCommitEpoch abi.ChainEpoch) abi.ChainEpoch {
 	h.rt.SetEpoch(preCommitEpoch)
 	st := getState(h.rt)
@@ -2123,20 +2123,20 @@ func (h *cronControl) preCommitToStartCron(t *testing.T, preCommitEpoch abi.Chai
 	// PCD != 0 so cron must be active
 	h.requireCronActive(t)
 
-	expiryEpoch := preCommitEpoch + miner.MaxProveCommitDuration[h.actor.sealProofType] + miner.PreCommitExpiryDelay
-	return expiryEpoch
+	cleanUpEpoch := preCommitEpoch + miner.MaxProveCommitDuration[h.actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay
+	return cleanUpEpoch
 }
 
-// Stop cron by advancing to the preCommit expiry epoch.
+// Stop cron by advancing to the preCommit clean up epoch.
 // Assumes no proved sectors, no vesting funds.
-// Verifies cron runs until expiry, PCD burnt and cron discontinued during last deadline
+// Verifies cron runs until clean up, PCD burnt and cron discontinued during last deadline
 // Return open of first deadline after expiration.
-func (h *cronControl) expirePreCommitStopCron(t *testing.T, startEpoch, expiryEpoch abi.ChainEpoch) abi.ChainEpoch {
+func (h *cronControl) expirePreCommitStopCron(t *testing.T, startEpoch, cleanUpEpoch abi.ChainEpoch) abi.ChainEpoch {
 	h.requireCronActive(t)
 	st := getState(h.rt)
 	dlinfo := miner.NewDeadlineInfoFromOffsetAndEpoch(st.ProvingPeriodStart, startEpoch) // actor.deadline might be out of date
 
-	for dlinfo.Open <= expiryEpoch { // PCDs are quantized to expire on the *next* new deadline after the one they expire in
+	for dlinfo.Open <= cleanUpEpoch { // PCDs are quantized to be burnt on the *next* new deadline after the one they are cleaned up in
 		// asserts cron is rescheduled
 		dlinfo = advanceDeadline(h.rt, h.actor, &cronConfig{})
 	}
@@ -2165,8 +2165,8 @@ func (h *cronControl) requireCronActive(t *testing.T) {
 }
 
 func (h *cronControl) preCommitStartCronExpireStopCron(t *testing.T, startEpoch abi.ChainEpoch) abi.ChainEpoch {
-	expiryEpoch := h.preCommitToStartCron(t, startEpoch)
-	return h.expirePreCommitStopCron(t, startEpoch, expiryEpoch)
+	cleanUpEpoch := h.preCommitToStartCron(t, startEpoch)
+	return h.expirePreCommitStopCron(t, startEpoch, cleanUpEpoch)
 }
 
 func TestDeadlineCronDefersStopsRestarts(t *testing.T) {
@@ -4458,7 +4458,7 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 }
 
 func (h *actorHarness) collectPrecommitExpirations(rt *mock.Runtime, st *miner.State) map[abi.ChainEpoch][]uint64 {
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), st.PreCommittedSectorsExpiry, miner.NoQuantization, miner.PrecommitExpiryAmtBitwidth)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), st.PreCommittedSectorsCleanUp, miner.NoQuantization, miner.PrecommitCleanUpAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {

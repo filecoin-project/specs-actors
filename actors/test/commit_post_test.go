@@ -98,16 +98,16 @@ func TestCommitPoStFlow(t *testing.T) {
 	// overdue precommit
 	//
 
-	t.Run("missed prove commit results in precommit expiry", func(t *testing.T) {
-		// advance time to precommit expiry
-		expiryTime := proveTime + miner.PreCommitExpiryDelay
-		v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, expiryTime)
+	t.Run("missed prove commit results in precommit expiry and cleanup", func(t *testing.T) {
+		// advance time to precommit clean up epoch
+		cleanUpTime := proveTime + miner.ExpiredPreCommitCleanUpDelay
+		v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, cleanUpTime)
 
-		// advanced one more deadline so precommit is late
+		// advanced one more deadline so precommit clean up is reached
 		tv, err := v.WithEpoch(dlInfo.Close)
 		require.NoError(t, err)
 
-		// run cron which should expire precommit
+		// run cron which should clean up precommit
 		vm.ApplyOk(t, tv, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 		vm.ExpectInvocation{
@@ -498,12 +498,12 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	}
 	sectorNosBf := bitfield.NewFromSet(intSectorNumbers)
 
-	//	Advance minimum epochs past later precommits for later commits to be valid
+	// Advance minimum epochs past later precommits for later commits to be valid
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + abi.ChainEpoch(1)
 	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, dlInfo.Close)
-	// Assert that precommit should not yet be expired. This makes fixing this test easier if parameters change.
-	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration[sealProof]+miner.PreCommitExpiryDelay)
+	// Assert that precommit should not yet be cleaned up. This makes fixing this test easier if parameters change.
+	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration[sealProof]+miner.ExpiredPreCommitCleanUpDelay)
 
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
