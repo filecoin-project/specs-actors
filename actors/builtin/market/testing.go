@@ -132,7 +132,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 
 			stats, found := proposalStats[abi.DealID(dealID)]
 			if !found {
-				acc.Addf("deal proposal %d for deal state not found", dealID)
+				acc.Addf("no deal proposal for deal state %d", dealID)
 			} else {
 				stats.SectorStartEpoch = dealState.SectorStartEpoch
 				stats.LastUpdatedEpoch = dealState.LastUpdatedEpoch

@@ -789,28 +789,33 @@ func (rt *Runtime) SetAddressActorType(address addr.Address, actorType cid.Cid) 
 	rt.actorCodeCIDs[address] = actorType
 }
 
-func (rt *Runtime) SetBalance(amt abi.TokenAmount) {
+func (rt *Runtime) SetBalance(amt abi.TokenAmount) abi.TokenAmount {
 	rt.balance = amt
+	return amt
 }
 
-func (rt *Runtime) SetReceived(amt abi.TokenAmount) {
+func (rt *Runtime) SetReceived(amt abi.TokenAmount) abi.TokenAmount {
 	rt.valueReceived = amt
+	return amt
 }
 
-func (rt *Runtime) SetNetworkVersion(v network.Version) {
+func (rt *Runtime) SetNetworkVersion(v network.Version) network.Version {
 	rt.networkVersion = v
+	return v
 }
 
-func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) {
+func (rt *Runtime) SetEpoch(epoch abi.ChainEpoch) abi.ChainEpoch {
 	rt.epoch = epoch
+	return epoch
 }
 
 func (rt *Runtime) ReplaceState(o cbor.Marshaler) {
 	rt.state = rt.StorePut(o)
 }
 
-func (rt *Runtime) SetCirculatingSupply(amt abi.TokenAmount) {
+func (rt *Runtime) SetCirculatingSupply(amt abi.TokenAmount) abi.TokenAmount {
 	rt.circulatingSupply = amt
+	return amt
 }
 
 func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
@@ -821,6 +826,10 @@ func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
 func (rt *Runtime) SetNewActorAddress(actAddr addr.Address) {
 	rt.require(actAddr.Protocol() == addr.Actor, "new actor address must be protocol: Actor, got protocol: %v", actAddr.Protocol())
 	rt.newActorAddr = actAddr
+}
+
+func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
+	rt.hashfunc = f
 }
 
 func (rt *Runtime) ExpectValidateCallerAny() {
@@ -888,10 +897,6 @@ func (rt *Runtime) ExpectCreateActor(codeId cid.Cid, address addr.Address) {
 
 func (rt *Runtime) ExpectDeleteActor(beneficiary addr.Address) {
 	rt.expectDeleteActor = &beneficiary
-}
-
-func (rt *Runtime) SetHasher(f func(data []byte) [32]byte) {
-	rt.hashfunc = f
 }
 
 func (rt *Runtime) ExpectVerifySeal(seal proof.SealVerifyInfo, result error) {
