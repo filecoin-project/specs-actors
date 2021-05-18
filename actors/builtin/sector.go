@@ -2,7 +2,6 @@ package builtin
 
 import (
 	stabi "github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/network"
 	"github.com/pkg/errors"
 )
 
@@ -64,7 +63,7 @@ func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, e
 }
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
-func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof, nv network.Version) (stabi.ChainEpoch, error) {
+func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
 	info, ok := SealProofPoliciesV11[p]
 	if !ok {
 		return 0, errors.Errorf("unsupported proof type: %v", p)

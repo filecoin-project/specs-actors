@@ -14,7 +14,6 @@ import (
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/go-state-types/network"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
@@ -2471,7 +2470,7 @@ func TestExtendSectorExpiration(t *testing.T) {
 		// and prove it once to activate it.
 		advanceAndSubmitPoSts(rt, actor, sector)
 
-		maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sector.SealProof, network.VersionMax)
+		maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sector.SealProof)
 		require.NoError(t, err)
 
 		st := getState(rt)
@@ -4701,7 +4700,7 @@ func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreC
 // Options for proveCommitSector behaviour.
 // Default zero values should let everything be ok.
 type proveCommitConf struct {
-	verifyDealsExit    map[abi.SectorNumber]exitcode.ExitCode
+	verifyDealsExit map[abi.SectorNumber]exitcode.ExitCode
 }
 
 func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitSectorParams) {
