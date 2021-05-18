@@ -668,7 +668,6 @@ type PreCommitSectorBatchParams struct {
 // This method calculates the sector's power, locks a pre-commit deposit for the sector, stores information about the
 // sector in state and waits for it to be proven or expire.
 func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchParams) *abi.EmptyValue {
-	nv := rt.NetworkVersion()
 	currEpoch := rt.CurrEpoch()
 	if len(params.Sectors) == 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "batch empty")
@@ -689,8 +688,8 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		}
 		sectorNumbers.Set(uint64(precommit.SectorNumber))
 
-		if !CanPreCommitSealProof(precommit.SealProof, nv) {
-			rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type %v at network version %v", precommit.SealProof, nv)
+		if !CanPreCommitSealProof(precommit.SealProof) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type %v", precommit.SealProof)
 		}
 		if precommit.SectorNumber > abi.MaxSectorNumber {
 			rt.Abortf(exitcode.ErrIllegalArgument, "sector number %d out of range 0..(2^63-1)", precommit.SectorNumber)
@@ -1322,7 +1321,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
-					if !CanExtendSealProofType(sector.SealProof, rt.NetworkVersion()) {
+					if !CanExtendSealProofType(sector.SealProof) {
 						rt.Abortf(exitcode.ErrForbidden, "cannot extend expiration for sector %v with unsupported seal type %v",
 							sector.SectorNumber, sector.SealProof)
 					}
@@ -2288,7 +2287,7 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 
 	// total sector lifetime cannot exceed SectorMaximumLifetime for the sector's seal proof
-	maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sealProof, rt.NetworkVersion())
+	maxLifetime, err := builtin.SealProofSectorMaximumLifetime(sealProof)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "unrecognized seal proof type %d", sealProof)
 	if expiration-activation > maxLifetime {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) cannot exceed %d after activation %d",

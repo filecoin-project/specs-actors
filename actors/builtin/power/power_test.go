@@ -11,7 +11,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 	require "github.com/stretchr/testify/require"
@@ -328,19 +327,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 	t.Run("new miner updates MinerAboveMinPowerCount", func(t *testing.T) {
 		for _, test := range []struct {
-			version        network.Version
 			proof          abi.RegisteredPoStProof
 			expectedMiners int64
 		}{{
-			version:        network.Version7,
 			proof:          abi.RegisteredPoStProof_StackedDrgWindow2KiBV1, // 2K sectors have zero consensus minimum
 			expectedMiners: 1,
 		}, {
-			version:        network.Version7,
 			proof:          abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			expectedMiners: 0,
 		}} {
-			rt := builder.WithNetworkVersion(test.version).Build(t)
+			rt := builder.Build(t)
 			actor.constructAndVerify(rt)
 			actor.windowPoStProof = test.proof
 			actor.createMinerBasic(rt, owner, owner, miner1)
