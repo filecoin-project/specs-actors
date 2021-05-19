@@ -333,7 +333,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 			expectedMiners int64
 		}{{
 			version:        network.Version6,
-			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1, // 2K sectors have zero consensus minimum
+			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1,
 			expectedMiners: 0,
 		}, {
 			version:        network.Version6,
@@ -341,8 +341,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 			expectedMiners: 0,
 		}, {
 			version:        network.Version7,
-			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1, // 2K sectors have zero consensus minimum
-			expectedMiners: 1,
+			proof:          abi.RegisteredSealProof_StackedDrg2KiBV1,
+			expectedMiners: 0,
 		}, {
 			version:        network.Version7,
 			proof:          abi.RegisteredSealProof_StackedDrg32GiBV1,
@@ -449,15 +449,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 
 		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredSealProof_StackedDrg64GiBV1_1)
 		require.NoError(t, err)
-		assert.True(t, power64Unit.GreaterThan(powerUnit))
+
+		belowLimitUnit := big.Div(powerUnit, big.NewInt(2))
 
 		// below limit actors power is not added
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner5, belowLimitUnit, belowLimitUnit)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
 		// just below limit
-		delta := big.Subtract(power64Unit, powerUnit, big.NewInt(1))
+		delta := big.Subtract(power64Unit, belowLimitUnit, big.NewInt(1))
 		actor.updateClaimedPower(rt, miner5, delta, delta)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
