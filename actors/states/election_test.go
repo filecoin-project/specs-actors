@@ -121,12 +121,6 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 			// bigger sector size requires higher minimum
 			consensusMiners: power.ConsensusMinerMinMiners,
 			minerProof:      abi.RegisteredPoStProof_StackedDrgWindow64GiBV1,
-			power:           pow32GiBMin,
-			eligible:        false,
-		}, {
-			// bigger sector size requires higher minimum
-			consensusMiners: power.ConsensusMinerMinMiners,
-			minerProof:      abi.RegisteredPoStProof_StackedDrgWindow64GiBV1,
 			power:           pow64GiBMin,
 			eligible:        true,
 		}} {
