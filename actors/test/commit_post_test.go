@@ -287,8 +287,8 @@ func TestCommitPoStFlow(t *testing.T) {
 			ChainCommitRand:  []byte("not really random"),
 		}
 		// PoSt is rejected for skipping all sectors.
-		_, code := tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-		assert.Equal(t, exitcode.ErrIllegalArgument, code)
+		result := tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		assert.Equal(t, exitcode.ErrIllegalArgument, result.Code)
 
 		vm.ExpectInvocation{
 			To:       minerAddrs.IDAddress,

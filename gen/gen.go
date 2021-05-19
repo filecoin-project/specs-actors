@@ -16,6 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func main() {
@@ -229,6 +230,12 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/util/smoothing/cbor_gen.go", "smoothing",
 		smoothing.FilterEstimate{},
+	); err != nil {
+		panic(err)
+	}
+
+	if err := gen.WriteTupleEncodersToFile("./support/vm/cbor_gen.go", "vm",
+		vm.ChainMessage{},
 	); err != nil {
 		panic(err)
 	}
