@@ -16,7 +16,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/smoothing"
-	vm_test "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 func main() {
@@ -234,8 +234,8 @@ func main() {
 		panic(err)
 	}
 
-	if err := gen.WriteTupleEncodersToFile("./support/vm/cbor_gen.go", "vm_test",
-		vm_test.ChainMessage{},
+	if err := gen.WriteTupleEncodersToFile("./support/vm/cbor_gen.go", "vm",
+		vm.ChainMessage{},
 	); err != nil {
 		panic(err)
 	}

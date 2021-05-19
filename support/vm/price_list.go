@@ -1,4 +1,4 @@
-package vm_test
+package vm
 
 import (
 	"fmt"
@@ -7,12 +7,65 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v5/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
 )
 
-func newGasCharge(name string, computeGas int64, storageGas int64) runtime.GasCharge {
-	return runtime.GasCharge{
+type Pricelist interface {
+	// OnChainMessage returns the gas used for storing a message of a given size in the chain.
+	OnChainMessage(msgSize int) GasCharge
+	// OnChainReturnValue returns the gas used for storing the response of a message in the chain.
+	OnChainReturnValue(dataSize int) GasCharge
+
+	// OnMethodInvocation returns the gas used when invoking a method.
+	OnMethodInvocation(value abi.TokenAmount, methodNum abi.MethodNum) GasCharge
+
+	// OnIpldGet returns the gas used for storing an object
+	OnIpldGet() GasCharge
+	// OnIpldPut returns the gas used for storing an object
+	OnIpldPut(dataSize int) GasCharge
+
+	// OnCreateActor returns the gas used for creating an actor
+	OnCreateActor() GasCharge
+	// OnDeleteActor returns the gas used for deleting an actor
+	OnDeleteActor() GasCharge
+
+	OnVerifySignature(sigType crypto.SigType, planTextSize int) (GasCharge, error)
+	OnHashing(dataSize int) GasCharge
+	OnComputeUnsealedSectorCid(proofType abi.RegisteredSealProof, pieces []abi.PieceInfo) GasCharge
+	OnVerifySeal(info proof.SealVerifyInfo) GasCharge
+	OnVerifyPost(info proof.WindowPoStVerifyInfo) GasCharge
+	OnVerifyConsensusFault() GasCharge
+}
+
+type GasCharge struct {
+	Name  string
+	Extra interface{}
+
+	ComputeGas int64
+	StorageGas int64
+
+	VirtualCompute int64
+	VirtualStorage int64
+}
+
+func (g GasCharge) Total() int64 {
+	return g.ComputeGas + g.StorageGas
+}
+func (g GasCharge) WithVirtual(compute, storage int64) GasCharge {
+	out := g
+	out.VirtualCompute = compute
+	out.VirtualStorage = storage
+	return out
+}
+
+func (g GasCharge) WithExtra(extra interface{}) GasCharge {
+	out := g
+	out.Extra = extra
+	return out
+}
+
+func newGasCharge(name string, computeGas int64, storageGas int64) GasCharge {
+	return GasCharge{
 		Name:       name,
 		ComputeGas: computeGas,
 		StorageGas: storageGas,
@@ -103,21 +156,21 @@ type pricelist struct {
 	verifyConsensusFault         int64
 }
 
-var _ runtime.Pricelist = (*pricelist)(nil)
+var _ Pricelist = (*pricelist)(nil)
 
 // OnChainMessage returns the gas used for storing a message of a given size in the chain.
-func (pl *pricelist) OnChainMessage(msgSize int) runtime.GasCharge {
+func (pl *pricelist) OnChainMessage(msgSize int) GasCharge {
 	return newGasCharge("OnChainMessage", pl.onChainMessageComputeBase,
 		(pl.onChainMessageStorageBase+pl.onChainMessageStoragePerByte*int64(msgSize))*pl.storageGasMulti)
 }
 
 // OnChainReturnValue returns the gas used for storing the response of a message in the chain.
-func (pl *pricelist) OnChainReturnValue(dataSize int) runtime.GasCharge {
+func (pl *pricelist) OnChainReturnValue(dataSize int) GasCharge {
 	return newGasCharge("OnChainReturnValue", 0, int64(dataSize)*pl.onChainReturnValuePerByte*pl.storageGasMulti)
 }
 
 // OnMethodInvocation returns the gas used when invoking a method.
-func (pl *pricelist) OnMethodInvocation(value abi.TokenAmount, methodNum abi.MethodNum) runtime.GasCharge {
+func (pl *pricelist) OnMethodInvocation(value abi.TokenAmount, methodNum abi.MethodNum) GasCharge {
 	ret := pl.sendBase
 	extra := ""
 
@@ -139,32 +192,32 @@ func (pl *pricelist) OnMethodInvocation(value abi.TokenAmount, methodNum abi.Met
 }
 
 // OnIpldGet returns the gas used for storing an object
-func (pl *pricelist) OnIpldGet() runtime.GasCharge {
+func (pl *pricelist) OnIpldGet() GasCharge {
 	return newGasCharge("OnIpldGet", pl.ipldGetBase, 0).WithVirtual(114617, 0)
 }
 
 // OnIpldPut returns the gas used for storing an object
-func (pl *pricelist) OnIpldPut(dataSize int) runtime.GasCharge {
+func (pl *pricelist) OnIpldPut(dataSize int) GasCharge {
 	return newGasCharge("OnIpldPut", pl.ipldPutBase, int64(dataSize)*pl.ipldPutPerByte*pl.storageGasMulti).
 		WithExtra(dataSize).WithVirtual(400000, int64(dataSize)*1300)
 }
 
 // OnCreateActor returns the gas used for creating an actor
-func (pl *pricelist) OnCreateActor() runtime.GasCharge {
+func (pl *pricelist) OnCreateActor() GasCharge {
 	return newGasCharge("OnCreateActor", pl.createActorCompute, pl.createActorStorage*pl.storageGasMulti)
 }
 
 // OnDeleteActor returns the gas used for deleting an actor
-func (pl *pricelist) OnDeleteActor() runtime.GasCharge {
+func (pl *pricelist) OnDeleteActor() GasCharge {
 	return newGasCharge("OnDeleteActor", 0, pl.deleteActor*pl.storageGasMulti)
 }
 
 // OnVerifySignature
 
-func (pl *pricelist) OnVerifySignature(sigType crypto.SigType, planTextSize int) (runtime.GasCharge, error) {
+func (pl *pricelist) OnVerifySignature(sigType crypto.SigType, planTextSize int) (GasCharge, error) {
 	cost, ok := pl.verifySignature[sigType]
 	if !ok {
-		return runtime.GasCharge{}, fmt.Errorf("cost function for signature type %d not supported", sigType)
+		return GasCharge{}, fmt.Errorf("cost function for signature type %d not supported", sigType)
 	}
 
 	sigName, _ := sigType.Name()
@@ -176,24 +229,24 @@ func (pl *pricelist) OnVerifySignature(sigType crypto.SigType, planTextSize int)
 }
 
 // OnHashing
-func (pl *pricelist) OnHashing(dataSize int) runtime.GasCharge {
+func (pl *pricelist) OnHashing(dataSize int) GasCharge {
 	return newGasCharge("OnHashing", pl.hashingBase, 0).WithExtra(dataSize)
 }
 
 // OnComputeUnsealedSectorCid
-func (pl *pricelist) OnComputeUnsealedSectorCid(proofType abi.RegisteredSealProof, pieces []abi.PieceInfo) runtime.GasCharge {
+func (pl *pricelist) OnComputeUnsealedSectorCid(proofType abi.RegisteredSealProof, pieces []abi.PieceInfo) GasCharge {
 	return newGasCharge("OnComputeUnsealedSectorCid", pl.computeUnsealedSectorCidBase, 0)
 }
 
 // OnVerifySeal
-func (pl *pricelist) OnVerifySeal(info proof.SealVerifyInfo) runtime.GasCharge {
+func (pl *pricelist) OnVerifySeal(info proof.SealVerifyInfo) GasCharge {
 	// TODO: this needs more cost tunning, check with @lotus
 	// this is not used
 	return newGasCharge("OnVerifySeal", pl.verifySealBase, 0)
 }
 
 // OnVerifyPost
-func (pl *pricelist) OnVerifyPost(info proof.WindowPoStVerifyInfo) runtime.GasCharge {
+func (pl *pricelist) OnVerifyPost(info proof.WindowPoStVerifyInfo) GasCharge {
 	sectorSize := "unknown"
 	var proofType abi.RegisteredPoStProof
 
@@ -224,7 +277,7 @@ func (pl *pricelist) OnVerifyPost(info proof.WindowPoStVerifyInfo) runtime.GasCh
 }
 
 // OnVerifyConsensusFault
-func (pl *pricelist) OnVerifyConsensusFault() runtime.GasCharge {
+func (pl *pricelist) OnVerifyConsensusFault() GasCharge {
 	return newGasCharge("OnVerifyConsensusFault", pl.verifyConsensusFault, 0)
 }
 

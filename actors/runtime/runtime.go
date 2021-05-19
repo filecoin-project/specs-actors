@@ -231,30 +231,3 @@ type StateHandle interface {
 	// ```
 	StateTransaction(obj cbor.Er, f func())
 }
-
-type Pricelist interface {
-	// OnChainMessage returns the gas used for storing a message of a given size in the chain.
-	OnChainMessage(msgSize int) GasCharge
-	// OnChainReturnValue returns the gas used for storing the response of a message in the chain.
-	OnChainReturnValue(dataSize int) GasCharge
-
-	// OnMethodInvocation returns the gas used when invoking a method.
-	OnMethodInvocation(value abi.TokenAmount, methodNum abi.MethodNum) GasCharge
-
-	// OnIpldGet returns the gas used for storing an object
-	OnIpldGet() GasCharge
-	// OnIpldPut returns the gas used for storing an object
-	OnIpldPut(dataSize int) GasCharge
-
-	// OnCreateActor returns the gas used for creating an actor
-	OnCreateActor() GasCharge
-	// OnDeleteActor returns the gas used for deleting an actor
-	OnDeleteActor() GasCharge
-
-	OnVerifySignature(sigType crypto.SigType, planTextSize int) (GasCharge, error)
-	OnHashing(dataSize int) GasCharge
-	OnComputeUnsealedSectorCid(proofType abi.RegisteredSealProof, pieces []abi.PieceInfo) GasCharge
-	OnVerifySeal(info proof.SealVerifyInfo) GasCharge
-	OnVerifyPost(info proof.WindowPoStVerifyInfo) GasCharge
-	OnVerifyConsensusFault() GasCharge
-}

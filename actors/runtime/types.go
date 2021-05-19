@@ -28,30 +28,3 @@ const (
 )
 
 type VMActor = rt.VMActor
-
-type GasCharge struct {
-	Name  string
-	Extra interface{}
-
-	ComputeGas int64
-	StorageGas int64
-
-	VirtualCompute int64
-	VirtualStorage int64
-}
-
-func (g GasCharge) Total() int64 {
-	return g.ComputeGas + g.StorageGas
-}
-func (g GasCharge) WithVirtual(compute, storage int64) GasCharge {
-	out := g
-	out.VirtualCompute = compute
-	out.VirtualStorage = storage
-	return out
-}
-
-func (g GasCharge) WithExtra(extra interface{}) GasCharge {
-	out := g
-	out.Extra = extra
-	return out
-}

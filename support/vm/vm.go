@@ -50,7 +50,7 @@ type VM struct {
 
 	circSupply abi.TokenAmount
 
-	gasPrices runtime.Pricelist
+	gasPrices Pricelist
 }
 
 // VM types
@@ -102,7 +102,7 @@ func makeChainMessage(from, to address.Address, nonce uint64, value abi.TokenAmo
 		To:         to,
 		Nonce:      nonce,
 		Value:      value,
-		GasLimit:   5_000_000_000,
+		GasLimit:   defaultGasLimit,
 		GasFeeCap:  big.Zero(),
 		GasPremium: big.Zero(),
 		Method:     method,
@@ -334,8 +334,14 @@ func (vm *VM) NormalizeAddress(addr address.Address) (address.Address, bool) {
 	return idAddr, found
 }
 
+type MessageResult struct {
+	Ret        cbor.Marshaler
+	Code       exitcode.ExitCode
+	GasCharged int64
+}
+
 // ApplyMessage applies the message to the current state.
-func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode, int64) {
+func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) MessageResult {
 	// This method does not actually execute the message itself,
 	// but rather deals with the pre/post processing of a message.
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
@@ -344,7 +350,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// load actor from global state
 	fromID, ok := vm.NormalizeAddress(from)
 	if !ok {
-		return nil, exitcode.SysErrSenderInvalid, gasCharged
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
 	}
 
 	fromActor, found, err := vm.GetActor(fromID)
@@ -353,7 +359,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 	if !found {
 		// Execution error; sender does not exist at time of message execution.
-		return nil, exitcode.SysErrSenderInvalid, gasCharged
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
 	}
 
 	// checkpoint state
@@ -396,6 +402,9 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		newActorAddressCount: 0,
 		statsSource:          vm.statsSource,
 		circSupply:           vm.circSupply,
+		gasUsed:              msgGasCharge,
+		gasPrices:            vm.gasPrices,
+		gasAvailable:         defaultGasLimit,
 	}
 
 	// build internal msg
@@ -408,7 +417,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 
 	// build invocation context
-	ctx := newInvocationContext(vm, &topLevel, imsg, fromActor, vm.emptyObject, msgGasCharge, vm.gasPrices)
+	ctx := newInvocationContext(vm, &topLevel, imsg, fromActor, vm.emptyObject)
 
 	// 3. invoke
 	ret, exitCode := ctx.invoke()
@@ -437,9 +446,9 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 		panic(err)
 	}
 	retGasCharge := vm.gasPrices.OnChainReturnValue(len(retBuf.Bytes()))
-	gasCharged = retGasCharge.Total() + ctx.gasUsed
+	gasCharged = retGasCharge.Total() + ctx.topLevel.gasUsed
 
-	return ret.inner, exitCode, gasCharged
+	return MessageResult{ret.inner, exitCode, gasCharged}
 }
 
 func (vm *VM) StateRoot() cid.Cid {

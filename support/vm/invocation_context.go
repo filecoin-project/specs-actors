@@ -33,7 +33,7 @@ import (
 
 var EmptyObjectCid cid.Cid
 
-const testGasLimit = 5_000_000_000
+const defaultGasLimit = 5_000_000_000
 
 // Context for an individual message invocation, including inter-actor sends.
 type invocationContext struct {
@@ -49,10 +49,6 @@ type invocationContext struct {
 	// Used for detecting modifications to state outside of transactions.
 	stateUsedObjs map[cbor.Marshaler]cid.Cid
 	stats         *CallStats
-	// Gas trackign fields
-	gasPrices    runtime.Pricelist
-	gasUsed      int64
-	gasAvailable int64
 }
 
 // Context for a top-level invocation sequence
@@ -62,9 +58,28 @@ type topLevelContext struct {
 	newActorAddressCount    uint64          // Count of calls to NewActorAddress (mutable).
 	statsSource             StatsSource     // optional source of external statistics that can be used to profile calls
 	circSupply              abi.TokenAmount // default or externally specified circulating FIL supply
+	// Gas tracking fields
+	gasPrices    Pricelist
+	gasUsed      int64
+	gasAvailable int64
 }
 
-func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid, gasUsed int64, gasPrices runtime.Pricelist) invocationContext {
+func (tc *topLevelContext) chargeGas(gas GasCharge) {
+	toUse := gas.Total()
+	if tc.gasUsed > tc.gasAvailable-toUse {
+		gasUsed := tc.gasUsed
+		tc.gasUsed = tc.gasAvailable
+		panic(
+			abort{
+				exitcode.SysErrOutOfGas,
+				fmt.Sprintf("not enough gas: used=%d, available=%d, attempt to use=%d", gasUsed, tc.gasAvailable, toUse),
+			},
+		)
+	}
+	tc.gasUsed += toUse
+}
+
+func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage, fromActor *states.Actor, emptyObject cid.Cid) invocationContext {
 	// Note: the toActor and stateHandle are loaded during the `invoke()`
 	return invocationContext{
 		rt:               rt,
@@ -77,9 +92,6 @@ func newInvocationContext(rt *VM, topLevel *topLevelContext, msg InternalMessage
 		callerValidated:  false,
 		stateUsedObjs:    map[cbor.Marshaler]cid.Cid{},
 		stats:            vm2.NewCallStats(topLevel.statsSource),
-		gasUsed:          gasUsed,
-		gasAvailable:     testGasLimit,
-		gasPrices:        gasPrices,
 	}
 }
 
@@ -118,21 +130,6 @@ func (ic *invocationContext) storeActor(actr *states.Actor) {
 	}
 }
 
-func (ic *invocationContext) chargeGas(gas runtime.GasCharge) {
-	toUse := gas.Total()
-	if ic.gasUsed > ic.gasAvailable-toUse {
-		gasUsed := ic.gasUsed
-		ic.gasUsed = ic.gasAvailable
-		panic(
-			abort{
-				exitcode.SysErrOutOfGas,
-				fmt.Sprintf("not enough gas: used=%d, available=%d, attempt to use=%d", gasUsed, ic.gasAvailable, toUse),
-			},
-		)
-	}
-	ic.gasUsed += toUse
-}
-
 /////////////////////////////////////////////
 //          Runtime methods
 /////////////////////////////////////////////
@@ -141,7 +138,7 @@ var _ runtime.Runtime = (*invocationContext)(nil)
 
 // Store implements runtime.Runtime.
 func (ic *invocationContext) StoreGet(c cid.Cid, o cbor.Unmarshaler) bool {
-	ic.chargeGas(ic.gasPrices.OnIpldGet())
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnIpldGet())
 	sw := &storeWrapper{s: ic.rt.store, rt: ic.rt}
 	return sw.StoreGet(c, o)
 }
@@ -155,7 +152,7 @@ func (ic *invocationContext) StorePut(x cbor.Marshaler) cid.Cid {
 	if err != nil {
 		ic.rt.Abortf(exitcode.ErrIllegalState, "could not put object in store")
 	}
-	ic.chargeGas(ic.gasPrices.OnIpldPut(len(buf.Bytes())))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnIpldPut(len(buf.Bytes())))
 	sw := &storeWrapper{s: ic.rt.store, rt: ic.rt}
 	return sw.StorePut(x)
 }
@@ -214,26 +211,26 @@ func (ic *invocationContext) StateTransaction(obj cbor.Er, f func()) {
 }
 
 func (ic *invocationContext) VerifySignature(signature crypto.Signature, signer address.Address, plaintext []byte) error {
-	charge, err := ic.gasPrices.OnVerifySignature(signature.Type, len(plaintext))
+	charge, err := ic.topLevel.gasPrices.OnVerifySignature(signature.Type, len(plaintext))
 	if err != nil {
 		return err
 	}
-	ic.chargeGas(charge)
+	ic.topLevel.chargeGas(charge)
 	return ic.Syscalls().VerifySignature(signature, signer, plaintext)
 }
 
 func (ic *invocationContext) HashBlake2b(data []byte) [32]byte {
-	ic.chargeGas(ic.gasPrices.OnHashing(len(data)))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnHashing(len(data)))
 	return ic.Syscalls().HashBlake2b(data)
 }
 
 func (ic *invocationContext) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error) {
-	ic.chargeGas(ic.gasPrices.OnComputeUnsealedSectorCid(reg, pieces))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnComputeUnsealedSectorCid(reg, pieces))
 	return ic.Syscalls().ComputeUnsealedSectorCID(reg, pieces)
 }
 
 func (ic *invocationContext) VerifySeal(vi proof.SealVerifyInfo) error {
-	ic.chargeGas(ic.gasPrices.OnVerifySeal(vi))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifySeal(vi))
 	return ic.Syscalls().VerifySeal(vi)
 }
 
@@ -247,12 +244,12 @@ func (ic *invocationContext) VerifyAggregateSeals(agg proof.AggregateSealVerifyP
 }
 
 func (ic *invocationContext) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
-	ic.chargeGas(ic.gasPrices.OnVerifyPost(vi))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifyPost(vi))
 	return ic.Syscalls().VerifyPoSt(vi)
 }
 
 func (ic *invocationContext) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
-	ic.chargeGas(ic.gasPrices.OnVerifyConsensusFault())
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifyConsensusFault())
 	return ic.Syscalls().VerifyConsensusFault(h1, h2, extra)
 }
 
@@ -386,10 +383,10 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 		params: params,
 	}
 
-	newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, fromActor, ic.emptyObject, ic.gasUsed, ic.gasPrices)
+	newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, fromActor, ic.emptyObject)
 	ret, code := newCtx.invoke()
 
-	ic.gasUsed = newCtx.gasUsed
+	ic.topLevel.gasUsed = newCtx.topLevel.gasUsed
 	ic.stats.MergeSubStat(newCtx.toActor.Code, newMsg.method, newCtx.stats)
 
 	err = ret.Into(out)
@@ -401,7 +398,7 @@ func (ic *invocationContext) Send(toAddr address.Address, methodNum abi.MethodNu
 
 // CreateActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
-	ic.chargeGas(ic.gasPrices.OnCreateActor())
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnCreateActor())
 	act, ok := ic.rt.ActorImpls[codeID]
 	if !ok {
 		ic.Abortf(exitcode.SysErrorIllegalArgument, "Can only create built-in actors.")
@@ -436,7 +433,7 @@ func (ic *invocationContext) CreateActor(codeID cid.Cid, addr address.Address) {
 
 // deleteActor implements runtime.ExtendedInvocationContext.
 func (ic *invocationContext) DeleteActor(beneficiary address.Address) {
-	ic.chargeGas(ic.gasPrices.OnDeleteActor())
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnDeleteActor())
 	receiver := ic.msg.to
 	receiverActor, found, err := ic.rt.GetActor(receiver)
 	if err != nil {
@@ -467,7 +464,7 @@ func (ic *invocationContext) Context() context.Context {
 }
 
 func (ic *invocationContext) ChargeGas(name string, compute int64, virtual int64) {
-	ic.chargeGas(runtime.GasCharge{
+	ic.topLevel.chargeGas(GasCharge{
 		Name:           name,
 		ComputeGas:     compute,
 		VirtualCompute: virtual,
@@ -645,7 +642,7 @@ func (ic *invocationContext) invoke() (ret returnWrapper, errcode exitcode.ExitC
 	ic.toActor, ic.msg.to = ic.resolveTarget(ic.msg.to)
 
 	// 3. charge gas for method invocation
-	ic.chargeGas(ic.gasPrices.OnMethodInvocation(ic.msg.value, ic.msg.method))
+	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnMethodInvocation(ic.msg.value, ic.msg.method))
 
 	// 4. transfer funds carried by the msg
 	if !ic.msg.value.NilOrZero() {
@@ -816,10 +813,10 @@ func (ic *invocationContext) resolveTarget(target address.Address) (*states.Acto
 			params: &target,
 		}
 
-		newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, nil, ic.emptyObject, ic.gasUsed, ic.gasPrices)
+		newCtx := newInvocationContext(ic.rt, ic.topLevel, newMsg, nil, ic.emptyObject)
 		_, code := newCtx.invoke()
 
-		ic.gasUsed = newCtx.gasUsed
+		ic.topLevel.gasUsed = newCtx.topLevel.gasUsed
 		ic.stats.MergeSubStat(builtin.InitActorCodeID, builtin.MethodsAccount.Constructor, newCtx.stats)
 
 		if code.IsError() {

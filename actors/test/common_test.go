@@ -41,8 +41,8 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 			},
 		}},
 	}
-	ret, code, _ := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
-	require.Equal(t, exitcode.Ok, code)
+	result := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams)
+	require.Equal(t, exitcode.Ok, result.Code)
 
 	expectedPublishSubinvocations := []vm.ExpectInvocation{
 		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm.ExpectInvocation{}},
@@ -64,5 +64,5 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 		SubInvocations: expectedPublishSubinvocations,
 	}.Matches(t, v.LastInvocation())
 
-	return ret.(*market.PublishStorageDealsReturn)
+	return result.Ret.(*market.PublishStorageDealsReturn)
 }

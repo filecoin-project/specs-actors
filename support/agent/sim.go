@@ -155,15 +155,15 @@ func (s *Sim) Tick() error {
 
 	// run messages
 	for _, msg := range blockMessages {
-		ret, code, _ := s.v.ApplyMessage(msg.From, msg.To, msg.Value, msg.Method, msg.Params)
+		result := s.v.ApplyMessage(msg.From, msg.To, msg.Value, msg.Method, msg.Params)
 
 		// for now, assume everything should work
-		if code != exitcode.Ok {
-			return errors.Errorf("exitcode %d: message failed: %v\n%s\n", code, msg, strings.Join(s.v.GetLogs(), "\n"))
+		if result.Code != exitcode.Ok {
+			return errors.Errorf("exitcode %d: message failed: %v\n%s\n", result.Code, msg, strings.Join(s.v.GetLogs(), "\n"))
 		}
 
 		if msg.ReturnHandler != nil {
-			if err := msg.ReturnHandler(s, msg, ret); err != nil {
+			if err := msg.ReturnHandler(s, msg, result.Ret); err != nil {
 				return err
 			}
 		}
@@ -185,9 +185,9 @@ func (s *Sim) Tick() error {
 	}
 
 	// run cron
-	_, code, _ := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	if code != exitcode.Ok {
-		return errors.Errorf("exitcode %d: cron message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
+	result := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	if result.Code != exitcode.Ok {
+		return errors.Errorf("exitcode %d: cron message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
 	}
 
 	// store last stats
@@ -315,9 +315,9 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 		GasReward: big.Zero(),
 		WinCount:  int64(wins),
 	}
-	_, code, _ := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.AwardBlockReward, &rewardParams)
-	if code != exitcode.Ok {
-		return errors.Errorf("exitcode %d: reward message failed:\n%s\n", code, strings.Join(s.v.GetLogs(), "\n"))
+	result := s.v.ApplyMessage(builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.AwardBlockReward, &rewardParams)
+	if result.Code != exitcode.Ok {
+		return errors.Errorf("exitcode %d: reward message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
 	}
 	return nil
 }
@@ -441,7 +441,7 @@ type PowerTable struct {
 
 // VM interface allowing a simulation to operate over multiple VM versions
 type SimVM interface {
-	ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (cbor.Marshaler, exitcode.ExitCode, int64)
+	ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) vm.MessageResult
 	GetCirculatingSupply() abi.TokenAmount
 	GetLogs() []string
 	GetState(addr address.Address, out cbor.Unmarshaler) error
