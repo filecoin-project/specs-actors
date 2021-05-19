@@ -1230,6 +1230,13 @@ func TestCCUpgrade(t *testing.T) {
 }
 
 func TestWindowPost(t *testing.T) {
+	// Remove this nasty static/global access when policy is encapsulated in a structure.
+	// See https://github.com/filecoin-project/specs-actors/issues/353.
+	miner.WindowPoStProofTypes[abi.RegisteredPoStProof_StackedDrgWindow2KiBV1] = struct{}{}
+	defer func() {
+		delete(miner.WindowPoStProofTypes, abi.RegisteredPoStProof_StackedDrgWindow2KiBV1)
+	}()
+
 	periodOffset := abi.ChainEpoch(100)
 	actor := newHarness(t, periodOffset)
 	actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
