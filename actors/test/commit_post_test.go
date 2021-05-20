@@ -11,8 +11,11 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
@@ -372,7 +375,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := 100
-	sectorNumbers, _ := preCommitSectors(t, v, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo)
+	precommits := preCommitSectors(t, v, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -394,7 +397,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 		for i := 0; i < sectorsToProveThisCron; i++ {
 			// Prove commit sector at a valid epoch
 			proveCommitParams := miner.ProveCommitSectorParams{
-				SectorNumber: sectorNumbers[i+sectorsProven],
+				SectorNumber: precommits[i+sectorsProven].Info.SectorNumber,
 			}
 			vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
@@ -413,14 +416,14 @@ func TestMeasurePoRepGas(t *testing.T) {
 		proveCommitKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.ProveCommitSector}
 		stats := v.GetCallStats()
 		fmt.Printf("\n--------------------- Batch %d ---------------------\n", crons)
-		printCallStats(proveCommitKey, stats[proveCommitKey], "\n")
+		printCallStats(proveCommitKey, stats[proveCommitKey], "")
 
 		// In the same epoch, trigger cron to validate prove commits
 		vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 		crons += 1
 		cronKey := vm.MethodKey{Code: builtin.CronActorCodeID, Method: builtin.MethodsCron.EpochTick}
 		stats = v.GetCallStats()
-		printCallStats(cronKey, stats[cronKey], "\n")
+		printCallStats(cronKey, stats[cronKey], "")
 
 		vm.ExpectInvocation{
 			To:     builtin.CronActorAddr,
@@ -439,7 +442,6 @@ func TestMeasurePoRepGas(t *testing.T) {
 				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
 			},
 		}.Matches(t, v.Invocations()[sectorsProven+crons-1])
-
 	}
 
 	// precommit deposit is released, ipr is added
@@ -451,7 +453,6 @@ func TestMeasurePoRepGas(t *testing.T) {
 	networkStats := vm.GetNetworkStats(t, v)
 	assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
-
 }
 
 func TestAggregateOnePreCommitExpires(t *testing.T) {
@@ -484,19 +485,15 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	firstSectorNo := 100
 	// early precommit
 	earlyPreCommitTime := v.GetEpoch()
-	earlySectorNumbers, _ := preCommitSectors(t, v, 1, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo)
+	earlyPrecommits := preCommitSectors(t, v, 1, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	earlyPreCommitInvalid := earlyPreCommitTime + miner.MaxProveCommitDuration[sealProof] + abi.ChainEpoch(1)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
-	laterSectorNumbers, _ := preCommitSectorsCronActive(t, v, 2, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1)
-	sectorNumbers := append(earlySectorNumbers, laterSectorNumbers...)
-	intSectorNumbers := make([]uint64, len(sectorNumbers))
-	for i := range sectorNumbers {
-		intSectorNumbers[i] = uint64(sectorNumbers[i])
-	}
-	sectorNosBf := bitfield.NewFromSet(intSectorNumbers)
+	laterPrecommits := preCommitSectors(t, v, 2, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
+	allPrecommits := append(earlyPrecommits, laterPrecommits...)
+	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
 	// Advance minimum epochs past later precommits for later commits to be valid
 	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + abi.ChainEpoch(1)
@@ -529,7 +526,6 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 }
 
 func TestMeasureAggregatePorepGas(t *testing.T) {
-
 	batchSize := 819
 	fmt.Printf("batch size = %d\n", batchSize)
 
@@ -562,7 +558,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := 100
-	sectorNumbers, _ := preCommitSectors(t, v, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo)
+	precommits := preCommitSectors(t, v, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -575,11 +571,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	//
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
-	intSectorNumbers := make([]uint64, len(sectorNumbers))
-	for i := range sectorNumbers {
-		intSectorNumbers[i] = uint64(sectorNumbers[i])
-	}
-	sectorNosBf := bitfield.NewFromSet(intSectorNumbers)
+	sectorNosBf := precommitSectorNumbers(precommits)
 
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
@@ -599,14 +591,14 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 
 	proveCommitAggrKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.ProveCommitAggregate}
 	stats := v.GetCallStats()
-	printCallStats(proveCommitAggrKey, stats[proveCommitAggrKey], "\n")
+	printCallStats(proveCommitAggrKey, stats[proveCommitAggrKey], "")
 
 	// In the same epoch, trigger cron to
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	cronKey := vm.MethodKey{Code: builtin.CronActorCodeID, Method: builtin.MethodsCron.EpochTick}
 	stats = v.GetCallStats()
-	printCallStats(cronKey, stats[cronKey], "\n")
+	printCallStats(cronKey, stats[cronKey], "")
 
 	vm.ExpectInvocation{
 		To:     builtin.CronActorAddr,
@@ -630,85 +622,69 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	networkStats := vm.GetNetworkStats(t, v)
 	assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
-
 }
 
-func preCommitSectorsCronActive(t *testing.T, v *vm.VM, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase int) ([]abi.SectorNumber, []*miner.SectorPreCommitOnChainInfo) {
-	precommits := []*miner.SectorPreCommitOnChainInfo{}
-	sectorNumbers := []abi.SectorNumber{}
-
-	invocs := []vm.ExpectInvocation{
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-	}
-
-	for i := 0; i < batchSize; i++ {
-		sectorNumber := abi.SectorNumber(sectorNumberBase + i)
-		precommit := preCommitSector(t, v, worker, mAddr, sealProof, sectorNumber, invocs)
-		precommits = append(precommits, precommit)
-		sectorNumbers = append(sectorNumbers, sectorNumber)
-	}
-	return sectorNumbers, precommits
-}
-
-func preCommitSectors(t *testing.T, v *vm.VM, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase int) ([]abi.SectorNumber, []*miner.SectorPreCommitOnChainInfo) {
-	precommits := []*miner.SectorPreCommitOnChainInfo{}
-	sectorNumbers := []abi.SectorNumber{}
-
+func preCommitSectors(t *testing.T, v *vm.VM, count int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof,
+	sectorNumberBase int, expectCronEnrollment bool) []*miner.SectorPreCommitOnChainInfo {
 	invocsCommon := []vm.ExpectInvocation{
 		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 	}
 	invocsFirst := append(invocsCommon, vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent})
 
-	for i := 0; i < batchSize; i++ {
+	var precommits []*miner.SectorPreCommitOnChainInfo
+	for i := 0; i < count; i++ {
 		invocs := invocsCommon
-		if i == 0 {
+		if expectCronEnrollment && i == 0 {
 			invocs = invocsFirst
 		}
+		// Prepare message.
 		sectorNumber := abi.SectorNumber(sectorNumberBase + i)
-		precommit := preCommitSector(t, v, worker, mAddr, sealProof, sectorNumber, invocs)
-		precommits = append(precommits, precommit)
-		sectorNumbers = append(sectorNumbers, sectorNumber)
-	}
-	return sectorNumbers, precommits
+		sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
+		preCommitParams := miner.PreCommitSectorBatchParams{Sectors: []*miner0.SectorPreCommitInfo{
+			&miner0.SectorPreCommitInfo{
+				SealProof:     sealProof,
+				SectorNumber:  sectorNumber,
+				SealedCID:     sealedCid,
+				SealRandEpoch: v.GetEpoch() - 1,
+				DealIDs:       nil,
+				Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+			},
+		},
+		}
+		vm.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+		vm.ExpectInvocation{
+			To:             mAddr,
+			Method:         builtin.MethodsMiner.PreCommitSector,
+			Params:         vm.ExpectObject(&preCommitParams),
+			SubInvocations: invocs,
+		}.Matches(t, v.LastInvocation())
 
+		// Extract chain state.
+		var minerState miner.State
+		err := v.GetState(mAddr, &minerState)
+		require.NoError(t, err)
+
+		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumber)
+		require.NoError(t, err)
+		require.True(t, found)
+		precommits = append(precommits, precommit)
+	}
+	return precommits
 }
 
-func preCommitSector(t *testing.T, v *vm.VM, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumber abi.SectorNumber, invocs []vm.ExpectInvocation) *miner.SectorPreCommitOnChainInfo {
-	sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
-
-	preCommitParams := miner.PreCommitSectorParams{
-		SealProof:     sealProof,
-		SectorNumber:  sectorNumber,
-		SealedCID:     sealedCid,
-		SealRandEpoch: v.GetEpoch() - 1,
-		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+// Returns a bitfield of the sector numbers from a collection pre-committed sectors.
+func precommitSectorNumbers(precommits []*miner.SectorPreCommitOnChainInfo) bitfield.BitField {
+	intSectorNumbers := make([]uint64, len(precommits))
+	for i := range precommits {
+		intSectorNumbers[i] = uint64(precommits[i].Info.SectorNumber)
 	}
-	vm.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
-
-	// assert successful precommit invocation
-	vm.ExpectInvocation{
-		To:             mAddr,
-		Method:         builtin.MethodsMiner.PreCommitSector,
-		Params:         vm.ExpectObject(&preCommitParams),
-		SubInvocations: invocs,
-	}.Matches(t, v.LastInvocation())
-
-	// find information about precommited sector
-	var minerState miner.State
-	err := v.GetState(mAddr, &minerState)
-	require.NoError(t, err)
-
-	precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumber)
-	require.NoError(t, err)
-	require.True(t, found)
-	return precommit
+	return bitfield.NewFromSet(intSectorNumbers)
 }
 
 func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { // nolint:unused
-	fmt.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  read: %d  written: %d  avg gets: %.2f, avg puts: %.2f\n",
+	p := message.NewPrinter(language.English) // For readable large numbers
+	_, _ = p.Printf("%s%v:%d: calls: %d  gets: %d  puts: %d  read: %d  written: %d  avg gets: %.2f, avg puts: %.2f\n",
 		indent, builtin.ActorNameByCode(method.Code), method.Method, stats.Calls, stats.Reads, stats.Writes,
 		stats.ReadBytes, stats.WriteBytes, float32(stats.Reads)/float32(stats.Calls),
 		float32(stats.Writes)/float32(stats.Calls))
@@ -721,7 +697,7 @@ func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { /
 
 	ipldGas := stats.Reads*gasGetObj + stats.Writes*gasPutObj + stats.WriteBytes*gasPutPerByte*gasStorageMultiplier
 	callGas := stats.Calls * gasPerCall
-	fmt.Printf("%v:%d: ipld gas=%d call gas=%d\n", builtin.ActorNameByCode(method.Code), method.Method, ipldGas, callGas)
+	_, _ = p.Printf("%s%v:%d: ipld gas: %d call gas: %d\n", indent, builtin.ActorNameByCode(method.Code), method.Method, ipldGas, callGas)
 
 	if stats.SubStats == nil {
 		return
