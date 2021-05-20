@@ -63,7 +63,19 @@ jobs:
       - run:
           name: "Ensure we don't need to run 'make gen'"
           command: |
-             make gen && go mod tidy && git diff --exit-code
+            make gen && go mod tidy && git diff --exit-code
+
+  check-determinism:
+    executor: golang
+    steps: 
+      - install-deps
+      - prepare
+      - go/mod-download
+      - run:
+          name: "Check for execution determinism"
+          command: make determinism-check
+      - store_artifacts:
+          path: specs-actors
 
   test-all:
     executor: golang
@@ -127,3 +139,4 @@ workflows:
       - build-all
       - test-all
       - check-gen
+      - check-determinism

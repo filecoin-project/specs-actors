@@ -19,6 +19,7 @@ import (
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
+	mh "github.com/multiformats/go-multihash"
 	"github.com/pkg/errors"
 
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
@@ -34,6 +35,10 @@ import (
 var EmptyObjectCid cid.Cid
 
 const defaultGasLimit = 5_000_000_000
+
+// This is set to match the test vector default randomness value
+// https://github.com/filecoin-project/test-vectors/blob/master/schema/schema_randomness.go#L76
+const RandString = "i_am_random_____i_am_random_____"
 
 // Context for an individual message invocation, including inter-actor sends.
 type invocationContext struct {
@@ -62,6 +67,8 @@ type topLevelContext struct {
 	gasPrices    Pricelist
 	gasUsed      int64
 	gasAvailable int64
+	// Temporary field to workaround test-vector limitations
+	fakeSyscallsAccessed bool
 }
 
 func (tc *topLevelContext) chargeGas(gas GasCharge) {
@@ -216,39 +223,47 @@ func (ic *invocationContext) VerifySignature(signature crypto.Signature, signer 
 		return err
 	}
 	ic.topLevel.chargeGas(charge)
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().VerifySignature(signature, signer, plaintext)
 }
 
 func (ic *invocationContext) HashBlake2b(data []byte) [32]byte {
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnHashing(len(data)))
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().HashBlake2b(data)
 }
 
 func (ic *invocationContext) ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error) {
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnComputeUnsealedSectorCid(reg, pieces))
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().ComputeUnsealedSectorCID(reg, pieces)
 }
 
 func (ic *invocationContext) VerifySeal(vi proof.SealVerifyInfo) error {
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifySeal(vi))
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().VerifySeal(vi)
 }
 
 func (ic *invocationContext) BatchVerifySeals(vis map[address.Address][]proof.SealVerifyInfo) (map[address.Address][]bool, error) {
 	// no explicit gas charged
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().BatchVerifySeals(vis)
 }
 
 func (ic *invocationContext) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInfos) error {
+	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().VerifyAggregateSeals(agg)
 }
 
 func (ic *invocationContext) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
+	ic.topLevel.fakeSyscallsAccessed = true
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifyPost(vi))
 	return ic.Syscalls().VerifyPoSt(vi)
 }
 
 func (ic *invocationContext) VerifyConsensusFault(h1, h2, extra []byte) (*runtime.ConsensusFault, error) {
+	ic.topLevel.fakeSyscallsAccessed = true
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifyConsensusFault())
 	return ic.Syscalls().VerifyConsensusFault(h1, h2, extra)
 }
@@ -289,11 +304,11 @@ func (ic *invocationContext) GetActorCodeCID(a address.Address) (cid.Cid, bool) 
 }
 
 func (ic *invocationContext) GetRandomnessFromBeacon(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
-	return []byte("not really random")
+	return []byte(RandString)
 }
 
 func (ic *invocationContext) GetRandomnessFromTickets(_ crypto.DomainSeparationTag, _ abi.ChainEpoch, _ []byte) abi.Randomness {
-	return []byte("not really random")
+	return []byte(RandString)
 }
 
 func (ic *invocationContext) ValidateImmediateCallerAcceptAny() {
@@ -340,11 +355,7 @@ func (ic *invocationContext) ResolveAddress(address address.Address) (address.Ad
 func (ic *invocationContext) NewActorAddress() address.Address {
 	var buf bytes.Buffer
 
-	b1, err := ic.topLevel.originatorStableAddress.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	_, err = buf.Write(b1)
+	err := ic.topLevel.originatorStableAddress.MarshalCBOR(&buf)
 	if err != nil {
 		panic(err)
 	}
@@ -523,8 +534,16 @@ func (s fakeSyscalls) HashBlake2b(b []byte) [32]byte {
 	return blake2b.Sum256(b)
 }
 
+// Prefix for testing unsealed sector CIDs (CommD).
+var UnsealedCIDPrefix = cid.Prefix{
+	Version:  1,
+	Codec:    cid.FilCommitmentUnsealed,
+	MhType:   mh.POSEIDON_BLS12_381_A1_FC1,
+	MhLength: 32,
+}
+
 func (s fakeSyscalls) ComputeUnsealedSectorCID(_ abi.RegisteredSealProof, _ []abi.PieceInfo) (cid.Cid, error) {
-	return testing.MakeCID("presealedSectorCID", nil), nil
+	return testing.MakeCID("presealedSectorCID", &UnsealedCIDPrefix), nil
 }
 
 func (s fakeSyscalls) VerifySeal(_ proof.SealVerifyInfo) error {

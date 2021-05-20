@@ -20,6 +20,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
 type MinerAgentConfig struct {
@@ -449,7 +450,7 @@ func (ma *MinerAgent) submitPoStForDeadline(v SimState, dlIdx uint64) ([]message
 			ProofBytes: []byte{},
 		}},
 		ChainCommitEpoch: v.GetEpoch() - 1,
-		ChainCommitRand:  []byte("not really random"),
+		ChainCommitRand:  []byte(vm.RandString),
 	}
 
 	return []message{{

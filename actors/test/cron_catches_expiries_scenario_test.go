@@ -19,7 +19,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
 
-var fakeChainRandomness = []byte("not really random")
+var fakeChainRandomness = []byte(vm.RandString)
 
 func TestCronCatchedCCExpirationsAtDeadlineBoundary(t *testing.T) {
 	ctx := context.Background()

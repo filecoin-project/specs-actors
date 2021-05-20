@@ -64,7 +64,8 @@ func TestMultisigDeleteSelf2Of3RemovedIsProposer(t *testing.T) {
 	vm.ApplyOk(t, v, addrs[1], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
 
 	// txnid not found when third approval gets processed indicating that the transaction has gone through successfully
-	result := v.ApplyMessage(addrs[2], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
+	result, err := v.ApplyMessage(addrs[2], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams, t.Name())
+	require.NoError(t, err)
 	assert.Equal(t, exitcode.ErrNotFound, result.Code)
 
 }
@@ -115,7 +116,8 @@ func TestMultisigDeleteSelf2Of3RemovedIsApprover(t *testing.T) {
 	vm.ApplyOk(t, v, addrs[0], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
 
 	// txnid not found when third approval gets processed indicating that the transaction has gone through successfully
-	result := v.ApplyMessage(addrs[2], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
+	result, err := v.ApplyMessage(addrs[2], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams, t.Name())
+	require.NoError(t, err)
 	assert.Equal(t, exitcode.ErrNotFound, result.Code)
 
 }
@@ -124,7 +126,6 @@ func TestMultisigDeleteSelf2Of2(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
-
 	multisigParams := multisig.ConstructorParams{
 		Signers:               addrs,
 		NumApprovalsThreshold: 2,
@@ -138,7 +139,7 @@ func TestMultisigDeleteSelf2Of2(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
@@ -165,7 +166,8 @@ func TestMultisigDeleteSelf2Of2(t *testing.T) {
 	vm.ApplyOk(t, v, addrs[1], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
 
 	// txnid not found when another approval gets processed indicating that the transaction has gone through successfully
-	result := v.ApplyMessage(addrs[1], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams)
+	result, err := v.ApplyMessage(addrs[1], multisigAddr, big.Zero(), builtin.MethodsMultisig.Approve, &approveRemoveSignerParams, t.Name())
+	require.NoError(t, err)
 	assert.Equal(t, exitcode.ErrNotFound, result.Code)
 }
 

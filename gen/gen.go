@@ -236,6 +236,8 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./support/vm/cbor_gen.go", "vm",
 		vm.ChainMessage{},
+		vm.StateInfo0{},
+		vm.StateRoot{},
 	); err != nil {
 		panic(err)
 	}

@@ -3,7 +3,10 @@ package vm
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -69,8 +72,8 @@ type InternalMessage struct {
 type ChainMessage struct {
 	Version uint64
 
-	From address.Address
 	To   address.Address
+	From address.Address
 
 	Nonce uint64
 
@@ -340,8 +343,23 @@ type MessageResult struct {
 	GasCharged int64
 }
 
-// ApplyMessage applies the message to the current state.
-func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) MessageResult {
+func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, info string) (MessageResult, error) {
+	vectorGen := newVectorGen()
+
+	if err := vectorGen.before(vm, info); err != nil {
+		return MessageResult{}, err
+	}
+
+	result, callSeq, fakesAccessed := vm.applyMessageInternal(from, to, value, method, params)
+	if err := vectorGen.after(vm, from, to, value, method, params, callSeq, result, fakesAccessed, info); err != nil {
+		return MessageResult{}, err
+	}
+	return result, nil
+}
+
+// ApplyMessage applies the message to the current state. It returns result of message application, callSeqNum
+// used during application and whether a fake syscall was accessed during invocation
+func (vm *VM) applyMessageInternal(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (MessageResult, uint64, bool) {
 	// This method does not actually execute the message itself,
 	// but rather deals with the pre/post processing of a message.
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
@@ -350,7 +368,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// load actor from global state
 	fromID, ok := vm.NormalizeAddress(from)
 	if !ok {
-		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}, 0, false
 	}
 
 	fromActor, found, err := vm.GetActor(fromID)
@@ -359,27 +377,27 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	}
 	if !found {
 		// Execution error; sender does not exist at time of message execution.
-		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}, 0, false
+	}
+
+	// send
+	// 1. update state tree nonce
+	// 2. checkpoint state with updated nonce
+	// 3. build chain message and charge gas
+	// 4. build internal message
+	// 5. build invocation context
+	// 6. process the msg
+	callSeq := fromActor.CallSeqNum
+	fromActor.CallSeqNum = callSeq + 1
+	if err := vm.setActor(context.Background(), fromID, fromActor); err != nil {
+		panic(err)
 	}
 
 	// checkpoint state
 	// Even if the message fails, the following accumulated changes will be applied:
 	// - CallSeqNumber increment
-	// - sender balance withheld
 	priorRoot, err := vm.checkpoint()
 	if err != nil {
-		panic(err)
-	}
-
-	// send
-	// 1. update state tree nonce
-	// 2. build chain message and charge gas
-	// 3. build internal message
-	// 4. build invocation context
-	// 5. process the msg
-	callSeq := fromActor.CallSeqNum
-	fromActor.CallSeqNum = callSeq + 1
-	if err := vm.setActor(context.Background(), fromID, fromActor); err != nil {
 		panic(err)
 	}
 
@@ -397,14 +415,14 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 
 	topLevel := topLevelContext{
 		originatorStableAddress: from,
-		// this should be nonce, but we only care that it creates a unique stable address
-		originatorCallSeq:    callSeq,
-		newActorAddressCount: 0,
-		statsSource:          vm.statsSource,
-		circSupply:           vm.circSupply,
-		gasUsed:              msgGasCharge,
-		gasPrices:            vm.gasPrices,
-		gasAvailable:         defaultGasLimit,
+		originatorCallSeq:       callSeq,
+		newActorAddressCount:    0,
+		statsSource:             vm.statsSource,
+		circSupply:              vm.circSupply,
+		gasUsed:                 msgGasCharge,
+		gasPrices:               vm.gasPrices,
+		gasAvailable:            defaultGasLimit,
+		fakeSyscallsAccessed:    false,
 	}
 
 	// build internal msg
@@ -448,7 +466,7 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	retGasCharge := vm.gasPrices.OnChainReturnValue(len(retBuf.Bytes()))
 	gasCharged = retGasCharge.Total() + ctx.topLevel.gasUsed
 
-	return MessageResult{ret.inner, exitCode, gasCharged}
+	return MessageResult{ret.inner, exitCode, gasCharged}, callSeq, ctx.topLevel.fakeSyscallsAccessed
 }
 
 func (vm *VM) StateRoot() cid.Cid {
@@ -690,4 +708,120 @@ func (msg InternalMessage) Caller() address.Address {
 // Receiver implements runtime.MessageInfo.
 func (msg InternalMessage) Receiver() address.Address {
 	return msg.to
+}
+
+//
+// Test Vector generation utilities
+//
+
+type vectorGen struct {
+	conformanceDir string
+	determinismDir string
+	vector         TestVector
+}
+
+func newVectorGen() *vectorGen {
+	// check environment variables to determine if generation is on
+	conformanceDir := os.Getenv("SPECS_ACTORS_CONFORMANCE")
+	determinismDir := os.Getenv("SPECS_ACTORS_DETERMINISM")
+	return &vectorGen{
+		conformanceDir: conformanceDir,
+		determinismDir: determinismDir,
+	}
+}
+
+func (g *vectorGen) determinism() bool {
+	return g.determinismDir != ""
+}
+
+func (g *vectorGen) conformance() bool {
+	return g.conformanceDir != ""
+}
+
+func (g *vectorGen) before(v *VM, info string) error {
+	if g.determinism() || g.conformance() {
+		// Set test vector pre application conditions
+		startOpts := StartConditions(v, info)
+		for _, opt := range startOpts {
+			if err := opt(&(g.vector)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (g *vectorGen) after(v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, callSeq uint64, result MessageResult, fakesAccessed bool, info string) error {
+	if !g.conformance() && !g.determinism() {
+		return nil
+	}
+	// Set test vector message and post application conditions
+	if err := SetMessage(from, to, callSeq, value, method, params)(&(g.vector)); err != nil {
+		return err
+	}
+	if err := SetEndStateTree(v.StateRoot(), v.store)(&(g.vector)); err != nil {
+		return err
+	}
+	if err := SetReceipt(result)(&(g.vector)); err != nil {
+		return err
+	}
+	b, err := (&(g.vector)).MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	fromID, _ := v.NormalizeAddress(from)
+	toID, _ := v.NormalizeAddress(to)
+	act, _, _ := v.GetActor(toID)
+	actName := strings.Split(builtin.ActorNameByCode(act.Code), "/")[2]
+
+	h := sha256.Sum256(b)
+	fname := fmt.Sprintf("%x-%s-%s-%s-%d.json", string(h[:]), fromID, toID, actName, method)
+
+	// Write conformance test-vectors
+	if g.conformance() && !fakesAccessed {
+		dir := g.conformanceDir + "/" + info
+		exists, err := dirExists(dir)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+		}
+		if err := os.WriteFile(dir+"/"+fname, b, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Write determinism test-vectors
+	if g.determinism() {
+		dir := g.determinismDir + "/" + info
+		exists, err := dirExists(dir)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+		}
+		if err := os.WriteFile(dir+"/"+fname, b, 0755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dirExists returns whether the given file or directory exists
+func dirExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
