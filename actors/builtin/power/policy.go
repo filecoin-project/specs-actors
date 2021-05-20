@@ -8,7 +8,7 @@ import (
 const ConsensusMinerMinMiners = 3
 
 // Minimum power of an individual miner to meet the threshold for leader election.
-var ConsensusMinerMinPower = abi.NewStoragePower(1 << 40) // PARAM_FINISH
+var ConsensusMinerMinPower = abi.NewStoragePower(10 << 40)
 
 // Maximum number of prove commits a miner can submit in one epoch
 //
