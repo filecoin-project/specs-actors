@@ -17,15 +17,15 @@ const EpochsInFiveYears = stabi.ChainEpoch(5 * EpochsInYear)
 var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	stabi.RegisteredSealProof_StackedDrg2KiBV1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(0),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg8MiBV1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(16 << 20),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg512MiBV1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(1 << 30),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg32GiBV1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
@@ -33,20 +33,20 @@ var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	},
 	stabi.RegisteredSealProof_StackedDrg64GiBV1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(20 << 40),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 
 	stabi.RegisteredSealProof_StackedDrg2KiBV1_1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(0),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg8MiBV1_1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(16 << 20),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg512MiBV1_1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(1 << 30),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredSealProof_StackedDrg32GiBV1_1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
@@ -54,7 +54,7 @@ var SealProofPolicies = map[stabi.RegisteredSealProof]*SealProofPolicy{
 	},
 	stabi.RegisteredSealProof_StackedDrg64GiBV1_1: {
 		SectorMaxLifetime:      EpochsInFiveYears,
-		ConsensusMinerMinPower: stabi.NewStoragePower(20 << 40),
+		ConsensusMinerMinPower: stabi.NewStoragePower(10 << 40),
 	},
 }
 
