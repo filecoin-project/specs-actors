@@ -2580,7 +2580,7 @@ func (t *PreCommitSectorBatchParams) MarshalCBOR(w io.Writer) error {
 
 	scratch := make([]byte, 9)
 
-	// t.Sectors ([]*miner.SectorPreCommitInfo) (slice)
+	// t.Sectors ([]miner.SectorPreCommitInfo) (slice)
 	if len(t.Sectors) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Sectors was too long")
 	}
@@ -2614,7 +2614,7 @@ func (t *PreCommitSectorBatchParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Sectors ([]*miner.SectorPreCommitInfo) (slice)
+	// t.Sectors ([]miner.SectorPreCommitInfo) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -2630,7 +2630,7 @@ func (t *PreCommitSectorBatchParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Sectors = make([]*miner.SectorPreCommitInfo, extra)
+		t.Sectors = make([]miner.SectorPreCommitInfo, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
@@ -2640,7 +2640,7 @@ func (t *PreCommitSectorBatchParams) UnmarshalCBOR(r io.Reader) error {
 			return err
 		}
 
-		t.Sectors[i] = &v
+		t.Sectors[i] = v
 	}
 
 	return nil

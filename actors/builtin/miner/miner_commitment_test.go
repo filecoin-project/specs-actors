@@ -515,7 +515,7 @@ func TestPreCommitBatch(t *testing.T) {
 			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
 			dealLifespan := sectorExpiration - proveCommitEpoch
 
-			sectors := make([]*miner0.SectorPreCommitInfo, batchSize)
+			sectors := make([]miner0.SectorPreCommitInfo, batchSize)
 			conf := preCommitBatchConf{
 				sectorWeights: make([]market.SectorWeights, batchSize),
 				firstForMiner: true,
@@ -526,7 +526,7 @@ func TestPreCommitBatch(t *testing.T) {
 				if len(test.deals) > i {
 					deals = test.deals[i]
 				}
-				sectors[i] = actor.makePreCommit(sectorNos[i], precommitEpoch-1, sectorExpiration, deals.IDs)
+				sectors[i] = *actor.makePreCommit(sectorNos[i], precommitEpoch-1, sectorExpiration, deals.IDs)
 
 				dealSpace := deals.size + deals.verifiedSize
 				dealWeight := big.Mul(big.NewIntUnsigned(deals.size), big.NewInt(int64(dealLifespan)))
@@ -599,10 +599,10 @@ func TestPreCommitBatch(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
-		sectors := []*miner0.SectorPreCommitInfo{
-			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
-			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
-			actor.makePreCommit(102, precommitEpoch-1, rt.Epoch(), nil), // Expires too soon
+		sectors := []miner0.SectorPreCommitInfo{
+			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			*actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
+			*actor.makePreCommit(102, precommitEpoch-1, rt.Epoch(), nil), // Expires too soon
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sector expiration", func() {
@@ -621,10 +621,10 @@ func TestPreCommitBatch(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
-		sectors := []*miner0.SectorPreCommitInfo{
-			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
-			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
-			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+		sectors := []miner0.SectorPreCommitInfo{
+			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			*actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
+			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 		}
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "duplicate sector number 100", func() {
 			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
@@ -758,10 +758,10 @@ func TestProveCommit(t *testing.T) {
 
 		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
 
-		sectors := []*miner0.SectorPreCommitInfo{
-			actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
-			actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, []abi.DealID{1}),    // 1 * 32GiB verified deal
-			actor.makePreCommit(102, precommitEpoch-1, sectorExpiration, []abi.DealID{2, 3}), // 2 * 16GiB verified deals
+		sectors := []miner0.SectorPreCommitInfo{
+			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
+			*actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, []abi.DealID{1}),    // 1 * 32GiB verified deal
+			*actor.makePreCommit(102, precommitEpoch-1, sectorExpiration, []abi.DealID{2, 3}), // 2 * 16GiB verified deals
 		}
 
 		dealSpace := uint64(32 << 30)
