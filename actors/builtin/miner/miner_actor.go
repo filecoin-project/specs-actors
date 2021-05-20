@@ -650,13 +650,13 @@ type PreCommitSectorParams = miner0.SectorPreCommitInfo
 // This method may be deprecated and removed in the future.
 func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.EmptyValue {
 	// This is a direct method call to self, not a message send.
-	batchParams := &PreCommitSectorBatchParams{Sectors: []*miner0.SectorPreCommitInfo{params}}
+	batchParams := &PreCommitSectorBatchParams{Sectors: []miner0.SectorPreCommitInfo{*params}}
 	a.PreCommitSectorBatch(rt, batchParams)
 	return nil
 }
 
 type PreCommitSectorBatchParams struct {
-	Sectors []*miner0.SectorPreCommitInfo
+	Sectors []miner0.SectorPreCommitInfo
 }
 
 // Pledges the miner to seal and commit some new sectors.
@@ -782,7 +782,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 			}
 
 			if precommit.ReplaceCapacity {
-				validateReplaceSector(rt, &st, store, precommit)
+				validateReplaceSector(rt, &st, store, &precommit)
 			}
 
 			// Estimate the sector weight using the current epoch as an estimate for activation,
@@ -794,7 +794,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 
 			// Build on-chain record.
 			chainInfos[i] = &SectorPreCommitOnChainInfo{
-				Info:               SectorPreCommitInfo(*precommit),
+				Info:               SectorPreCommitInfo(precommit),
 				PreCommitDeposit:   depositReq,
 				PreCommitEpoch:     currEpoch,
 				DealWeight:         dealWeight.DealWeight,
