@@ -481,7 +481,7 @@ func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, b
 
 func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) cbor.Marshaler {
 	result := v.ApplyMessage(from, to, value, method, params)
-	require.Equal(t, exitcode.Ok, result.Code)
+	require.Equal(t, exitcode.Ok, result.Code, "unexpected exit code")
 	return result.Ret
 }
 

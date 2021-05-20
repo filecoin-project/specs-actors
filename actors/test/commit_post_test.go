@@ -341,6 +341,63 @@ func TestCommitPoStFlow(t *testing.T) {
 	})
 }
 
+func TestMeasurePreCommitGas(t *testing.T) {
+	// Number of sectors to pre-commit in each test.
+	// We don't expect miners to have very large collections of outstanding pre-commits, but should
+	// model at least the number for a maximally-aggregated prove-commit.
+	// Smaller numbers show a much greater improvement to batching.
+	sectorCount := 1000
+
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
+	v.SetStatsSource(metrics)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	minerBalance := big.Mul(big.NewInt(100_000), vm.FIL)
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+
+	// Create miner
+	params := power.CreateMinerParams{
+		Owner:               addrs[0],
+		Worker:              addrs[0],
+		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Peer:                abi.PeerID("not really a peer id"),
+	}
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	minerAddrs, ok := ret.(*power.CreateMinerReturn)
+	require.True(t, ok)
+
+	// Advance vm so we can have seal randomness epoch in the past
+	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	// Note that the miner's pre-committed sector HAMT will increase in size and depth over the course of this
+	// test, making later operations slightly more expensive.
+	// The expected state of this structure is to have not many sectors in it.
+	statsKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.PreCommitSectorBatch}
+	p := message.NewPrinter(language.English)
+	_, _ = p.Printf("Sector count\t%d\n", sectorCount)
+	_, _ = p.Printf("Batch size\tIPLD cost\tCalls cost\tTotal per sector\tTotal per batch\n")
+	for batchSize := 1; batchSize <= miner.PreCommitSectorBatchMaxSize; batchSize *= 2 {
+		// Clone the VM so each batch get the same starting state.
+		tv, err := v.WithEpoch(v.GetEpoch())
+		require.NoError(t, err)
+		firstSectorNo := sectorCount * batchSize
+		preCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+
+		stats := tv.GetCallStats()
+		precommitStats := stats[statsKey]
+		ipldCost := ipldGas(precommitStats)
+		callCost := callGas(precommitStats)
+		perSector := (ipldCost + callCost) / uint64(sectorCount)
+		perBatch := perSector * uint64(batchSize)
+		_, _ = p.Printf("%d\t%d\t%d\t%d\t%d\n", batchSize, ipldCost, callCost, perSector, perBatch)
+	}
+	fmt.Println()
+}
+
 func TestMeasurePoRepGas(t *testing.T) {
 	sectorCount := 819
 	fmt.Printf("Batch Size = %d\n", sectorCount)
@@ -640,13 +697,12 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 		}
 
 		// Prepare message.
-		params := miner.PreCommitSectorBatchParams{Sectors: make([]*miner0.SectorPreCommitInfo, batchSize)}
+		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
 		for j := 0; j < batchSize && sectorIndex < count; j++ {
 			sectorNumber := abi.SectorNumber(sectorNumberBase + sectorIndex)
 			sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
-			params.Sectors[j] = &miner0.SectorPreCommitInfo{
-				SealProof:
-				sealProof,
+			params.Sectors[j] = miner0.SectorPreCommitInfo{
+				SealProof:     sealProof,
 				SectorNumber:  sectorNumber,
 				SealedCID:     sealedCid,
 				SealRandEpoch: v.GetEpoch() - 1,
@@ -699,15 +755,8 @@ func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { /
 		stats.ReadBytes, stats.WriteBytes, float32(stats.Reads)/float32(stats.Calls),
 		float32(stats.Writes)/float32(stats.Calls))
 
-	gasGetObj := uint64(75242)
-	gasPutObj := uint64(84070)
-	gasPutPerByte := uint64(1)
-	gasStorageMultiplier := uint64(1300)
-	gasPerCall := uint64(29233)
-
-	ipldGas := stats.Reads*gasGetObj + stats.Writes*gasPutObj + stats.WriteBytes*gasPutPerByte*gasStorageMultiplier
-	callGas := stats.Calls * gasPerCall
-	_, _ = p.Printf("%s%v:%d: ipld gas: %d call gas: %d\n", indent, builtin.ActorNameByCode(method.Code), method.Method, ipldGas, callGas)
+	_, _ = p.Printf("%s%v:%d: ipld gas: %d call gas: %d\n", indent, builtin.ActorNameByCode(method.Code), method.Method,
+		ipldGas(stats), callGas(stats))
 
 	if stats.SubStats == nil {
 		return
@@ -716,6 +765,19 @@ func printCallStats(method vm.MethodKey, stats *vm.CallStats, indent string) { /
 	for m, s := range stats.SubStats {
 		printCallStats(m, s, indent+"  ")
 	}
+}
+
+func ipldGas(stats *vm.CallStats) uint64 {
+	gasGetObj := uint64(75242)
+	gasPutObj := uint64(84070)
+	gasPutPerByte := uint64(1)
+	gasStorageMultiplier := uint64(1300)
+	return stats.Reads*gasGetObj + stats.Writes*gasPutObj + stats.WriteBytes*gasPutPerByte*gasStorageMultiplier
+}
+
+func callGas(stats *vm.CallStats) uint64 {
+	gasPerCall := uint64(29233)
+	return stats.Calls * gasPerCall
 }
 
 // Using gas params from filecoin v12 and assumptions about parameters to ProveCommitAggregate print an estimate
