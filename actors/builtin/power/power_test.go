@@ -97,11 +97,11 @@ func TestCreateMinerFailures(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 
 		createMinerParams := &power.CreateMinerParams{
-			Owner:                owner,
-			Worker:               owner,
-			WindowPoStProofType:  windowPoStProofType,
-			Peer:                 peer,
-			Multiaddrs:           mAddr,
+			Owner:               owner,
+			Worker:              owner,
+			WindowPoStProofType: windowPoStProofType,
+			Peer:                peer,
+			Multiaddrs:          mAddr,
 		}
 
 		// owner send CreateMiner to Actor
@@ -333,8 +333,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 			expectedMiners int64
 		}{{
 			version:        network.Version7,
-			proof:          abi.RegisteredPoStProof_StackedDrgWindow2KiBV1, // 2K sectors have zero consensus minimum
-			expectedMiners: 1,
+			proof:          abi.RegisteredPoStProof_StackedDrgWindow2KiBV1,
+			expectedMiners: 0,
 		}, {
 			version:        network.Version7,
 			proof:          abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
@@ -415,7 +415,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("consensus minimum power depends on proof type", func(t *testing.T) {
+	t.Run("power gets added when miner crosses minPower but not before", func(t *testing.T) {
 		// Setup four miners above threshold
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -435,21 +435,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		expectedTotal := mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
-		// miner 5 uses 64GiB sectors and has a higher minimum
-		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
-			nil, abi.RegisteredPoStProof_StackedDrgWindow64GiBV1, big.Zero())
-
-		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredPoStProof_StackedDrgWindow64GiBV1)
-		require.NoError(t, err)
-		assert.True(t, power64Unit.GreaterThan(powerUnit))
+		actor.createMinerBasic(rt, owner, owner, miner5)
+		belowLimitUnit := big.Div(powerUnit, big.NewInt(2))
 
 		// below limit actors power is not added
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner5, belowLimitUnit, belowLimitUnit)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
 		// just below limit
-		delta := big.Subtract(power64Unit, powerUnit, big.NewInt(1))
+		delta := big.Subtract(powerUnit, belowLimitUnit, big.NewInt(1))
 		actor.updateClaimedPower(rt, miner5, delta, delta)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
@@ -457,7 +452,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// at limit power is added
 		actor.updateClaimedPower(rt, miner5, big.NewInt(1), big.NewInt(1))
 		actor.expectMinersAboveMinPower(rt, 5)
-		newExpectedTotal := big.Add(expectedTotal, power64Unit)
+		newExpectedTotal := big.Add(expectedTotal, powerUnit)
 		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
 		actor.checkState(rt)
 	})
@@ -1083,18 +1078,18 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 
 type spActorHarness struct {
 	power.Actor
-	t                *testing.T
-	minerSeq         int
-	sealProof        abi.RegisteredSealProof
-	windowPoStProof  abi.RegisteredPoStProof
+	t               *testing.T
+	minerSeq        int
+	sealProof       abi.RegisteredSealProof
+	windowPoStProof abi.RegisteredPoStProof
 }
 
 func newHarness(t *testing.T) *spActorHarness {
 	return &spActorHarness{
-		Actor:            power.Actor{},
-		t:                t,
-		sealProof:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-		windowPoStProof:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Actor:           power.Actor{},
+		t:               t,
+		sealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+		windowPoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 	}
 }
 
@@ -1159,11 +1154,11 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	prevMinerCount := st.MinerCount
 
 	createMinerParams := &power.CreateMinerParams{
-		Owner:                owner,
-		Worker:               worker,
-		WindowPoStProofType:  windowPoStProofType,
-		Peer:                 peer,
-		Multiaddrs:           multiaddrs,
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: windowPoStProofType,
+		Peer:                peer,
+		Multiaddrs:          multiaddrs,
 	}
 
 	// owner send CreateMiner to Actor
@@ -1349,11 +1344,11 @@ func (h *spActorHarness) checkState(rt *mock.Runtime) {
 
 func initCreateMinerBytes(t testing.TB, owner, worker addr.Address, peer abi.PeerID, multiaddrs []abi.Multiaddrs, windowPoStProofType abi.RegisteredPoStProof) []byte {
 	params := &power.MinerConstructorParams{
-		OwnerAddr:            owner,
-		WorkerAddr:           worker,
-		WindowPoStProofType:  windowPoStProofType,
-		PeerId:               peer,
-		Multiaddrs:           multiaddrs,
+		OwnerAddr:           owner,
+		WorkerAddr:          worker,
+		WindowPoStProofType: windowPoStProofType,
+		PeerId:              peer,
+		Multiaddrs:          multiaddrs,
 	}
 
 	buf := new(bytes.Buffer)
