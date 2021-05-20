@@ -309,6 +309,13 @@ func TestCommitments(t *testing.T) {
 	})
 
 	t.Run("fails with too many deals", func(t *testing.T) {
+		// Remove this nasty static/global access when policy is encapsulated in a structure.
+		// See https://github.com/filecoin-project/specs-actors/issues/353.
+		miner.WindowPoStProofTypes[abi.RegisteredPoStProof_StackedDrgWindow2KiBV1] = struct{}{}
+		defer func() {
+			delete(miner.WindowPoStProofTypes, abi.RegisteredPoStProof_StackedDrgWindow2KiBV1)
+		}()
+
 		setup := func(proof abi.RegisteredSealProof) (*mock.Runtime, *actorHarness, *dline.Info) {
 			actor := newHarness(t, periodOffset)
 			actor.setProofType(proof)

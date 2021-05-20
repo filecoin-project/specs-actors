@@ -103,6 +103,10 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
+	if !CanWindowPoStProof(params.WindowPoStProofType) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.WindowPoStProofType)
+	}
+
 	owner := resolveControlAddress(rt, params.OwnerAddr)
 	worker := resolveWorkerAddress(rt, params.WorkerAddr)
 	controlAddrs := make([]addr.Address, 0, len(params.ControlAddrs))
@@ -333,6 +337,15 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 	store := adt.AsStore(rt)
 	var st State
 
+	// Verify that the miner has passed exactly 1 proof.
+	if len(params.Proofs) != 1 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
+	}
+
+	if !CanWindowPoStProof(params.Proofs[0].PoStProof) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed", params.Proofs[0].PoStProof)
+	}
+
 	if params.Deadline >= WPoStPeriodDeadlines {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
@@ -352,14 +365,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
-		// Verify that the miner has passed exactly 1 proof.
-		if len(params.Proofs) != 1 {
-			rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
-		}
-
 		// Make sure the miner is using the correct proof type.
 		if params.Proofs[0].PoStProof != info.WindowPoStProofType {
-			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %s, got proof of type %s", info.WindowPoStProofType, params.Proofs[0])
+			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %d, got proof of type %d", info.WindowPoStProofType, params.Proofs[0])
 		}
 
 		// Make sure the proof size doesn't exceed the max. We could probably check for an exact match, but this is safer.

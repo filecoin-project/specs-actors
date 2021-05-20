@@ -1230,16 +1230,22 @@ func TestCCUpgrade(t *testing.T) {
 }
 
 func TestWindowPost(t *testing.T) {
-	periodOffset := abi.ChainEpoch(100)
-	actor := newHarness(t, periodOffset)
-	actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
-	precommitEpoch := abi.ChainEpoch(1)
-	builder := builderForHarness(actor).
-		WithEpoch(precommitEpoch).
-		WithBalance(bigBalance, big.Zero())
+	// Remove this nasty static/global access when policy is encapsulated in a structure.
+	// See https://github.com/filecoin-project/specs-actors/issues/353.
+	miner.WindowPoStProofTypes[abi.RegisteredPoStProof_StackedDrgWindow2KiBV1] = struct{}{}
+	defer func() {
+		delete(miner.WindowPoStProofTypes, abi.RegisteredPoStProof_StackedDrgWindow2KiBV1)
+	}()
 
-	testBasicPoSt := func(disputeSucceed bool) {
-		proofs := makePoStProofs(actor.windowPostProofType)
+	periodOffset := abi.ChainEpoch(100)
+	precommitEpoch := abi.ChainEpoch(1)
+
+	t.Run("basic PoSt and dispute", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		builder := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero())
 
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -1247,21 +1253,17 @@ func TestWindowPost(t *testing.T) {
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
 		pwr := miner.PowerForSector(actor.sectorSize, sector)
 
+		// Skip to the right deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
 		require.NoError(t, err)
-
-		// Skip over deadlines until the beginning of the one with the new sector
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
-		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
+		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
 			expectedPowerDelta: pwr,
 		})
 
@@ -1289,43 +1291,279 @@ func TestWindowPost(t *testing.T) {
 		// Proofs should exist in snapshot.
 		require.Equal(t, deadline.OptimisticPoStSubmissionsSnapshot, postsCid)
 
+		// Try a failed dispute.
 		var result *poStDisputeResult
-		if disputeSucceed {
-			expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
-			result = &poStDisputeResult{
-				expectedPowerDelta:  pwr.Neg(),
-				expectedPenalty:     expectedFee,
-				expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
-				expectedPledgeDelta: big.Zero(),
-			}
+		actor.disputeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
+
+		// Now a successful dispute.
+		expectedFee := miner.PledgePenaltyForInvalidWindowPoSt(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwr.QA)
+		result = &poStDisputeResult{
+			expectedPowerDelta:  pwr.Neg(),
+			expectedPenalty:     expectedFee,
+			expectedReward:      miner.BaseRewardForDisputedWindowPoSt,
+			expectedPledgeDelta: big.Zero(),
 		}
 		actor.disputeWindowPoSt(rt, dlinfo, 0, []*miner.SectorOnChainInfo{sector}, result)
-	}
-
-	t.Run("test proof", func(t *testing.T) {
-		testBasicPoSt(true)
 	})
 
-	t.Run("test bad proof accepted and disputed", func(t *testing.T) {
-		testBasicPoSt(false)
-	})
-
-	t.Run("test duplicate proof rejected", func(t *testing.T) {
-		rt := builder.Build(t)
+	t.Run("invalid submissions", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
 		pwr := miner.PowerForSector(actor.sectorSize, sector)
 
+		// Skip to the due deadline.
+		dlIdx, pIdx, err := getState(rt).FindSector(store, sector.SectorNumber)
+		require.NoError(t, err)
+		dlInfo := advanceToDeadline(rt, actor, dlIdx)
+
+		// Invalid deadline.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline", func() {
+			partitions := []miner.PoStPartition{{Index: pIdx, Skipped: bf()}}
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         miner.WPoStPeriodDeadlines,
+				Partitions:       partitions,
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// No partitions.
+		// This is a weird message because we don't check this precondition explicitly.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "expected proof to be smaller", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Too many partitions.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too many partitions", func() {
+			partitions := []miner.PoStPartition{
+				{Index: pIdx, Skipped: bf()},
+				{Index: pIdx + 1, Skipped: bf()},
+				{Index: pIdx + 2, Skipped: bf()},
+				{Index: pIdx + 3, Skipped: bf()},
+				{Index: pIdx + 4, Skipped: bf()},
+			}
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       partitions,
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Invalid partition index.
+		rt.ExpectAbortContainsMessage(exitcode.ErrNotFound, "no such partition", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx + 1, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Skip sectors that don't exist.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "skipped faults contains sectors outside partition", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf(123)}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Empty proofs array.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "expected exactly one proof", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           []proof.PoStProof{},
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Invalid proof type
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "proof type 6 not allowed", func() {
+			proofs := makePoStProofs(abi.RegisteredPoStProof_StackedDrgWindow8MiBV1)
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           proofs,
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Unexpected proof type
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "expected proof of type", func() {
+			proofs := makePoStProofs(abi.RegisteredPoStProof_StackedDrgWindow64GiBV1)
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           proofs,
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Proof too large
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "expected proof to be smaller", func() {
+			proofs := makePoStProofs(actor.windowPostProofType)
+			proofs[0].ProofBytes = make([]byte, 192+1)
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           proofs,
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Invalid randomness type
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "bytes of randomness", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("123456789012345678901234567890123"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Deadline not open.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid deadline 2 at epoch", func() {
+			rt.SetEpoch(rt.Epoch() + miner.WPoStChallengeWindow)
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge + miner.WPoStProvingPeriod/2,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.SetEpoch(dlInfo.CurrentEpoch)
+		rt.Reset()
+
+		// Chain commit epoch too old.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "expected chain commit epoch", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge - 1,
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Chain commit epoch too new.
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must be less than the current epoch", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: rt.Epoch(),
+				ChainCommitRand:  abi.Randomness("chaincommitment"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Mismatched randomness
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "randomness mismatched", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("boo"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params,
+				&poStConfig{chainRandomness: abi.Randomness("far")})
+		})
+		rt.Reset()
+
+		// Skip all the sectors
+		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "no active sectors", func() {
+			params := miner.SubmitWindowedPoStParams{
+				Deadline:         dlInfo.Index,
+				Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf(uint64(sector.SectorNumber))}},
+				Proofs:           makePoStProofs(actor.windowPostProofType),
+				ChainCommitEpoch: dlInfo.Challenge,
+				ChainCommitRand:  abi.Randomness("boo"),
+			}
+			actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, nil)
+		})
+		rt.Reset()
+
+		// Demonstrate the good params are good.
+		params := miner.SubmitWindowedPoStParams{
+			Deadline:         dlIdx,
+			Partitions:       []miner.PoStPartition{{Index: pIdx, Skipped: bf()}},
+			Proofs:           makePoStProofs(actor.windowPostProofType),
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  abi.Randomness("chaincommitment"),
+		}
+		actor.submitWindowPoStRaw(rt, dlInfo, []*miner.SectorOnChainInfo{sector}, &params, &poStConfig{
+			expectedPowerDelta: pwr,
+		})
+		rt.Verify()
+	})
+
+	t.Run("test duplicate proof rejected", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		actor.constructAndVerify(rt)
+		store := rt.AdtStore()
+		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
+		pwr := miner.PowerForSector(actor.sectorSize, sector)
+
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
 		require.NoError(t, err)
-
-		// Skip over deadlines until the beginning of the one with the new sector
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
@@ -1370,7 +1608,12 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("test duplicate proof rejected with many partitions", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		// Commit more sectors than fit in one partition in every eligible deadline, overflowing to a second partition.
@@ -1378,17 +1621,13 @@ func TestWindowPost(t *testing.T) {
 		sectors := actor.commitAndProveSectors(rt, int(sectorsToCommit), defaultSectorExpiration, nil, true)
 		lastSector := sectors[len(sectors)-1]
 
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, lastSector.SectorNumber)
 		require.NoError(t, err)
 		require.Equal(t, uint64(2), dlIdx) // Deadlines 0 and 1 are empty (no PoSt needed) because excluded by proximity
 		require.Equal(t, uint64(1), pIdx)  // Overflowed from partition 0 to partition 1
-
-		// Skip over deadlines until the beginning of the one with two partitions
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		{
 			// Submit PoSt for partition 0 on its own.
@@ -1442,8 +1681,12 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("successful recoveries recover power", func(t *testing.T) {
-		rt := builder.Build(t)
-
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)
 		pwr := miner.PowerForSectors(actor.sectorSize, infos)
@@ -1508,25 +1751,25 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("skipped faults adjust power", func(t *testing.T) {
-		rt := builder.Build(t)
-
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil, true)
 
 		actor.applyRewards(rt, bigRewards, big.Zero())
 
-		// advance to epoch when submitPoSt is due
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
 		dlIdx2, pIdx2, err := st.FindSector(rt.AdtStore(), infos[1].SectorNumber)
 		require.NoError(t, err)
 		assert.Equal(t, dlIdx, dlIdx2) // this test will need to change when these are not equal
-
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// Now submit PoSt with a skipped fault for first sector
 		// First sector's power should not be activated.
@@ -1575,14 +1818,18 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("skipping all sectors in a partition rejected", func(t *testing.T) {
-		rt := builder.Build(t)
-
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil, true)
 
 		actor.applyRewards(rt, bigRewards, big.Zero())
 
-		// advance to epoch when submitPoSt is due
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
@@ -1590,11 +1837,7 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, dlIdx, dlIdx2) // this test will need to change when these are not equal
 		assert.Equal(t, pIdx, pIdx2)   // this test will need to change when these are not equal
-
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// PoSt with all sectors skipped fails to validate, leaving power un-activated.
 		partitions := []miner.PoStPartition{
@@ -1611,8 +1854,12 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("skipped recoveries are penalized and do not recover power", func(t *testing.T) {
-		rt := builder.Build(t)
-
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		infos := actor.commitAndProveSectors(rt, 2, defaultSectorExpiration, nil, true)
 
@@ -1635,11 +1882,8 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(infos[0].SectorNumber)), big.Zero())
 
-		// advance to epoch when submitPoSt is due
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		// Skip to the due deadline.
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// Now submit PoSt and skip recovered sector.
 		// No power should be returned
@@ -1658,29 +1902,29 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("skipping a fault from the wrong partition is an error", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 
 		// create enough sectors that one will be in a different partition
 		n := 95
 		infos := actor.commitAndProveSectors(rt, n, defaultSectorExpiration, nil, true)
 
-		// add lots of funds so we can pay penalties without going into debt
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx0, pIdx0, err := st.FindSector(rt.AdtStore(), infos[0].SectorNumber)
 		require.NoError(t, err)
 		dlIdx1, pIdx1, err := st.FindSector(rt.AdtStore(), infos[n-1].SectorNumber)
 		require.NoError(t, err)
+		dlinfo := advanceToDeadline(rt, actor, dlIdx0)
 
 		// if these assertions no longer hold, the test must be changed
 		require.LessOrEqual(t, dlIdx0, dlIdx1)
 		require.NotEqual(t, pIdx0, pIdx1)
-
-		// advance to deadline when sector is due
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx0 {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
 
 		// Now submit PoSt for partition 1 and skip sector from other partition
 		cfg := &poStConfig{
@@ -1696,29 +1940,28 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("cannot dispute posts when the challenge window is open", func(t *testing.T) {
-		proofs := makePoStProofs(actor.windowPostProofType)
-
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
 		pwr := miner.PowerForSector(actor.sectorSize, sector)
 
+		// Skip to the due deadline.
 		st := getState(rt)
 		dlIdx, pIdx, err := st.FindSector(store, sector.SectorNumber)
 		require.NoError(t, err)
-
-		// Skip over deadlines until the beginning of the one with the new sector
-		dlinfo := actor.deadline(rt)
-		for dlinfo.Index != dlIdx {
-			dlinfo = advanceDeadline(rt, actor, &cronConfig{})
-		}
+		dlinfo := advanceToDeadline(rt, actor, dlIdx)
 
 		// Submit PoSt
 		partitions := []miner.PoStPartition{
 			{Index: pIdx, Skipped: bitfield.New()},
 		}
-		actor.submitWindowPoStRaw(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, proofs, &poStConfig{
+		actor.submitWindowPoSt(rt, dlinfo, partitions, []*miner.SectorOnChainInfo{sector}, &poStConfig{
 			expectedPowerDelta: pwr,
 		})
 
@@ -1739,7 +1982,12 @@ func TestWindowPost(t *testing.T) {
 		rt.Verify()
 	})
 	t.Run("can dispute up till window end, but not after", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 		store := rt.AdtStore()
 		sector := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)[0]
@@ -1795,7 +2043,12 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("can't dispute up with an invalid deadline", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 
 		params := miner.DisputeWindowedPoStParams{
@@ -1813,7 +2066,12 @@ func TestWindowPost(t *testing.T) {
 	})
 
 	t.Run("can dispute test after proving period changes", func(t *testing.T) {
-		rt := builder.Build(t)
+		actor := newHarness(t, periodOffset)
+		actor.setProofType(abi.RegisteredSealProof_StackedDrg2KiBV1_1)
+		rt := builderForHarness(actor).
+			WithEpoch(precommitEpoch).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
 		actor.constructAndVerify(rt)
 
 		periodStart := actor.deadline(rt).NextPeriodStart()
@@ -4271,7 +4529,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 
 		// Proof types and metadata initialized in setProofType
 		periodOffset: provingPeriodOffset,
-		nextSectorNo: 100,
+		nextSectorNo: 0,
 
 		networkPledge:   big.Mul(rwd, big.NewIntUnsigned(1000)),
 		networkRawPower: pwr,
@@ -5148,18 +5406,30 @@ func (h *actorHarness) disputeWindowPoSt(rt *mock.Runtime, deadline *dline.Info,
 }
 
 type poStConfig struct {
+	chainRandomness    abi.Randomness
 	expectedPowerDelta miner.PowerPair
 	verificationError  error
 }
 
 func (h *actorHarness) submitWindowPoSt(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, poStCfg *poStConfig) {
-	h.submitWindowPoStRaw(rt, deadline, partitions, infos, makePoStProofs(h.windowPostProofType), poStCfg)
+	params := miner.SubmitWindowedPoStParams{
+		Deadline:         deadline.Index,
+		Partitions:       partitions,
+		Proofs:           makePoStProofs(h.windowPostProofType),
+		ChainCommitEpoch: deadline.Challenge,
+		ChainCommitRand:  abi.Randomness("chaincommitment"),
+	}
+	h.submitWindowPoStRaw(rt, deadline, infos, &params, poStCfg)
 }
 
-func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Info, partitions []miner.PoStPartition, infos []*miner.SectorOnChainInfo, proofs []proof.PoStProof, poStCfg *poStConfig) {
+func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Info,
+	infos []*miner.SectorOnChainInfo, params *miner.SubmitWindowedPoStParams, poStCfg *poStConfig) {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	commitRand := abi.Randomness("chaincommitment")
-	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, deadline.Challenge, nil, commitRand)
+	chainCommitRand := params.ChainCommitRand
+	if poStCfg != nil && len(poStCfg.chainRandomness) > 0 {
+		chainCommitRand = poStCfg.chainRandomness
+	}
+	rt.ExpectGetRandomnessTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil, chainCommitRand)
 
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
@@ -5169,17 +5439,17 @@ func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Inf
 	allIgnored := bf()
 	allRecovered := bf()
 	dln := h.getDeadline(rt, deadline.Index)
-
-	for _, p := range partitions {
-		partition := h.getPartition(rt, dln, p.Index)
-		expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
-		require.NoError(h.t, err)
-		allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
-		require.NoError(h.t, err)
-		recovered, err := bitfield.SubtractBitField(partition.Recoveries, p.Skipped)
-		require.NoError(h.t, err)
-		allRecovered, err = bitfield.MergeBitFields(allRecovered, recovered)
-		require.NoError(h.t, err)
+	for _, p := range params.Partitions {
+		if partition, err := dln.LoadPartition(rt.AdtStore(), p.Index); err == nil {
+			expectedFaults, err := bitfield.SubtractBitField(partition.Faults, partition.Recoveries)
+			require.NoError(h.t, err)
+			allIgnored, err = bitfield.MultiMerge(allIgnored, expectedFaults, p.Skipped)
+			require.NoError(h.t, err)
+			recovered, err := bitfield.SubtractBitField(partition.Recoveries, p.Skipped)
+			require.NoError(h.t, err)
+			allRecovered, err = bitfield.MergeBitFields(allRecovered, recovered)
+			require.NoError(h.t, err)
+		}
 	}
 	optimistic, err := allRecovered.IsEmpty()
 	require.NoError(h.t, err)
@@ -5225,7 +5495,7 @@ func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Inf
 
 		vi := proof.WindowPoStVerifyInfo{
 			Randomness:        abi.PoStRandomness(challengeRand),
-			Proofs:            proofs,
+			Proofs:            params.Proofs,
 			ChallengedSectors: proofInfos,
 			Prover:            abi.ActorID(actorId),
 		}
@@ -5238,7 +5508,7 @@ func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Inf
 
 	if poStCfg != nil {
 		// expect power update
-		if !poStCfg.expectedPowerDelta.IsZero() {
+		if !poStCfg.expectedPowerDelta.Raw.NilOrZero() || !poStCfg.expectedPowerDelta.QA.NilOrZero() {
 			claim := &power.UpdateClaimedPowerParams{
 				RawByteDelta:         poStCfg.expectedPowerDelta.Raw,
 				QualityAdjustedDelta: poStCfg.expectedPowerDelta.QA,
@@ -5248,15 +5518,7 @@ func (h *actorHarness) submitWindowPoStRaw(rt *mock.Runtime, deadline *dline.Inf
 		}
 	}
 
-	params := miner.SubmitWindowedPoStParams{
-		Deadline:         deadline.Index,
-		Partitions:       partitions,
-		Proofs:           proofs,
-		ChainCommitEpoch: deadline.Challenge,
-		ChainCommitRand:  commitRand,
-	}
-
-	rt.Call(h.a.SubmitWindowedPoSt, &params)
+	rt.Call(h.a.SubmitWindowedPoSt, params)
 	rt.Verify()
 }
 
@@ -5713,6 +5975,15 @@ func advanceDeadline(rt *mock.Runtime, h *actorHarness, config *cronConfig) *dli
 	st = getState(rt)
 
 	return st.DeadlineInfo(rt.Epoch())
+}
+
+// Advances one deadline at a time until the opening  of the next instance of a deadline index.
+func advanceToDeadline(rt *mock.Runtime, h *actorHarness, dlIdx uint64) *dline.Info {
+	dlinfo := h.deadline(rt)
+	for dlinfo.Index != dlIdx {
+		dlinfo = advanceDeadline(rt, h, &cronConfig{})
+	}
+	return dlinfo
 }
 
 func advanceToEpochWithCron(rt *mock.Runtime, h *actorHarness, e abi.ChainEpoch) {

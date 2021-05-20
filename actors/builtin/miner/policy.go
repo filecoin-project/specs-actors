@@ -114,7 +114,20 @@ var SealedCIDPrefix = cid.Prefix{
 	MhLength: 32,
 }
 
-// List of proof types which may be used when creating a new miner actor or pre-committing a new sector.
+// List of proof types which may be used when creating a new miner actor.
+// This is mutable to allow configuration of testing and development networks.
+var WindowPoStProofTypes = map[abi.RegisteredPoStProof]struct{}{
+	abi.RegisteredPoStProof_StackedDrgWindow32GiBV1: {},
+	abi.RegisteredPoStProof_StackedDrgWindow64GiBV1: {},
+}
+
+// Checks whether a PoSt proof type is supported for new miners.
+func CanWindowPoStProof(s abi.RegisteredPoStProof) bool {
+	_, ok := WindowPoStProofTypes[s]
+	return ok
+}
+
+// List of proof types which may be used when pre-committing a new sector.
 // This is mutable to allow configuration of testing and development networks.
 // From network version 8, sectors sealed with the V1 seal proof types cannot be committed.
 var PreCommitSealProofTypesV8 = map[abi.RegisteredSealProof]struct{}{
