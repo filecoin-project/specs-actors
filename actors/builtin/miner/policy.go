@@ -81,7 +81,7 @@ const DeclarationsMax = AddressedPartitionsMax
 
 // The maximum number of sector infos that can be loaded in a single invocation.
 // This limits the amount of state to be read in a single message execution.
-const AddressedSectorsMax = 10_000 // PARAM_SPEC
+const AddressedSectorsMax = 25_000 // PARAM_SPEC
 
 // Libp2p peer info limits.
 const (
