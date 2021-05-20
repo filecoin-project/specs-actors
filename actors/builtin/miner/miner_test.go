@@ -1352,12 +1352,9 @@ func TestWindowPost(t *testing.T) {
 
 		// Too many partitions.
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too many partitions", func() {
-			partitions := []miner.PoStPartition{
-				{Index: pIdx, Skipped: bf()},
-				{Index: pIdx + 1, Skipped: bf()},
-				{Index: pIdx + 2, Skipped: bf()},
-				{Index: pIdx + 3, Skipped: bf()},
-				{Index: pIdx + 4, Skipped: bf()},
+			partitions := make([]miner.PoStPartition, 11)
+			for i, p := range partitions {
+				p.Index = pIdx + uint64(i)
 			}
 			params := miner.SubmitWindowedPoStParams{
 				Deadline:         dlInfo.Index,
