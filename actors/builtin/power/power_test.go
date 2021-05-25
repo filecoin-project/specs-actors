@@ -330,8 +330,8 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 			proof          abi.RegisteredPoStProof
 			expectedMiners int64
 		}{{
-			proof:          abi.RegisteredPoStProof_StackedDrgWindow2KiBV1, // 2K sectors have zero consensus minimum
-			expectedMiners: 1,
+			proof:          abi.RegisteredPoStProof_StackedDrgWindow2KiBV1,
+			expectedMiners: 0,
 		}, {
 			proof:          abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			expectedMiners: 0,
@@ -411,7 +411,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("consensus minimum power depends on proof type", func(t *testing.T) {
+	t.Run("power gets added when miner crosses minPower but not before", func(t *testing.T) {
 		// Setup four miners above threshold
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
@@ -431,21 +431,16 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		expectedTotal := mul(powerUnit, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
-		// miner 5 uses 64GiB sectors and has a higher minimum
-		actor.createMiner(rt, owner, owner, miner5, tutil.NewActorAddr(t, "m5"), abi.PeerID("m5"),
-			nil, abi.RegisteredPoStProof_StackedDrgWindow64GiBV1, big.Zero())
-
-		power64Unit, err := builtin.ConsensusMinerMinPower(abi.RegisteredPoStProof_StackedDrgWindow64GiBV1)
-		require.NoError(t, err)
-		assert.True(t, power64Unit.GreaterThan(powerUnit))
+		actor.createMinerBasic(rt, owner, owner, miner5)
+		belowLimitUnit := big.Div(powerUnit, big.NewInt(2))
 
 		// below limit actors power is not added
-		actor.updateClaimedPower(rt, miner5, powerUnit, powerUnit)
+		actor.updateClaimedPower(rt, miner5, belowLimitUnit, belowLimitUnit)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
 
 		// just below limit
-		delta := big.Subtract(power64Unit, powerUnit, big.NewInt(1))
+		delta := big.Subtract(powerUnit, belowLimitUnit, big.NewInt(1))
 		actor.updateClaimedPower(rt, miner5, delta, delta)
 		actor.expectMinersAboveMinPower(rt, 4)
 		actor.expectTotalPowerEager(rt, expectedTotal, expectedTotal)
@@ -453,7 +448,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 		// at limit power is added
 		actor.updateClaimedPower(rt, miner5, big.NewInt(1), big.NewInt(1))
 		actor.expectMinersAboveMinPower(rt, 5)
-		newExpectedTotal := big.Add(expectedTotal, power64Unit)
+		newExpectedTotal := big.Add(expectedTotal, powerUnit)
 		actor.expectTotalPowerEager(rt, newExpectedTotal, newExpectedTotal)
 		actor.checkState(rt)
 	})
