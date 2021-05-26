@@ -5076,6 +5076,12 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 		h.confirmSectorProofsValidInternal(rt, conf, precommits...)
 	}
 
+	// burn networkFee
+	{
+		expectedFee := miner.AggregateNetworkFee(len(precommits), big.Zero())
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedFee, nil, exitcode.Ok)
+	}
+
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAny()
 	rt.Call(h.a.ProveCommitAggregate, params)

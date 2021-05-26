@@ -46,6 +46,7 @@ type Runtime struct {
 	actorCodeCIDs     map[addr.Address]cid.Cid
 	newActorAddr      addr.Address
 	circulatingSupply abi.TokenAmount
+	baseFee           abi.TokenAmount
 
 	// Actor state
 	state   cid.Cid
@@ -254,6 +255,11 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
 	rt.requireInCall()
 	return rt.balance
+}
+
+func (rt *Runtime) BaseFee() abi.TokenAmount {
+	rt.requireInCall()
+	return rt.baseFee
 }
 
 func (rt *Runtime) ResolveAddress(address addr.Address) (ret addr.Address, ok bool) {

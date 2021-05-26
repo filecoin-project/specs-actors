@@ -208,3 +208,17 @@ func LockedRewardFromReward(reward abi.TokenAmount) (abi.TokenAmount, *VestSpec)
 	lockAmount := big.Div(big.Mul(reward, LockedRewardFactorNum), LockedRewardFactorDenom)
 	return lockAmount, &RewardVestingSpec
 }
+
+var EstimatedSingleProofGasUsage = big.NewInt(65733297) // PARAM_SPEC
+var BatchDiscount = builtin.BigFrac{                    // PARAM_SPEC
+	Numerator:   big.NewInt(1),
+	Denominator: big.NewInt(20),
+}
+var BatchBalancer = big.Mul(big.NewInt(2), builtin.OneNanoFIL) // PARAM_SPEC
+
+func AggregateNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
+	effectiveGasFee := big.Max(baseFee, BatchBalancer)
+	networkFeeNum := big.Product(effectiveGasFee, EstimatedSingleProofGasUsage, big.NewInt(int64(aggregateSize)), BatchDiscount.Numerator)
+	networkFee := big.Div(networkFeeNum, BatchDiscount.Denominator)
+	return networkFee
+}

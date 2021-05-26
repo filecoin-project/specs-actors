@@ -955,6 +955,11 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 	confirmSectorProofsValid(rt, precommitsToConfirm)
 
+	burnFunds(rt, AggregateNetworkFee(len(precommitsToConfirm), rt.BaseFee()))
+	rt.StateReadonly(&st)
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
+
 	return nil
 }
 

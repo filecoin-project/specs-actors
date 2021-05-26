@@ -611,6 +611,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+			{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 		},
 	}.Matches(t, v.LastInvocation())
 
@@ -673,6 +674,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+			{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 		},
 	}.Matches(t, v.LastInvocation())
 
