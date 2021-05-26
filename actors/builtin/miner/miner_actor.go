@@ -2073,6 +2073,7 @@ func handleProvingDeadline(rt Runtime) {
 				epochReward.ThisEpochRewardSmoothed,
 				pwrTotal.QualityAdjPowerSmoothed,
 				result.PreviouslyFaultyPower.QA,
+				rt.NetworkVersion(),
 			)
 
 			powerDeltaTotal = powerDeltaTotal.Add(result.PowerDelta)
