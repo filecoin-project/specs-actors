@@ -43,8 +43,8 @@ var bigBalance = big.Mul(big.NewInt(1_000_000), big.NewInt(1e18))
 // A reward amount for use in tests where the vesting amount wants to be large enough to cover penalties.
 var bigRewards = big.Mul(big.NewInt(1_000), big.NewInt(1e18))
 
-// an expriration 1 greater than min expiration
-const defaultSectorExpiration = 190
+// an expriration ~10 days greater than effective min expiration taking into account 30 days max between pre and prove commit
+const defaultSectorExpiration = 220
 
 func init() {
 	testPid = abi.PeerID("peerID")

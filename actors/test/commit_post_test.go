@@ -586,7 +586,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
-	laterPrecommits := preCommitSectors(t, v, 2, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
+	laterPrecommits := preCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
 	allPrecommits := append(earlyPrecommits, laterPrecommits...)
 	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
@@ -596,6 +596,10 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, dlInfo.Close)
 	// Assert that precommit should not yet be cleaned up. This makes fixing this test easier if parameters change.
 	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration[sealProof]+miner.ExpiredPreCommitCleanUpDelay)
+	// Assert that we have a valid aggregate batch size
+	aggSectorsCount, err := sectorNosBf.Count()
+	require.NoError(t, err)
+	require.True(t, aggSectorsCount >= miner.MinAggregatedSectors && aggSectorsCount < miner.MaxAggregatedSectors)
 
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
