@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"fmt"
+
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -45,11 +47,13 @@ var ContinuedFaultFactorNumTmp = 111
 var ContinuedFaultFactorDenomTmp = 100
 
 func GetContinuedFaultProjectionPeriod(nv network.Version) abi.ChainEpoch {
+	period := abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
 	if nv >= network.Version13 && nv < network.Version14 {
-		return abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNumTmp) / ContinuedFaultFactorDenomTmp)
+		period = abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNumTmp) / ContinuedFaultFactorDenomTmp)
 	}
 
-	return abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
+	fmt.Printf("GetContinuedFaultProjectionPeriod period: %d nv: %d\n", period, nv)
+	return period
 }
 
 var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
