@@ -421,7 +421,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		//
 		// While we could perform _all_ operations at the end of challenge window, we do as we can here to avoid
 		// overloading cron.
-		faultExpiration := currDeadline.Last() + FaultMaxAge
+		faultExpiration := currDeadline.Last() + GetWindowFaultMaxAge(rt.NetworkVersion())
 		postResult, err = deadline.RecordProvenSectors(store, sectors, info.SectorSize, QuantSpecForDeadline(currDeadline), faultExpiration, params.Partitions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to process post submission for deadline %d", params.Deadline)
 
@@ -563,7 +563,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			//
 			// However, some of these sectors may have been
 			// terminated. That's fine, we'll skip them.
-			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
+			faultExpirationEpoch := targetDeadline.Last() + GetWindowFaultMaxAge(rt.NetworkVersion())
 			powerDelta, err = dlCurrent.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, disputeInfo.DisputedSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults")
 
@@ -1444,7 +1444,7 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
-			faultExpirationEpoch := targetDeadline.Last() + FaultMaxAge
+			faultExpirationEpoch := targetDeadline.Last() + GetWindowFaultMaxAge(rt.NetworkVersion())
 			deadlinePowerDelta, err := deadline.RecordFaults(store, sectors, info.SectorSize, QuantSpecForDeadline(targetDeadline), faultExpirationEpoch, pm)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to declare faults for deadline %d", dlIdx)
 
@@ -2064,7 +2064,7 @@ func handleProvingDeadline(rt Runtime) {
 		hadEarlyTerminations = havePendingEarlyTerminations(rt, &st)
 
 		{
-			result, err := st.AdvanceDeadline(store, currEpoch)
+			result, err := st.AdvanceDeadline(store, currEpoch, rt.NetworkVersion())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 
 			// Faults detected by this missed PoSt pay no penalty, but sectors that were already faulty

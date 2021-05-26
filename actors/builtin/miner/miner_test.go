@@ -1005,6 +1005,7 @@ func TestCCUpgrade(t *testing.T) {
 
 		// Move the current epoch forward so that the first deadline is a stable candidate for both sectors
 		rt.SetEpoch(periodOffset + miner.WPoStChallengeWindow)
+		rt.SetNetworkVersion(network.Version12)
 
 		// Commit a sector to upgrade
 		// Use the max sector number to make sure everything works.
@@ -1086,7 +1087,7 @@ func TestCCUpgrade(t *testing.T) {
 		// Expect the old sector to be marked as terminated.
 		bothSectors := []*miner.SectorOnChainInfo{oldSector, newSector}
 		lostPower := actor.powerPairForSectors(bothSectors[:1]).Neg() // new sector not active yet.
-		faultExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
+		faultExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.GetWindowFaultMaxAge(rt.NetworkVersion()))
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,
@@ -1387,7 +1388,7 @@ func TestCCUpgrade(t *testing.T) {
 		deadline, partition := actor.getDeadlineAndPartition(rt, dlIdx, partIdx)
 		dQueue := actor.collectDeadlineExpirations(rt, deadline)
 		dlInfo := miner.NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, rt.Epoch())
-		expectedReplacedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(rt.Epoch() + miner.FaultMaxAge)
+		expectedReplacedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(rt.Epoch() + miner.GetWindowFaultMaxAge(rt.NetworkVersion()))
 		quantizedExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(oldSector.Expiration)
 
 		// deadling marks expirations for partition at expiration epoch
@@ -1802,7 +1803,7 @@ func TestCCUpgrade(t *testing.T) {
 		// Expect the old sector to be marked as terminated.
 		allSectors := []*miner.SectorOnChainInfo{oldSector, newSector1, newSector2}
 		lostPower := actor.powerPairForSectors(allSectors[:1]).Neg() // new sectors not active yet.
-		faultExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.FaultMaxAge)
+		faultExpiration := miner.QuantSpecForDeadline(dlInfo).QuantizeUp(dlInfo.NextNotElapsed().Last() + miner.GetWindowFaultMaxAge(rt.NetworkVersion()))
 
 		advanceDeadline(rt, actor, &cronConfig{
 			detectedFaultsPowerDelta:  &lostPower,

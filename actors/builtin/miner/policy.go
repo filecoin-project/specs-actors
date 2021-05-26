@@ -202,7 +202,13 @@ const FaultDeclarationCutoff = WPoStChallengeLookback + 50 // PARAM_SPEC
 
 // The maximum age of a fault before the sector is terminated.
 // This bounds the time a miner can lose client's data before sacrificing pledge and deal collateral.
-var FaultMaxAge = WPoStProvingPeriod * 14 // PARAM_SPEC
+func GetWindowFaultMaxAge(nv network.Version) abi.ChainEpoch {
+	if nv >= network.Version13 && nv < network.Version14 {
+		return WPoStProvingPeriod * 28
+	}
+
+	return WPoStProvingPeriod * 14
+}
 
 // Staging period for a miner worker key change.
 // This delay prevents a miner choosing a more favorable worker key that wins leader elections.

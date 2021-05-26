@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 
 	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v4/actors/util/math"
@@ -39,12 +40,22 @@ var InitialPledgeLockTarget = builtin.BigFrac{
 // FF = BR(t, ContinuedFaultProjectionPeriod)
 var ContinuedFaultFactorNum = 351 // PARAM_SPEC
 var ContinuedFaultFactorDenom = 100
-var ContinuedFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
+
+var ContinuedFaultFactorNumTmp = 111
+var ContinuedFaultFactorDenomTmp = 100
+
+func GetContinuedFaultProjectionPeriod(nv network.Version) abi.ChainEpoch {
+	if nv >= network.Version13 && nv < network.Version14 {
+		return abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNumTmp) / ContinuedFaultFactorDenomTmp)
+	}
+
+	return abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
+}
 
 var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
 
 // FF + 2BR
-var InvalidWindowPoStProjectionPeriod = abi.ChainEpoch(ContinuedFaultProjectionPeriod + 2*builtin.EpochsInDay) // PARAM_SPEC
+var InvalidWindowPoStProjectionPeriod = abi.ChainEpoch(abi.ChainEpoch((builtin.EpochsInDay*ContinuedFaultFactorNum)/ContinuedFaultFactorDenom) + 2*builtin.EpochsInDay) // PARAM_SPEC
 
 // Fraction of assumed block reward penalized when a sector is terminated.
 var TerminationRewardFactor = builtin.BigFrac{ // PARAM_SPEC
@@ -98,8 +109,8 @@ func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstima
 // The penalty for a sector continuing faulty for another proving period.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "FF(t)"
-func PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, ContinuedFaultProjectionPeriod)
+func PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower, nv network.Version) abi.TokenAmount {
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, GetContinuedFaultProjectionPeriod(nv))
 }
 
 // Lower bound on the penalty for a terminating sector.

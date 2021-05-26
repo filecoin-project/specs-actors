@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/dline"
 	xc "github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/go-state-types/network"
 	cid "github.com/ipfs/go-cid"
 	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
@@ -1106,7 +1107,7 @@ type AdvanceDeadlineResult struct {
 // - Processes expired sectors.
 // - Handles missed proofs.
 // - Returns the changes to power & pledge, and faulty power (both declared and undeclared).
-func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*AdvanceDeadlineResult, error) {
+func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch, nv network.Version) (*AdvanceDeadlineResult, error) {
 	pledgeDelta := abi.NewTokenAmount(0)
 	powerDelta := NewPowerPairZero()
 
@@ -1172,7 +1173,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	quant := QuantSpecForDeadline(dlInfo)
 	{
 		// Detect and penalize missing proofs.
-		faultExpiration := dlInfo.Last() + FaultMaxAge
+		faultExpiration := dlInfo.Last() + GetWindowFaultMaxAge(nv)
 
 		// detectedFaultyPower is new faults and failed recoveries
 		powerDelta, detectedFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)
