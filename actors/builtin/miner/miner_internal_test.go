@@ -5,6 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/minio/blake2b-simd"
 	"github.com/stretchr/testify/assert"
 
@@ -154,11 +155,11 @@ func TestFaultFeeInvariants(t *testing.T) {
 		totalFaultPower := big.Add(big.Add(faultySectorAPower, faultySectorBPower), faultySectorCPower)
 
 		// Declared faults
-		ffA := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorAPower)
-		ffB := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorBPower)
-		ffC := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorCPower)
+		ffA := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorAPower, network.Version12)
+		ffB := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorBPower, network.Version12)
+		ffC := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, faultySectorCPower, network.Version12)
 
-		ffAll := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, totalFaultPower)
+		ffAll := PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, totalFaultPower, network.Version12)
 
 		// Because we can introduce rounding error between 1 and zero for every penalty calculation
 		// we can at best expect n calculations of 1 power to be within n of 1 calculation of n powers.

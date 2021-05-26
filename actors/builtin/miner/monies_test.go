@@ -5,6 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
@@ -164,7 +165,7 @@ func TestContinuedFault(t *testing.T) {
 		rewardEstimate := smoothing.NewEstimate(epochTargetReward, big.Zero())
 		powerEstimate := smoothing.NewEstimate(networkQAPower, powerRateOfChange)
 
-		penaltyForZeroPowerFaulted := miner.PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, zeroQAPower)
+		penaltyForZeroPowerFaulted := miner.PledgePenaltyForContinuedFault(rewardEstimate, powerEstimate, zeroQAPower, network.Version12)
 		assert.Equal(t, big.Zero(), penaltyForZeroPowerFaulted)
 	})
 }
