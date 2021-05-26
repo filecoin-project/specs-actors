@@ -206,7 +206,7 @@ func GetWindowFaultMaxAge(nv network.Version) abi.ChainEpoch {
 	age := WPoStProvingPeriod * 3
 
 	if nv >= network.Version13 && nv < network.Version14 {
-		age = WPoStProvingPeriod * 5
+		age = WPoStProvingPeriod * 30
 	}
 
 	fmt.Printf("GetWindowFaultMaxAge: %d nv: %d\n", age, nv)
