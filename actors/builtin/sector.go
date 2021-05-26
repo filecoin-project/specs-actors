@@ -98,15 +98,15 @@ type PoStProofPolicy struct {
 var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
 	stabi.RegisteredPoStProof_StackedDrgWindow2KiBV1: {
 		WindowPoStPartitionSectors: 2,
-		ConsensusMinerMinPower:     stabi.NewStoragePower(0),
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow8MiBV1: {
 		WindowPoStPartitionSectors: 2,
-		ConsensusMinerMinPower:     stabi.NewStoragePower(16 << 20),
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow512MiBV1: {
 		WindowPoStPartitionSectors: 2,
-		ConsensusMinerMinPower:     stabi.NewStoragePower(1 << 30),
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow32GiBV1: {
 		WindowPoStPartitionSectors: 2349,
@@ -114,7 +114,7 @@ var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
 	},
 	stabi.RegisteredPoStProof_StackedDrgWindow64GiBV1: {
 		WindowPoStPartitionSectors: 2300,
-		ConsensusMinerMinPower:     stabi.NewStoragePower(20 << 40),
+		ConsensusMinerMinPower:     stabi.NewStoragePower(10 << 40),
 	},
 	// Winning PoSt proof types omitted.
 }
