@@ -214,3 +214,29 @@ func TestPrecommitDepositAndInitialPledgePostiive(t *testing.T) {
 		assert.Equal(t, abi.NewTokenAmount(1), pcd)
 	})
 }
+
+func TestAggregateNetworkFee(t *testing.T) {
+
+	t.Run("Constant fee per sector when base fee is below 2 nFIL", func(t *testing.T) {
+		oneSectorFee := miner.AggregateNetworkFee(1, big.Zero())
+		tenSectorFee := miner.AggregateNetworkFee(10, big.Zero())
+		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
+		fortySectorFee := miner.AggregateNetworkFee(40, builtin.OneNanoFIL)
+		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+	})
+
+	t.Run("Fee increases iff basefee crosses threshold", func(t *testing.T) {
+		atNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
+		atBalanceMinusOneBaseFee := miner.AggregateNetworkFee(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
+		atBalanceBaseFee := miner.AggregateNetworkFee(10, miner.BatchBalancer)
+		atBalancePlusOneBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
+		atBalancePlusTwoBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
+		atBalanceTimesTwoBaseFee := miner.AggregateNetworkFee(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+
+		assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
+		assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))
+		assert.True(t, atBalanceBaseFee.LessThan(atBalancePlusOneBaseFee))
+		assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
+		assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
+	})
+}
