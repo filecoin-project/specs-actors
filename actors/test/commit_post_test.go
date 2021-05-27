@@ -653,8 +653,8 @@ func TestAggregateSizeLimits(t *testing.T) {
 	//
 	// precommit sectors
 	//
-	firstSectorNo := 100
-	sectorNumbers, _ := preCommitSectors(t, v, overSizedBatch, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo)
+	firstSectorNo := abi.SectorNumber(100)
+	precommits := preCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -669,11 +669,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	// Fail with too many sectors
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
-	intSectorNumbers := make([]uint64, len(sectorNumbers))
-	for i := range sectorNumbers {
-		intSectorNumbers[i] = uint64(sectorNumbers[i])
-	}
-	sectorNosBf := bitfield.NewFromSet(intSectorNumbers)
+	sectorNosBf := precommitSectorNumbers(precommits)
 
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
@@ -682,8 +678,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code) // fail with too many aggregates
 
 	// Fail with too few sectors
-	tooFewSectorNumbers := intSectorNumbers[:miner.MinAggregatedSectors-1]
-	tooFewSectorNosBf := bitfield.NewFromSet(tooFewSectorNumbers)
+	tooFewSectorNosBf := precommitSectorNumbers(precommits[:miner.MinAggregatedSectors-1])
 	proveCommitAggregateTooFewParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: tooFewSectorNosBf,
 	}
@@ -691,8 +686,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 
 	// Fail with proof too big
-	justRightSectorNumbers := intSectorNumbers[:miner.MaxAggregatedSectors]
-	justRightSectorNosBf := bitfield.NewFromSet(justRightSectorNumbers)
+	justRightSectorNosBf := precommitSectorNumbers(precommits[:miner.MaxAggregatedSectors])
 	proveCommitAggregateTooBigProofParams := miner.ProveCommitAggregateParams{
 		SectorNumbers:  justRightSectorNosBf,
 		AggregateProof: make([]byte, miner.MaxAggregateProofSize+1),
@@ -872,6 +866,7 @@ func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, p
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 			},
 		}.Matches(t, v.LastInvocation())
 	}
