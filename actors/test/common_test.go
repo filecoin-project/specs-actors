@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
@@ -15,6 +16,19 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/v5/support/testing"
 	"github.com/filecoin-project/specs-actors/v5/support/vm"
 )
+
+func createMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof abi.RegisteredPoStProof, balance abi.TokenAmount) *power.CreateMinerReturn {
+	params := power.CreateMinerParams{
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: wPoStProof,
+		Peer:                abi.PeerID("not really a peer id"),
+	}
+	ret := vm.ApplyOk(t, v, worker, builtin.StoragePowerActorAddr, balance, builtin.MethodsPower.CreateMiner, &params)
+	minerAddrs, ok := ret.(*power.CreateMinerReturn)
+	require.True(t, ok)
+	return minerAddrs
+}
 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
 	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,

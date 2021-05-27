@@ -10,6 +10,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/stretchr/testify/assert"
@@ -30,70 +31,26 @@ import (
 func TestCommitPoStFlow(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
-	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
-	// create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
-
-	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(200)
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
-
-	//
-	// precommit sector
-	//
-
-	sectorNumber := abi.SectorNumber(100)
-	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
 	sectorSize, err := sealProof.SectorSize()
 	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
-	preCommitParams := miner.PreCommitSectorParams{
-		SealProof:     sealProof,
-		SectorNumber:  sectorNumber,
-		SealedCID:     sealedCid,
-		SealRandEpoch: v.GetEpoch() - 1,
-		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
-	}
-	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(200)
+	require.NoError(t, err)
 
-	// assert successful precommit invocation
-	vm.ExpectInvocation{
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.PreCommitSector,
-		Params: vm.ExpectObject(&preCommitParams),
-		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}},
-	}.Matches(t, v.Invocations()[0])
+	sectorNumber := abi.SectorNumber(100)
+	precommits := preCommitSectors(t, v, 1, 1, worker, minerAddrs.IDAddress, sealProof, sectorNumber, true)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
-	// find information about precommited sector
-	var minerState miner.State
-	err = v.GetState(minerAddrs.IDAddress, &minerState)
-	require.NoError(t, err)
-
-	precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumber)
-	require.NoError(t, err)
-	require.True(t, found)
-
-	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
 	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
@@ -123,7 +80,7 @@ func TestCommitPoStFlow(t *testing.T) {
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 
 						// The call to burnt funds indicates the overdue precommit has been penalized
-						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(precommit.PreCommitDeposit)},
+						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(precommits[0].PreCommitDeposit)},
 						// No re-enrollment of cron because burning of PCD discontinues miner cron scheduling
 					}},
 					//{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid},
@@ -131,7 +88,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				}},
 				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
 			},
-		}.Matches(t, tv.Invocations()[0])
+		}.Matches(t, tv.LastInvocation())
 
 		// precommit deposit has been reset
 		balances := vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
@@ -166,7 +123,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.SubmitPoRepForBulkVerify},
 		},
-	}.Matches(t, v.Invocations()[0])
+	}.Matches(t, v.LastInvocation())
 
 	// In the same epoch, trigger cron to validate prove commit
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
@@ -205,6 +162,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	// advance to proving period
 	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+	var minerState miner.State
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
 
@@ -216,40 +174,12 @@ func TestCommitPoStFlow(t *testing.T) {
 		tv, err := v.WithEpoch(v.GetEpoch())
 		require.NoError(t, err)
 
-		// Submit PoSt
-		submitParams := miner.SubmitWindowedPoStParams{
-			Deadline: dlInfo.Index,
-			Partitions: []miner.PoStPartition{{
-				Index:   pIdx,
-				Skipped: bitfield.New(),
-			}},
-			Proofs: []proof.PoStProof{{
-				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			}},
-			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte("not really random"),
-		}
-		vm.ApplyOk(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-
+		partitions := []miner.PoStPartition{{
+			Index:   pIdx,
+			Skipped: bitfield.New(),
+		}}
 		sectorPower := miner.PowerForSector(sectorSize, sector)
-		updatePowerParams := &power.UpdateClaimedPowerParams{
-			RawByteDelta:         sectorPower.Raw,
-			QualityAdjustedDelta: sectorPower.QA,
-		}
-
-		vm.ExpectInvocation{
-			To:     minerAddrs.IDAddress,
-			Method: builtin.MethodsMiner.SubmitWindowedPoSt,
-			Params: vm.ExpectObject(&submitParams),
-			SubInvocations: []vm.ExpectInvocation{
-				// This call to the power actor indicates power has been added for the sector
-				{
-					To:     builtin.StoragePowerActorAddr,
-					Method: builtin.MethodsPower.UpdateClaimedPower,
-					Params: vm.ExpectObject(updatePowerParams),
-				},
-			},
-		}.Matches(t, tv.Invocations()[0])
+		submitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
 
 		// miner still has initial pledge
 		balances = vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
@@ -298,7 +228,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			Method:   builtin.MethodsMiner.SubmitWindowedPoSt,
 			Params:   vm.ExpectObject(&submitParams),
 			Exitcode: exitcode.ErrIllegalArgument,
-		}.Matches(t, tv.Invocations()[0])
+		}.Matches(t, tv.LastInvocation())
 
 		// miner still has initial pledge
 		balances = vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
@@ -332,7 +262,7 @@ func TestCommitPoStFlow(t *testing.T) {
 				}},
 				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
 			},
-		}.Matches(t, tv.Invocations()[0])
+		}.Matches(t, tv.LastInvocation())
 
 		// network power is unchanged
 		networkStats := vm.GetNetworkStats(t, tv)
@@ -353,24 +283,16 @@ func TestMeasurePreCommitGas(t *testing.T) {
 	metrics := ipld.NewMetricsBlockStore(blkStore)
 	v := vm.NewVMWithSingletons(ctx, t, metrics)
 	v.SetStatsSource(metrics)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
 
-	minerBalance := big.Mul(big.NewInt(100_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
-	// Create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// Advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
 
 	// Note that the miner's pre-committed sector HAMT will increase in size and depth over the course of this
@@ -384,7 +306,7 @@ func TestMeasurePreCommitGas(t *testing.T) {
 		// Clone the VM so each batch get the same starting state.
 		tv, err := v.WithEpoch(v.GetEpoch())
 		require.NoError(t, err)
-		firstSectorNo := sectorCount * batchSize
+		firstSectorNo := abi.SectorNumber(sectorCount * batchSize)
 		preCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 		stats := tv.GetCallStats()
@@ -408,30 +330,22 @@ func TestMeasurePoRepGas(t *testing.T) {
 	metrics := ipld.NewMetricsBlockStore(blkStore)
 	v := vm.NewVMWithSingletons(ctx, t, metrics)
 	v.SetStatsSource(metrics)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
-
-	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
 
-	// create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
 
 	//
 	// precommit sectors
 	//
-	firstSectorNo := 100
+	firstSectorNo := abi.SectorNumber(100)
 	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
@@ -512,34 +426,158 @@ func TestMeasurePoRepGas(t *testing.T) {
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 }
 
+// Tests batch pre-commit and aggregate prove-commit in various interleavings and batch sizes.
+func TestBatchOnboarding(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	metrics := ipld.NewMetricsBlockStore(blkStore)
+	v := vm.NewVMWithSingletons(ctx, t, metrics)
+	v.SetStatsSource(metrics)
+
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	sectorSize, err := sealProof.SectorSize()
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	// A series of pre-commit and prove-commit actions intended to cover paths including:
+	// - different pre-commit batch sizes
+	// - different prove-commit aggregate sizes
+	// - multiple pre-commit batches before proof
+	// - proving only some of the pre-commits
+	// - proving part of multiple pre-commit batches
+	// - proving all pre-commits across multiple batches
+	// - interleaving of pre- and prove-commit
+	//
+	// Sectors are still proven in the order of pre-commitment.
+	var precommits []*miner.SectorPreCommitOnChainInfo
+	nextSectorNo := abi.SectorNumber(0)
+	preCommittedCount, provenCount := 0, 0
+	for _, spec := range []struct {
+		epochDelay               abi.ChainEpoch // epochs to advance since the prior action
+		preCommitSectorCount     int            // sectors to batch pre-commit
+		preCommitBatchSize       int            // batch size (multiple batches if committing more)
+		proveCommitSectorCount   int            // sectors to aggregate prove-commit
+		proveCommitAggregateSize int            // aggregate size (multiple aggregates if proving more)
+	}{
+		{ // Pre: 10, Proven: 0
+			epochDelay:           0,
+			preCommitSectorCount: 10,
+			preCommitBatchSize:   miner.PreCommitSectorBatchMaxSize,
+		},
+		{ // Pre: 30, Proven: 0
+			epochDelay:           1,
+			preCommitSectorCount: 20,
+			preCommitBatchSize:   12,
+		},
+		{ // Pre: 30, Proven: 8
+			epochDelay:               miner.PreCommitChallengeDelay + 1,
+			proveCommitSectorCount:   8,
+			proveCommitAggregateSize: miner.MaxAggregatedSectors,
+		},
+		{ // Pre: 30, Proven: 16 (spanning pre-commit batches)
+			epochDelay:               1,
+			proveCommitSectorCount:   8,
+			proveCommitAggregateSize: 4,
+		},
+		{ // Pre: 40, Proven: 16
+			epochDelay:           1,
+			preCommitSectorCount: 10,
+			preCommitBatchSize:   4,
+		},
+		{ // Pre: 40, Proven: 40
+			epochDelay:               miner.PreCommitChallengeDelay + 1,
+			proveCommitSectorCount:   24,
+			proveCommitAggregateSize: 10,
+		},
+	} {
+		v, err = v.WithEpoch(v.GetEpoch() + spec.epochDelay)
+		require.NoError(t, err)
+
+		if spec.preCommitSectorCount > 0 {
+			newPrecommits := preCommitSectors(t, v, spec.preCommitSectorCount, spec.preCommitBatchSize, worker, minerAddrs.IDAddress,
+				sealProof, nextSectorNo, nextSectorNo == 0)
+			precommits = append(precommits, newPrecommits...)
+			nextSectorNo += abi.SectorNumber(spec.preCommitSectorCount)
+			preCommittedCount += spec.preCommitSectorCount
+		}
+
+		if spec.proveCommitSectorCount > 0 {
+			toProve := precommits[:spec.proveCommitSectorCount]
+			precommits = precommits[spec.proveCommitSectorCount:]
+			proveCommitSectors(t, v, worker, minerAddrs.IDAddress, toProve, spec.proveCommitAggregateSize)
+			provenCount += spec.proveCommitSectorCount
+		}
+	}
+
+	//
+	// Window PoSt all proven sectors.
+	//
+
+	// The sectors are all in the same partition. Advance to it's proving window.
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, abi.SectorNumber(0))
+	var minerState miner.State
+	err = v.GetState(minerAddrs.IDAddress, &minerState)
+	require.NoError(t, err)
+
+	sector, found, err := minerState.GetSector(v.Store(), abi.SectorNumber(0))
+	require.NoError(t, err)
+	require.True(t, found)
+
+	partitions := []miner.PoStPartition{{
+		Index:   pIdx,
+		Skipped: bitfield.New(),
+	}}
+	newPower := miner.PowerForSector(sectorSize, sector).Mul(big.NewInt(int64(provenCount)))
+	submitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
+
+	// Miner has initial pledge
+	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
+
+	// Committed bytes are added (miner would have gained power if minimum requirement were met)
+	networkStats := vm.GetNetworkStats(t, v)
+	assert.Equal(t, big.NewInt(int64(sectorSize)*int64(provenCount)), networkStats.TotalBytesCommitted)
+	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
+
+	// Trigger cron to keep reward accounting correct
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	stateTree, err := v.GetStateTree()
+	require.NoError(t, err)
+	totalBalance, err := v.GetTotalActorBalance()
+	require.NoError(t, err)
+	acc, err := states.CheckStateInvariants(stateTree, totalBalance, v.GetEpoch())
+	require.NoError(t, err)
+	assert.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
+}
+
 func TestAggregateOnePreCommitExpires(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
 	v := vm.NewVMWithSingletons(ctx, t, blkStore)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
-	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
-	// create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
 
 	//
 	// precommit secotrs
 	//
-	firstSectorNo := 100
+	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	earlyPreCommitTime := v.GetEpoch()
 	earlyPrecommits := preCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
@@ -591,30 +629,22 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	metrics := ipld.NewMetricsBlockStore(blkStore)
 	v := vm.NewVMWithSingletons(ctx, t, metrics)
 	v.SetStatsSource(metrics)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
-	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
-	// create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
 
 	//
 	// precommit sectors
 	//
-	firstSectorNo := 100
+	firstSectorNo := abi.SectorNumber(100)
 	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -644,7 +674,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
 		},
-	}.Matches(t, v.Invocations()[0])
+	}.Matches(t, v.LastInvocation())
 
 	proveCommitAggrKey := vm.MethodKey{Code: builtin.StorageMinerActorCodeID, Method: builtin.MethodsMiner.ProveCommitAggregate}
 	stats := v.GetCallStats()
@@ -682,7 +712,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 }
 
 func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof,
-	sectorNumberBase int, expectCronEnrollment bool) []*miner.SectorPreCommitOnChainInfo {
+	sectorNumberBase abi.SectorNumber, expectCronEnrollment bool) []*miner.SectorPreCommitOnChainInfo {
 	invocsCommon := []vm.ExpectInvocation{
 		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
@@ -699,7 +729,7 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 		// Prepare message.
 		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
 		for j := 0; j < batchSize && sectorIndex < count; j++ {
-			sectorNumber := abi.SectorNumber(sectorNumberBase + sectorIndex)
+			sectorNumber := sectorNumberBase + abi.SectorNumber(sectorIndex)
 			sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
 			params.Sectors[j] = miner0.SectorPreCommitInfo{
 				SealProof:     sealProof,
@@ -731,12 +761,71 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 
 	precommits := make([]*miner.SectorPreCommitOnChainInfo, count)
 	for i := 0; i < count; i++ {
-		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), abi.SectorNumber(sectorNumberBase+i))
+		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumberBase+abi.SectorNumber(i))
 		require.NoError(t, err)
 		require.True(t, found)
 		precommits[i] = precommit
 	}
 	return precommits
+}
+
+// Proves pre-committed sectors as batches of aggSize.
+func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, aggSize int) {
+	for len(precommits) > 0 {
+		batchSize := min(aggSize, len(precommits))
+		toProve := precommits[:batchSize]
+		precommits = precommits[batchSize:]
+
+		sectorNosBf := precommitSectorNumbers(toProve)
+		proveCommitAggregateParams := miner.ProveCommitAggregateParams{
+			SectorNumbers: sectorNosBf,
+		}
+		vm.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
+		vm.ExpectInvocation{
+			To:     actor,
+			Method: builtin.MethodsMiner.ProveCommitAggregate,
+			Params: vm.ExpectObject(&proveCommitAggregateParams),
+			SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+			},
+		}.Matches(t, v.LastInvocation())
+	}
+}
+
+// Submits a Window PoSt for partitions in a deadline.
+func submitWindowPoSt(t *testing.T, v *vm.VM, worker, actor address.Address, dlInfo *dline.Info, partitions []miner.PoStPartition,
+	newPower miner.PowerPair) {
+	submitParams := miner.SubmitWindowedPoStParams{
+		Deadline:   dlInfo.Index,
+		Partitions: partitions,
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		}},
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte("not really random"),
+	}
+	vm.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+
+	updatePowerParams := &power.UpdateClaimedPowerParams{
+		RawByteDelta:         newPower.Raw,
+		QualityAdjustedDelta: newPower.QA,
+	}
+
+	vm.ExpectInvocation{
+		To:     actor,
+		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+		Params: vm.ExpectObject(&submitParams),
+		SubInvocations: []vm.ExpectInvocation{
+			{
+				To:     builtin.StoragePowerActorAddr,
+				Method: builtin.MethodsPower.UpdateClaimedPower,
+				Params: vm.ExpectObject(updatePowerParams),
+			},
+		},
+	}.Matches(t, v.LastInvocation())
 }
 
 // Returns a bitfield of the sector numbers from a collection pre-committed sectors.

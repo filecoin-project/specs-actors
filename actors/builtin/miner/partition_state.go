@@ -1019,6 +1019,13 @@ func (pp PowerPair) Neg() PowerPair {
 	}
 }
 
+func (pp PowerPair) Mul(m big.Int) PowerPair {
+	return PowerPair{
+		Raw: big.Mul(pp.Raw, m),
+		QA:  big.Mul(pp.QA, m),
+	}
+}
+
 func (pp *PowerPair) Equals(other PowerPair) bool {
 	return pp.Raw.Equals(other.Raw) && pp.QA.Equals(other.QA)
 }
