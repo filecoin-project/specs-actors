@@ -237,7 +237,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
 			// schedule too many deals for the same tick.
-			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, rt.GetRandomnessFromBeacon)
+			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, rt.GetRandomnessFromTickets)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
 
 			err = msm.dealsByEpoch.Put(processEpoch, id)
@@ -642,7 +642,7 @@ func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(cry
 		return epochUndefined, xerrors.Errorf("failed to marshal proposal: %w", err)
 	}
 
-	rb := rbF(crypto.DomainSeparationTag_MarketDealCronSeed, currEpoch-1, buf.Bytes())
+	rb := rbF(crypto.DomainSeparationTag_MarketDealCronSeed, currEpoch, buf.Bytes())
 
 	// generate a random epoch in [baseEpoch, baseEpoch + DealUpdatesInterval)
 	offset := binary.BigEndian.Uint64(rb)
