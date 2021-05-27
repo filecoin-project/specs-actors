@@ -164,7 +164,7 @@ func (ei ExpectInvocation) matches(t *testing.T, breadcrumb string, invocation *
 		assert.Equal(t, *ei.Value, invocation.Msg.value, "%s unexpected value", identifier)
 	}
 	if ei.Params != nil {
-		assert.True(t, ei.Params.matches(invocation.Msg.params), "%s params aren't equal (%v != %v)", identifier, ei.Params.val, invocation.Msg.params)
+		assert.True(t, ei.Params.matches(invocation.Msg.params), "%s params aren't equal (expected %v, was %v)", identifier, ei.Params.val, invocation.Msg.params)
 	}
 	if ei.SubInvocations != nil {
 		for i, invk := range invocation.SubInvocations {
