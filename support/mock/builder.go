@@ -39,6 +39,7 @@ func (b RuntimeBuilder) Build(t testing.TB) *Runtime {
 		miner:             addr.Address{},
 		idAddresses:       make(map[addr.Address]addr.Address),
 		circulatingSupply: abi.NewTokenAmount(0),
+		baseFee:           abi.NewTokenAmount(0),
 
 		state:    cid.Undef,
 		store:    make(map[cid.Cid][]byte),

@@ -261,6 +261,11 @@ func (ic *invocationContext) CurrEpoch() abi.ChainEpoch {
 	return ic.rt.currentEpoch
 }
 
+func (ic *invocationContext) BaseFee() abi.TokenAmount {
+	// for now test vm always runs with zero base fee
+	return big.Zero()
+}
+
 func (ic *invocationContext) CurrentBalance() abi.TokenAmount {
 	// load balance
 	act, found, err := ic.rt.GetActor(ic.msg.to)

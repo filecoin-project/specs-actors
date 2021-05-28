@@ -140,6 +140,9 @@ type Runtime interface {
 
 	// Note events that may make debugging easier
 	Log(level rt.LogLevel, msg string, args ...interface{})
+
+	// BaseFee returns the basefee value in attoFIL per unit gas for the currently exectuting tipset.
+	BaseFee() abi.TokenAmount
 }
 
 // Store defines the storage module exposed to actors.
