@@ -632,22 +632,15 @@ func TestAggregateSizeLimits(t *testing.T) {
 	v := vm.NewVMWithSingletons(ctx, t, blkStore)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
 
-	minerBalance := big.Mul(big.NewInt(10_000), vm.FIL)
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
 	// create miner
-	params := power.CreateMinerParams{
-		Owner:               addrs[0],
-		Worker:              addrs[0],
-		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		Peer:                abi.PeerID("not really a peer id"),
-	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
-	minerAddrs, ok := ret.(*power.CreateMinerReturn)
-	require.True(t, ok)
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
-	v, err := v.WithEpoch(abi.ChainEpoch(200))
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
 
 	//

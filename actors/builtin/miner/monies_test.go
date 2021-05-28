@@ -239,4 +239,13 @@ func TestAggregateNetworkFee(t *testing.T) {
 		assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
 		assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
 	})
+
+	t.Run("Regression tests", func(t *testing.T) {
+		tenAtNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
+		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtNoBaseFee)
+		tenAtOneNanoBaseFee := miner.AggregateNetworkFee(10, builtin.OneNanoFIL)
+		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtOneNanoBaseFee)
+		hundredAtThreeNanoBaseFee := miner.AggregateNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL))
+		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(985999455)), hundredAtThreeNanoBaseFee)
+	})
 }
