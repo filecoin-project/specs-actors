@@ -5,6 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
 
@@ -192,13 +193,13 @@ const FaultDeclarationCutoff = WPoStChallengeLookback + 50 // PARAM_SPEC
 // The maximum age of a fault before the sector is terminated.
 // This bounds the time a miner can lose client's data before sacrificing pledge and deal collateral.
 func GetWindowFaultMaxAge(nv network.Version) abi.ChainEpoch {
-	age := WPoStProvingPeriod * 3
+	age := WPoStProvingPeriod * 14
 
-	if nv >= network.Version13 && nv < network.Version14 {
-		age = WPoStProvingPeriod * 30
+	//this will be <= v14 && < v15
+	if nv >= network.Version12 && nv < network.Version12 {
+		age = WPoStProvingPeriod * 140
 	}
 
-	fmt.Printf("GetWindowFaultMaxAge: %d nv: %d\n", age, nv)
 	return age
 }
 
