@@ -8,9 +8,9 @@ import (
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v4/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v4/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v5/actors/util/smoothing"
 )
 
 // Test termination fee
