@@ -1,4 +1,4 @@
-package miner
+package builtin
 
 import "github.com/filecoin-project/go-state-types/abi"
 
@@ -13,7 +13,7 @@ func NewQuantSpec(unit, offset abi.ChainEpoch) QuantSpec {
 }
 
 func (q QuantSpec) QuantizeUp(e abi.ChainEpoch) abi.ChainEpoch {
-	return quantizeUp(e, q.unit, q.offset)
+	return QuantizeUp(e, q.unit, q.offset)
 }
 
 func (q QuantSpec) QuantizeDown(e abi.ChainEpoch) abi.ChainEpoch {
@@ -32,7 +32,7 @@ var NoQuantization = NewQuantSpec(1, 0)
 // This function is equivalent to `unit * ceil(e - (offsetSeed % unit) / unit) + (offsetSeed % unit)`
 // with the variables/operations are over real numbers instead of ints.
 // Precondition: unit >= 0 else behaviour is undefined
-func quantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch, offsetSeed abi.ChainEpoch) abi.ChainEpoch {
+func QuantizeUp(e abi.ChainEpoch, unit abi.ChainEpoch, offsetSeed abi.ChainEpoch) abi.ChainEpoch {
 	offset := offsetSeed % unit
 
 	remainder := (e - offset) % unit

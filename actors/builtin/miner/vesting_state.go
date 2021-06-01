@@ -3,6 +3,8 @@ package miner
 import (
 	"sort"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
+
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 )
@@ -48,7 +50,7 @@ func (v *VestingFunds) addLockedFunds(currEpoch abi.ChainEpoch, vestingSum abi.T
 	vestPeriod := big.NewInt(int64(spec.VestPeriod))
 	vestedSoFar := big.Zero()
 	for e := vestBegin + spec.StepDuration; vestedSoFar.LessThan(vestingSum); e += spec.StepDuration {
-		vestEpoch := quantizeUp(e, spec.Quantization, provingPeriodStart)
+		vestEpoch := builtin.QuantizeUp(e, spec.Quantization, provingPeriodStart)
 		elapsed := vestEpoch - vestBegin
 
 		targetVest := big.Zero() //nolint:ineffassign

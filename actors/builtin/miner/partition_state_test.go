@@ -31,7 +31,7 @@ func TestPartitions(t *testing.T) {
 	}
 	sectorSize := abi.SectorSize(32 << 30)
 
-	quantSpec := miner.NewQuantSpec(4, 1)
+	quantSpec := builtin.NewQuantSpec(4, 1)
 
 	setupUnproven := func(t *testing.T) (adt.Store, *miner.Partition) {
 		store := ipld.NewADTStore(context.Background())
@@ -449,7 +449,7 @@ func TestPartitions(t *testing.T) {
 		})
 
 		// sectors should be added to early termination bitfield queue
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, builtin.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		ExpectBQ().
@@ -542,7 +542,7 @@ func TestPartitions(t *testing.T) {
 		})
 
 		// sectors should be added to early termination bitfield queue
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, builtin.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		// only early termination appears in bitfield queue
@@ -663,7 +663,7 @@ func TestPartitions(t *testing.T) {
 		assert.True(t, hasMore)
 
 		// expect terminations to still contain 3 and 5
-		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
+		queue, err := miner.LoadBitfieldQueue(store, partition.EarlyTerminated, builtin.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 
 		// only early termination appears in bitfield queue
@@ -682,7 +682,7 @@ func TestPartitions(t *testing.T) {
 		assert.False(t, hasMore)
 
 		// expect early terminations to be empty
-		queue, err = miner.LoadBitfieldQueue(store, partition.EarlyTerminated, miner.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
+		queue, err = miner.LoadBitfieldQueue(store, partition.EarlyTerminated, builtin.NoQuantization, miner.PartitionEarlyTerminationArrayAmtBitwidth)
 		require.NoError(t, err)
 		ExpectBQ().Equals(t, queue)
 	})
@@ -706,14 +706,14 @@ func TestPartitions(t *testing.T) {
 		}
 		sectorNos := bf(ids...)
 
-		power, err := partition.AddSectors(store, false, manySectors, sectorSize, miner.NoQuantization)
+		power, err := partition.AddSectors(store, false, manySectors, sectorSize, builtin.NoQuantization)
 		require.NoError(t, err)
 		expectedPower := miner.PowerForSectors(sectorSize, manySectors)
 		assert.True(t, expectedPower.Equals(power))
 
 		assertPartitionState(
 			t, store, partition,
-			miner.NoQuantization, sectorSize, manySectors,
+			builtin.NoQuantization, sectorSize, manySectors,
 			sectorNos, bf(), bf(), bf(), sectorNos,
 		)
 
@@ -728,7 +728,7 @@ func TestPartitions(t *testing.T) {
 
 		assertPartitionState(
 			t, store, &newPartition,
-			miner.NoQuantization, sectorSize, manySectors,
+			builtin.NoQuantization, sectorSize, manySectors,
 			sectorNos, bf(), bf(), bf(), sectorNos,
 		)
 
@@ -746,7 +746,7 @@ func TestRecordSkippedFaults(t *testing.T) {
 	}
 	sectorSize := abi.SectorSize(32 << 30)
 
-	quantSpec := miner.NewQuantSpec(4, 1)
+	quantSpec := builtin.NewQuantSpec(4, 1)
 	exp := abi.ChainEpoch(100)
 
 	setup := func(t *testing.T) (adt.Store, *miner.Partition) {
@@ -862,7 +862,7 @@ type expectExpirationGroup struct {
 	sectors    bitfield.BitField
 }
 
-func assertPartitionExpirationQueue(t *testing.T, store adt.Store, partition *miner.Partition, quant miner.QuantSpec, groups []expectExpirationGroup) {
+func assertPartitionExpirationQueue(t *testing.T, store adt.Store, partition *miner.Partition, quant builtin.QuantSpec, groups []expectExpirationGroup) {
 	queue, err := miner.LoadExpirationQueue(store, partition.ExpirationsEpochs, quant, miner.PartitionExpirationAmtBitwidth)
 	require.NoError(t, err)
 
@@ -881,7 +881,7 @@ func assertPartitionExpirationQueue(t *testing.T, store adt.Store, partition *mi
 func assertPartitionState(t *testing.T,
 	store adt.Store,
 	partition *miner.Partition,
-	quant miner.QuantSpec,
+	quant builtin.QuantSpec,
 	sectorSize abi.SectorSize,
 	sectors []*miner.SectorOnChainInfo,
 	allSectorIds bitfield.BitField,
