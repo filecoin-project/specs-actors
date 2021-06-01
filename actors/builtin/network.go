@@ -58,3 +58,6 @@ var VerifiedDealWeightMultiplier = big.NewInt(100)
 
 // Precision used for making QA power calculations
 const SectorQualityPrecision = 20
+
+// 1 NanoFIL
+var OneNanoFIL = big.NewInt(1_000_000_000)

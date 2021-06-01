@@ -586,7 +586,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
-	laterPrecommits := preCommitSectors(t, v, 2, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
+	laterPrecommits := preCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
 	allPrecommits := append(earlyPrecommits, laterPrecommits...)
 	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
@@ -596,6 +596,10 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, dlInfo.Close)
 	// Assert that precommit should not yet be cleaned up. This makes fixing this test easier if parameters change.
 	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration[sealProof]+miner.ExpiredPreCommitCleanUpDelay)
+	// Assert that we have a valid aggregate batch size
+	aggSectorsCount, err := sectorNosBf.Count()
+	require.NoError(t, err)
+	require.True(t, aggSectorsCount >= miner.MinAggregatedSectors && aggSectorsCount < miner.MaxAggregatedSectors)
 
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
@@ -611,6 +615,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+			{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 		},
 	}.Matches(t, v.LastInvocation())
 
@@ -618,6 +623,69 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	assert.True(t, balances.InitialPledge.GreaterThan(big.Zero()))
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
+}
+
+func TestAggregateSizeLimits(t *testing.T) {
+	overSizedBatch := 820
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	//
+	// precommit sectors
+	//
+	firstSectorNo := abi.SectorNumber(100)
+	precommits := preCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
+
+	// advance time to max seal duration
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+
+	//
+	// attempt proving with invalid args
+	//
+
+	// Fail with too many sectors
+	v, err = v.WithEpoch(proveTime)
+	require.NoError(t, err)
+	sectorNosBf := precommitSectorNumbers(precommits)
+
+	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
+		SectorNumbers: sectorNosBf,
+	}
+	res := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams)
+	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code) // fail with too many aggregates
+
+	// Fail with too few sectors
+	tooFewSectorNosBf := precommitSectorNumbers(precommits[:miner.MinAggregatedSectors-1])
+	proveCommitAggregateTooFewParams := miner.ProveCommitAggregateParams{
+		SectorNumbers: tooFewSectorNosBf,
+	}
+	res = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooFewParams)
+	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
+
+	// Fail with proof too big
+	justRightSectorNosBf := precommitSectorNumbers(precommits[:miner.MaxAggregatedSectors])
+	proveCommitAggregateTooBigProofParams := miner.ProveCommitAggregateParams{
+		SectorNumbers:  justRightSectorNosBf,
+		AggregateProof: make([]byte, miner.MaxAggregateProofSize+1),
+	}
+	res = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooBigProofParams)
+	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
 func TestMeasureAggregatePorepGas(t *testing.T) {
@@ -673,6 +741,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+			{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 		},
 	}.Matches(t, v.LastInvocation())
 
@@ -790,6 +859,7 @@ func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, p
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 			},
 		}.Matches(t, v.LastInvocation())
 	}

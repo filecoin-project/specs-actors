@@ -237,7 +237,8 @@ func TestCommitments(t *testing.T) {
 
 		// Expires too early
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration-20*builtin.EpochsInDay, nil), preCommitConf{}, false)
+			earlyExpiration := abi.ChainEpoch(miner.MinSectorExpiration - builtin.EpochsInDay)
+			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, earlyExpiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
 
@@ -484,10 +485,10 @@ func TestPreCommitBatch(t *testing.T) {
 		error:          "batch empty",
 	}, {
 		name:           "too many sectors",
-		batchSize:      33,
+		batchSize:      257,
 		balanceSurplus: big.Zero(),
 		exit:           exitcode.ErrIllegalArgument,
-		error:          "batch of 33 too large",
+		error:          "batch of 257 too large",
 	}, {
 		name:           "insufficient balance",
 		batchSize:      10,
