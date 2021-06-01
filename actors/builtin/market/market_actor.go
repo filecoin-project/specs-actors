@@ -234,7 +234,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
 			// schedule too many deals for the same tick.
-			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, id)
+			processEpoch, err := GenRandNextEpoch(deal.Proposal.StartEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
 
 			err = msm.dealsByEpoch.Put(processEpoch, id)
@@ -633,14 +633,14 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
-func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, dealID abi.DealID) (abi.ChainEpoch, error) {
+func GenRandNextEpoch(startEpoch abi.ChainEpoch, dealID abi.DealID) (abi.ChainEpoch, error) {
 	offset := abi.ChainEpoch(uint64(dealID) % uint64(DealUpdatesInterval))
 	q := builtin.NewQuantSpec(DealUpdatesInterval, 0)
-	prevDay := q.QuantizeDown(deal.StartEpoch)
-	if prevDay+offset >= deal.StartEpoch {
+	prevDay := q.QuantizeDown(startEpoch)
+	if prevDay+offset >= startEpoch {
 		return prevDay + offset, nil
 	}
-	nextDay := q.QuantizeUp(deal.StartEpoch)
+	nextDay := q.QuantizeUp(startEpoch)
 	return nextDay + offset, nil
 }
 
