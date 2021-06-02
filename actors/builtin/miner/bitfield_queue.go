@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 )
 
@@ -16,10 +17,10 @@ import (
 // Keys in the queue are quantized (upwards), modulo some offset, to reduce the cardinality of keys.
 type BitfieldQueue struct {
 	*adt.Array
-	quant QuantSpec
+	quant builtin.QuantSpec
 }
 
-func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant QuantSpec, bitwidth int) (BitfieldQueue, error) {
+func LoadBitfieldQueue(store adt.Store, root cid.Cid, quant builtin.QuantSpec, bitwidth int) (BitfieldQueue, error) {
 	arr, err := adt.AsArray(store, root, bitwidth)
 	if err != nil {
 		return BitfieldQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)

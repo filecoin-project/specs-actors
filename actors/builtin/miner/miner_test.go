@@ -4214,7 +4214,7 @@ func TestApplyRewards(t *testing.T) {
 		require.Len(t, vestingFunds.Funds, 180)
 
 		// Vested FIL pays out on epochs with expected offset
-		quantSpec := miner.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
+		quantSpec := builtin.NewQuantSpec(miner.RewardVestingSpec.Quantization, periodOffset)
 
 		currEpoch := rt.Epoch()
 		for i := range vestingFunds.Funds {
@@ -4678,7 +4678,7 @@ func (h *actorHarness) collectSectors(rt *mock.Runtime) map[abi.SectorNumber]*mi
 }
 
 func (h *actorHarness) collectPrecommitExpirations(rt *mock.Runtime, st *miner.State) map[abi.ChainEpoch][]uint64 {
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), st.PreCommittedSectorsCleanUp, miner.NoQuantization, miner.PrecommitCleanUpAmtBitwidth)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), st.PreCommittedSectorsCleanUp, builtin.NoQuantization, miner.PrecommitCleanUpAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
@@ -4691,7 +4691,7 @@ func (h *actorHarness) collectPrecommitExpirations(rt *mock.Runtime, st *miner.S
 }
 
 func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *miner.Deadline) map[abi.ChainEpoch][]uint64 {
-	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, miner.NoQuantization, miner.DeadlineExpirationAmtBitwidth)
+	queue, err := miner.LoadBitfieldQueue(rt.AdtStore(), deadline.ExpirationsEpochs, builtin.NoQuantization, miner.DeadlineExpirationAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch][]uint64{}
 	_ = queue.ForEach(func(epoch abi.ChainEpoch, bf bitfield.BitField) error {
@@ -4704,7 +4704,7 @@ func (h *actorHarness) collectDeadlineExpirations(rt *mock.Runtime, deadline *mi
 }
 
 func (h *actorHarness) collectPartitionExpirations(rt *mock.Runtime, partition *miner.Partition) map[abi.ChainEpoch]*miner.ExpirationSet {
-	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, miner.NoQuantization, miner.PartitionExpirationAmtBitwidth)
+	queue, err := miner.LoadExpirationQueue(rt.AdtStore(), partition.ExpirationsEpochs, builtin.NoQuantization, miner.PartitionExpirationAmtBitwidth)
 	require.NoError(h.t, err)
 	expirations := map[abi.ChainEpoch]*miner.ExpirationSet{}
 	var es miner.ExpirationSet

@@ -5,12 +5,13 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestExpirations(t *testing.T) {
-	quant := QuantSpec{unit: 10, offset: 3}
+	quant := builtin.NewQuantSpec(10, 3)
 	sectors := []*SectorOnChainInfo{
 		testSector(7, 1, 0, 0, 0),
 		testSector(8, 2, 0, 0, 0),
@@ -37,7 +38,7 @@ func TestExpirations(t *testing.T) {
 
 func TestExpirationsEmpty(t *testing.T) {
 	sectors := []*SectorOnChainInfo{}
-	result := groupNewSectorsByDeclaredExpiration(2048, sectors, NoQuantization)
+	result := groupNewSectorsByDeclaredExpiration(2048, sectors, builtin.NoQuantization)
 	expected := []sectorEpochSet{}
 	require.Equal(t, expected, result)
 }

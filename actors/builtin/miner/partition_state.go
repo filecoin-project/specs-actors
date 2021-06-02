@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/util"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 )
@@ -124,7 +125,7 @@ func (p *Partition) ActivePower() PowerPair {
 // If proven is false, the sectors are added to the partition's unproven set.
 // Returns the total power of the added sectors.
 func (p *Partition) AddSectors(
-	store adt.Store, proven bool, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant QuantSpec,
+	store adt.Store, proven bool, sectors []*SectorOnChainInfo, ssize abi.SectorSize, quant builtin.QuantSpec,
 ) (PowerPair, error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant, PartitionExpirationAmtBitwidth)
 	if err != nil {
@@ -170,7 +171,7 @@ func (p *Partition) AddSectors(
 // marks a set of sectors faulty
 func (p *Partition) addFaults(
 	store adt.Store, sectorNos bitfield.BitField, sectors []*SectorOnChainInfo, faultExpiration abi.ChainEpoch,
-	ssize abi.SectorSize, quant QuantSpec,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
 ) (powerDelta, newFaultyPower PowerPair, err error) {
 	// Load expiration queue
 	queue, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant, PartitionExpirationAmtBitwidth)
@@ -236,7 +237,7 @@ func (p *Partition) addFaults(
 // Returns the power of the now-faulty sectors.
 func (p *Partition) RecordFaults(
 	store adt.Store, sectors Sectors, sectorNos bitfield.BitField, faultExpirationEpoch abi.ChainEpoch,
-	ssize abi.SectorSize, quant QuantSpec,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
 ) (newFaults bitfield.BitField, powerDelta, newFaultyPower PowerPair, err error) {
 	err = validatePartitionContainsSectors(p, sectorNos)
 	if err != nil {
@@ -299,7 +300,7 @@ func (p *Partition) RecordFaults(
 // The sectors are removed from the Faults and Recovering bitfields, and FaultyPower and RecoveringPower reduced.
 // The sectors are re-scheduled for expiration shortly after their target expiration epoch.
 // Returns the power of the now-recovered sectors.
-func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec) (PowerPair, error) {
+func (p *Partition) RecoverFaults(store adt.Store, sectors Sectors, ssize abi.SectorSize, quant builtin.QuantSpec) (PowerPair, error) {
 	// Process recoveries, assuming the proof will be successful.
 	// This similarly updates state.
 	recoveredSectors, err := sectors.Load(p.Recoveries)
@@ -424,7 +425,7 @@ func (p *Partition) removeRecoveries(sectorNos bitfield.BitField, power PowerPai
 func (p *Partition) RescheduleExpirations(
 	store adt.Store, sectors Sectors,
 	newExpiration abi.ChainEpoch, sectorNos bitfield.BitField,
-	ssize abi.SectorSize, quant QuantSpec,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
 ) (replaced []*SectorOnChainInfo, err error) {
 	// Ensure these sectors actually belong to this partition.
 	present, err := bitfield.IntersectBitField(sectorNos, p.Sectors)
@@ -475,7 +476,7 @@ func (p *Partition) RescheduleExpirations(
 // unlike RescheduleExpirations.
 // Returns the delta to power and pledge requirement.
 func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*SectorOnChainInfo,
-	ssize abi.SectorSize, quant QuantSpec) (PowerPair, abi.TokenAmount, error) {
+	ssize abi.SectorSize, quant builtin.QuantSpec) (PowerPair, abi.TokenAmount, error) {
 	expirations, err := LoadExpirationQueue(store, p.ExpirationsEpochs, quant, PartitionExpirationAmtBitwidth)
 	if err != nil {
 		return NewPowerPairZero(), big.Zero(), xerrors.Errorf("failed to load sector expirations: %w", err)
@@ -521,7 +522,7 @@ func (p *Partition) ReplaceSectors(store adt.Store, oldSectors, newSectors []*Se
 
 // Record the epoch of any sectors expiring early, for termination fee calculation later.
 func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch, sectors bitfield.BitField) error {
-	etQueue, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
+	etQueue, err := LoadBitfieldQueue(store, p.EarlyTerminated, builtin.NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
 	if err != nil {
 		return xerrors.Errorf("failed to load early termination queue: %w", err)
 	}
@@ -539,7 +540,7 @@ func (p *Partition) recordEarlyTermination(store adt.Store, epoch abi.ChainEpoch
 // The epoch of termination is recorded for future termination fee calculation.
 func (p *Partition) TerminateSectors(
 	store adt.Store, sectors Sectors, epoch abi.ChainEpoch, sectorNos bitfield.BitField,
-	ssize abi.SectorSize, quant QuantSpec) (*ExpirationSet, error) {
+	ssize abi.SectorSize, quant builtin.QuantSpec) (*ExpirationSet, error) {
 	liveSectors, err := p.LiveSectors()
 	if err != nil {
 		return nil, err
@@ -621,7 +622,7 @@ func (p *Partition) TerminateSectors(
 // This cannot be called while there are unproven sectors.
 //
 // Returns the expired sector aggregates.
-func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*ExpirationSet, error) {
+func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant builtin.QuantSpec) (*ExpirationSet, error) {
 	// This is a sanity check to make sure we handle proofs _before_
 	// handling sector expirations.
 	if noUnproven, err := p.Unproven.IsEmpty(); err != nil {
@@ -696,7 +697,7 @@ func (p *Partition) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 // All sectors' expirations are rescheduled to the fault expiration, as "early" (if not expiring earlier)
 // Returns the power delta, power that should be penalized (new faults + failed recoveries), and newly faulty power.
 func (p *Partition) RecordMissedPost(
-	store adt.Store, faultExpiration abi.ChainEpoch, quant QuantSpec,
+	store adt.Store, faultExpiration abi.ChainEpoch, quant builtin.QuantSpec,
 ) (powerDelta, penalizedPower, newFaultyPower PowerPair, err error) {
 	// Collapse tail of queue into the last entry, and mark all power faulty.
 	// Load expiration queue
@@ -746,7 +747,7 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 	stopErr := errors.New("stop iter")
 
 	// Load early terminations.
-	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated, NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
+	earlyTerminatedQ, err := LoadBitfieldQueue(store, p.EarlyTerminated, builtin.NoQuantization, PartitionEarlyTerminationArrayAmtBitwidth)
 	if err != nil {
 		return TerminationResult{}, false, err
 	}
@@ -834,7 +835,7 @@ func (p *Partition) PopEarlyTerminations(store adt.Store, maxSectors uint64) (re
 // - Skipped faults that are not in the provided partition triggers an error.
 // - Skipped faults that are already declared (but not delcared recovered) are ignored.
 func (p *Partition) RecordSkippedFaults(
-	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch, skipped bitfield.BitField,
+	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant builtin.QuantSpec, faultExpiration abi.ChainEpoch, skipped bitfield.BitField,
 ) (powerDelta, newFaultPower, retractedRecoveryPower PowerPair, hasNewFaults bool, err error) {
 	empty, err := skipped.IsEmpty()
 	if err != nil {

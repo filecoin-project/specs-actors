@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/util"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 )
@@ -151,7 +152,7 @@ func (es *ExpirationSet) ValidateState() error {
 // Keys in the queue are quantized (upwards), modulo some offset, to reduce the cardinality of keys.
 type ExpirationQueue struct {
 	*adt.Array
-	quant QuantSpec
+	quant builtin.QuantSpec
 }
 
 // An internal limit on the cardinality of a bitfield in a queue entry.
@@ -162,7 +163,7 @@ const entrySectorsMax = 10_000
 // Loads a queue root.
 // Epochs provided to subsequent method calls will be quantized upwards to quanta mod offsetSeed before being
 // written to/read from queue entries.
-func LoadExpirationQueue(store adt.Store, root cid.Cid, quant QuantSpec, bitwidth int) (ExpirationQueue, error) {
+func LoadExpirationQueue(store adt.Store, root cid.Cid, quant builtin.QuantSpec, bitwidth int) (ExpirationQueue, error) {
 	arr, err := adt.AsArray(store, root, bitwidth)
 	if err != nil {
 		return ExpirationQueue{}, xerrors.Errorf("failed to load epoch queue %v: %w", root, err)
@@ -718,7 +719,7 @@ type sectorExpirationSet struct {
 // sorted by expiration epoch, quantized.
 //
 // Note: While the result is sorted by epoch, the order of per-epoch sectors is maintained.
-func groupNewSectorsByDeclaredExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo, quant QuantSpec) []sectorEpochSet {
+func groupNewSectorsByDeclaredExpiration(sectorSize abi.SectorSize, sectors []*SectorOnChainInfo, quant builtin.QuantSpec) []sectorEpochSet {
 	sectorsByExpiration := make(map[abi.ChainEpoch][]*SectorOnChainInfo)
 
 	for _, sector := range sectors {

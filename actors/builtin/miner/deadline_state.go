@@ -12,6 +12,7 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 )
@@ -250,7 +251,7 @@ func (d *Deadline) LoadPartitionSnapshot(store adt.Store, partIdx uint64) (*Part
 }
 
 // Adds some partition numbers to the set expiring at an epoch.
-func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions []uint64, quant QuantSpec) error {
+func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.ChainEpoch, partitions []uint64, quant builtin.QuantSpec) error {
 	// Avoid doing any work if there's nothing to reschedule.
 	if len(partitions) == 0 {
 		return nil
@@ -271,7 +272,7 @@ func (d *Deadline) AddExpirationPartitions(store adt.Store, expirationEpoch abi.
 
 // PopExpiredSectors terminates expired sectors from all partitions.
 // Returns the expired sector aggregates.
-func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (*ExpirationSet, error) {
+func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, quant builtin.QuantSpec) (*ExpirationSet, error) {
 	expiredPartitions, modified, err := dl.popExpiredPartitions(store, until, quant)
 	if err != nil {
 		return nil, err
@@ -363,7 +364,7 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 // Returns the power of the added sectors (which is active yet if proven=false).
 func (dl *Deadline) AddSectors(
 	store adt.Store, partitionSize uint64, proven bool, sectors []*SectorOnChainInfo,
-	ssize abi.SectorSize, quant QuantSpec,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
 ) (PowerPair, error) {
 	totalPower := NewPowerPairZero()
 	if len(sectors) == 0 {
@@ -542,7 +543,7 @@ func (dl *Deadline) PopEarlyTerminations(store adt.Store, maxPartitions, maxSect
 }
 
 // Returns nil if nothing was popped.
-func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant QuantSpec) (bitfield.BitField, bool, error) {
+func (dl *Deadline) popExpiredPartitions(store adt.Store, until abi.ChainEpoch, quant builtin.QuantSpec) (bitfield.BitField, bool, error) {
 	expirations, err := LoadBitfieldQueue(store, dl.ExpirationsEpochs, quant, DeadlineExpirationAmtBitwidth)
 	if err != nil {
 		return bitfield.BitField{}, false, err
@@ -569,7 +570,7 @@ func (dl *Deadline) TerminateSectors(
 	epoch abi.ChainEpoch,
 	partitionSectors PartitionSectorMap,
 	ssize abi.SectorSize,
-	quant QuantSpec,
+	quant builtin.QuantSpec,
 ) (powerLost PowerPair, err error) {
 
 	partitions, err := dl.PartitionsArray(store)
@@ -628,7 +629,7 @@ func (dl *Deadline) TerminateSectors(
 //
 // Returns an error if any of the partitions contained faulty sectors or early
 // terminations.
-func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField, quant QuantSpec) (
+func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField, quant builtin.QuantSpec) (
 	live, dead bitfield.BitField, removedPower PowerPair, err error,
 ) {
 	oldPartitions, err := dl.PartitionsArray(store)
@@ -774,7 +775,7 @@ func (dl *Deadline) RemovePartitions(store adt.Store, toRemove bitfield.BitField
 }
 
 func (dl *Deadline) RecordFaults(
-	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant QuantSpec,
+	store adt.Store, sectors Sectors, ssize abi.SectorSize, quant builtin.QuantSpec,
 	faultExpirationEpoch abi.ChainEpoch, partitionSectors PartitionSectorMap,
 ) (powerDelta PowerPair, err error) {
 	partitions, err := dl.PartitionsArray(store)
@@ -873,7 +874,7 @@ func (dl *Deadline) DeclareFaultsRecovered(
 // ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
 // faulty and clearing failed recoveries. It returns the power delta, and any
 // power that should be penalized (new faults and failed recoveries).
-func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
+func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
 	powerDelta, penalizedPower PowerPair, err error,
 ) {
 	powerDelta = NewPowerPairZero()
@@ -984,7 +985,7 @@ type PoStResult struct {
 // NOTE: This function does not actually _verify_ any proofs.
 func (dl *Deadline) RecordProvenSectors(
 	store adt.Store, sectors Sectors,
-	ssize abi.SectorSize, quant QuantSpec, faultExpiration abi.ChainEpoch,
+	ssize abi.SectorSize, quant builtin.QuantSpec, faultExpiration abi.ChainEpoch,
 	postPartitions []PoStPartition,
 ) (*PoStResult, error) {
 
@@ -1169,7 +1170,7 @@ func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitf
 func (dl *Deadline) RescheduleSectorExpirations(
 	store adt.Store, sectors Sectors,
 	expiration abi.ChainEpoch, partitionSectors PartitionSectorMap,
-	ssize abi.SectorSize, quant QuantSpec,
+	ssize abi.SectorSize, quant builtin.QuantSpec,
 ) ([]*SectorOnChainInfo, error) {
 	partitions, err := dl.PartitionsArray(store)
 	if err != nil {

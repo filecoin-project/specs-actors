@@ -1,15 +1,12 @@
 package market
 
 import (
-	"bytes"
-	"encoding/binary"
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
-	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
@@ -237,7 +234,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
 			// schedule too many deals for the same tick.
-			processEpoch, err := genRandNextEpoch(rt.CurrEpoch(), &deal.Proposal, rt.GetRandomnessFromTickets)
+			processEpoch := GenRandNextEpoch(deal.Proposal.StartEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
 
 			err = msm.dealsByEpoch.Put(processEpoch, id)
@@ -636,18 +633,15 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
-func genRandNextEpoch(currEpoch abi.ChainEpoch, deal *DealProposal, rbF func(crypto.DomainSeparationTag, abi.ChainEpoch, []byte) abi.Randomness) (abi.ChainEpoch, error) {
-	buf := bytes.Buffer{}
-	if err := deal.MarshalCBOR(&buf); err != nil {
-		return epochUndefined, xerrors.Errorf("failed to marshal proposal: %w", err)
+func GenRandNextEpoch(startEpoch abi.ChainEpoch, dealID abi.DealID) abi.ChainEpoch {
+	offset := abi.ChainEpoch(uint64(dealID) % uint64(DealUpdatesInterval))
+	q := builtin.NewQuantSpec(DealUpdatesInterval, 0)
+	prevDay := q.QuantizeDown(startEpoch)
+	if prevDay+offset >= startEpoch {
+		return prevDay + offset
 	}
-
-	rb := rbF(crypto.DomainSeparationTag_MarketDealCronSeed, currEpoch, buf.Bytes())
-
-	// generate a random epoch in [baseEpoch, baseEpoch + DealUpdatesInterval)
-	offset := binary.BigEndian.Uint64(rb)
-
-	return deal.StartEpoch + abi.ChainEpoch(offset%uint64(DealUpdatesInterval)), nil
+	nextDay := q.QuantizeUp(startEpoch)
+	return nextDay + offset
 }
 
 //

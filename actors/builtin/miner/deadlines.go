@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 )
 
@@ -15,8 +16,8 @@ func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch a
 	return dline.NewInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines, WPoStProvingPeriod, WPoStChallengeWindow, WPoStChallengeLookback, FaultDeclarationCutoff)
 }
 
-func QuantSpecForDeadline(di *dline.Info) QuantSpec {
-	return NewQuantSpec(WPoStProvingPeriod, di.Last())
+func QuantSpecForDeadline(di *dline.Info) builtin.QuantSpec {
+	return builtin.NewQuantSpec(WPoStProvingPeriod, di.Last())
 }
 
 // FindSector returns the deadline and partition index for a sector number.
@@ -99,7 +100,7 @@ func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uin
 // the offset implied by the proving period. This works correctly even for the state
 // of a miner actor without an active deadline cron
 func NewDeadlineInfoFromOffsetAndEpoch(periodStartSeed abi.ChainEpoch, currEpoch abi.ChainEpoch) *dline.Info {
-	q := NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
+	q := builtin.NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
 	currentPeriodStart := q.QuantizeDown(currEpoch)
 	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow) % WPoStPeriodDeadlines
 	return NewDeadlineInfo(currentPeriodStart, currentDeadlineIdx, currEpoch)

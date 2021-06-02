@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v5/support/mock"
@@ -43,7 +44,7 @@ func TestBitfieldQueue(t *testing.T) {
 	})
 
 	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
-		queue := emptyBitfieldQueueWithQuantizing(t, miner.NewQuantSpec(5, 3), testAmtBitwidth)
+		queue := emptyBitfieldQueueWithQuantizing(t, builtin.NewQuantSpec(5, 3), testAmtBitwidth)
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
 			require.NoError(t, queue.AddToQueueValues(abi.ChainEpoch(val), val))
@@ -58,7 +59,7 @@ func TestBitfieldQueue(t *testing.T) {
 	})
 
 	t.Run("quantizes added epochs according to quantization spec", func(t *testing.T) {
-		queue := emptyBitfieldQueueWithQuantizing(t, miner.NewQuantSpec(5, 3), testAmtBitwidth)
+		queue := emptyBitfieldQueueWithQuantizing(t, builtin.NewQuantSpec(5, 3), testAmtBitwidth)
 
 		for _, val := range []uint64{0, 2, 3, 4, 7, 8, 9} {
 			err := queue.AddToQueueValues(abi.ChainEpoch(val), val)
@@ -234,7 +235,7 @@ func TestBitfieldQueue(t *testing.T) {
 
 }
 
-func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec, bitwidth int) miner.BitfieldQueue {
+func emptyBitfieldQueueWithQuantizing(t *testing.T, quant builtin.QuantSpec, bitwidth int) miner.BitfieldQueue {
 	rt := mock.NewBuilder(address.Undef).Build(t)
 	store := adt.AsStore(rt)
 	emptyArray, err := adt.StoreEmptyArray(store, bitwidth)
@@ -246,7 +247,7 @@ func emptyBitfieldQueueWithQuantizing(t *testing.T, quant miner.QuantSpec, bitwi
 }
 
 func emptyBitfieldQueue(t *testing.T, bitwidth int) miner.BitfieldQueue {
-	return emptyBitfieldQueueWithQuantizing(t, miner.NoQuantization, bitwidth)
+	return emptyBitfieldQueueWithQuantizing(t, builtin.NoQuantization, bitwidth)
 }
 
 type bqExpectation struct {

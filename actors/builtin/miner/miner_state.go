@@ -297,7 +297,7 @@ func (st *State) CurrentProvingPeriodStart(currEpoch abi.ChainEpoch) abi.ChainEp
 }
 
 // Returns deadline calculations for the current (according to state) proving period
-func (st *State) QuantSpecForDeadline(dlIdx uint64) QuantSpec {
+func (st *State) QuantSpecForDeadline(dlIdx uint64) builtin.QuantSpec {
 	return QuantSpecForDeadline(NewDeadlineInfo(st.ProvingPeriodStart, dlIdx, 0))
 }
 
@@ -1024,8 +1024,8 @@ func (st *State) IsDebtFree() bool {
 }
 
 // pre-commit clean up
-func (st *State) QuantSpecEveryDeadline() QuantSpec {
-	return NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+func (st *State) QuantSpecEveryDeadline() builtin.QuantSpec {
+	return builtin.NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
 }
 
 func (st *State) AddPreCommitCleanUps(store adt.Store, cleanUpEvents map[abi.ChainEpoch][]uint64) error {
