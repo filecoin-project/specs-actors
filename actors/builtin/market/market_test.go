@@ -3275,7 +3275,5 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *marketActorTestHarness) {
 }
 
 func processEpoch(t *testing.T, id abi.DealID, startEpoch abi.ChainEpoch) abi.ChainEpoch {
-	e, err := market.GenRandNextEpoch(startEpoch, id)
-	require.NoError(t, err)
-	return e
+	return market.GenRandNextEpoch(startEpoch, id)
 }
