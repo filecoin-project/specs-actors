@@ -1599,8 +1599,8 @@ func TestRandomCronEpochDuringPublish(t *testing.T) {
 		dealId := actor.publishAndActivateDeal(rt, client, mAddrs, startEpoch, endEpoch, activationEpoch, sectorExpiry)
 		d := actor.getDealProposal(rt, dealId)
 
-		rt.SetEpoch(processEpoch(t, dealId, startEpoch))
-		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, processEpoch(t, dealId, startEpoch), dealId)
+		rt.SetEpoch(endEpoch + 100)
+		pay, slashed := actor.cronTickAndAssertBalances(rt, client, provider, endEpoch+100, dealId)
 		require.EqualValues(t, big.Zero(), slashed)
 		duration := big.Sub(big.NewInt(int64(endEpoch)), big.NewInt(int64(startEpoch)))
 		require.EqualValues(t, big.Mul(duration, d.StoragePricePerEpoch), pay)
@@ -1655,7 +1655,7 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	m2 := &minerAddrs{owner, worker, p2, nil}
 	m3 := &minerAddrs{owner, worker, p3, nil}
 
-	startEpoch := abi.ChainEpoch(50)
+	startEpoch := abi.ChainEpoch(2880)
 	endEpoch := startEpoch + 200*builtin.EpochsInDay
 	sectorExpiry := endEpoch + 400
 
@@ -1695,7 +1695,7 @@ func TestLockedFundTrackingStates(t *testing.T) {
 	curr = rt.SetEpoch(processEpoch(t, dealId3, startEpoch))
 	rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, d3.ProviderCollateral, nil, exitcode.Ok)
 	actor.cronTick(rt)
-	payment := big.Product(big.NewInt(2), d1.StoragePricePerEpoch)
+	payment := big.Product(big.NewInt(4), d1.StoragePricePerEpoch)
 	csf = big.Sub(big.Sub(csf, payment), d3.TotalStorageFee())
 	plc = big.Sub(plc, d3.ProviderCollateral)
 	clc = big.Sub(clc, d3.ClientCollateral)
