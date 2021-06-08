@@ -63,7 +63,7 @@ jobs:
       - run:
           name: "Ensure we don't need to run 'make gen'"
           command: |
-            make gen && git diff --exit-code
+             make gen && go mod tidy && git diff --exit-code
 
   test-all:
     executor: golang
