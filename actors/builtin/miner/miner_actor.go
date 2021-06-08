@@ -942,8 +942,8 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		svis = append(svis, svi)
 	}
 
-	sealProof := precommits[0].Info.SealProof
 	builtin.RequireState(rt, len(precommits) > 0, "bitfield non-empty but zero precommits read from state")
+	sealProof := precommits[0].Info.SealProof
 	err = rt.VerifyAggregateSeals(
 		proof.AggregateSealVerifyProofAndInfos{
 			Infos:          svis,
