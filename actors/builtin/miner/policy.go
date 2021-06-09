@@ -156,11 +156,11 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 	abi.RegisteredSealProof_StackedDrg512MiBV1: builtin.EpochsInDay + PreCommitChallengeDelay,
 	abi.RegisteredSealProof_StackedDrg64GiBV1:  builtin.EpochsInDay + PreCommitChallengeDelay,
 
-	abi.RegisteredSealProof_StackedDrg32GiBV1_1:  9*builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
-	abi.RegisteredSealProof_StackedDrg2KiBV1_1:   9*builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg8MiBV1_1:   9*builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg512MiBV1_1: 9*builtin.EpochsInDay + PreCommitChallengeDelay,
-	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  9*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg32GiBV1_1:  30*builtin.EpochsInDay + PreCommitChallengeDelay, // PARAM_SPEC
+	abi.RegisteredSealProof_StackedDrg2KiBV1_1:   30*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg8MiBV1_1:   30*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg512MiBV1_1: 30*builtin.EpochsInDay + PreCommitChallengeDelay,
+	abi.RegisteredSealProof_StackedDrg64GiBV1_1:  30*builtin.EpochsInDay + PreCommitChallengeDelay,
 }
 
 // The maximum number of sector pre-commitments in a single batch.

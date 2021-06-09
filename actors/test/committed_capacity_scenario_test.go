@@ -55,7 +55,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + 200*builtin.EpochsInDay,
+		Expiration:    v.GetEpoch() + 211*builtin.EpochsInDay,
 	}
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
@@ -151,7 +151,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		SealedCID:              upgradeSealedCid,
 		SealRandEpoch:          v.GetEpoch() - 1,
 		DealIDs:                dealIDs,
-		Expiration:             v.GetEpoch() + 220*builtin.EpochsInDay,
+		Expiration:             v.GetEpoch() + 241*builtin.EpochsInDay,
 		ReplaceCapacity:        true,
 		ReplaceSectorDeadline:  dlInfo.Index,
 		ReplaceSectorPartition: pIdx,
