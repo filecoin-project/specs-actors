@@ -385,6 +385,9 @@ func (st *State) GetAllPrecommittedSectors(store adt.Store, sectorNos bitfield.B
 	}
 
 	if err := sectorNos.ForEach(func(sectorNo uint64) error {
+		if sectorNo > abi.MaxSectorNumber {
+			return xc.ErrIllegalArgument.Wrapf("sector number greater than maximum")
+		}
 		var info SectorPreCommitOnChainInfo
 		found, err := precommitted.Get(SectorKey(abi.SectorNumber(sectorNo)), &info)
 		if err != nil {
