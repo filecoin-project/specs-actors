@@ -5010,7 +5010,7 @@ func (h *actorHarness) proveCommitSector(rt *mock.Runtime, precommit *miner.Sect
 	rt.Verify()
 }
 
-func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCommitConf, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams) {
+func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCommitConf, precommits []*miner.SectorPreCommitOnChainInfo, params *miner.ProveCommitAggregateParams, baseFee big.Int) {
 	// Receive call to ComputeDataCommittments
 	commDs := make([]cbg.CborCid, len(precommits))
 	{
@@ -5078,7 +5078,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 
 	// burn networkFee
 	{
-		expectedFee := miner.AggregateNetworkFee(len(precommits), big.Zero())
+		expectedFee := miner.AggregateNetworkFee(len(precommits), baseFee)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedFee, nil, exitcode.Ok)
 	}
 
