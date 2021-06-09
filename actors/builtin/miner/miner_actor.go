@@ -866,7 +866,6 @@ type ProveCommitAggregateParams struct {
 // of these sectors. If valid, the sectors' deals are activated, sectors are assigned a deadline and charged pledge
 // and precommit state is removed.
 func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregateParams) *abi.EmptyValue {
-	rt.ValidateImmediateCallerAcceptAny()
 	aggSectorsCount, err := params.SectorNumbers.Count()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count aggregated sectors")
 	if aggSectorsCount > MaxAggregatedSectors {
@@ -883,6 +882,9 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	store := adt.AsStore(rt)
 	var st State
 	rt.StateReadonly(&st)
+
+	info := getMinerInfo(rt, &st)
+	rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
 
 	precommits, err := st.GetAllPrecommittedSectors(store, params.SectorNumbers)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get precommits")
