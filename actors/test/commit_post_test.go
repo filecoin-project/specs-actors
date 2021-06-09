@@ -688,6 +688,50 @@ func TestAggregateSizeLimits(t *testing.T) {
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
+func TestAggregateBadSender(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	//
+	// precommit good secotrs
+	//
+	firstSectorNo := abi.SectorNumber(100)
+	// early precommit
+	preCommitTime := v.GetEpoch()
+	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+
+	//
+	// attempt proving with invalid args
+	//
+
+	// advance time to max seal duration
+	proveTime := preCommitTime + miner.MaxProveCommitDuration[sealProof]
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	v, err = v.WithEpoch(proveTime)
+	require.NoError(t, err)
+
+	// construct invalid bitfield with a non-committed sector number > abi.MaxSectorNumber
+	sectorNosBf := precommitSectorNumbers(precommits)
+	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
+		SectorNumbers: sectorNosBf,
+	}
+	res := v.ApplyMessage(addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
+	assert.Equal(t, exitcode.ErrForbidden, res.Code)
+
+}
+
 func TestMeasureAggregatePorepGas(t *testing.T) {
 	sectorCount := 819
 	fmt.Printf("batch size = %d\n", sectorCount)

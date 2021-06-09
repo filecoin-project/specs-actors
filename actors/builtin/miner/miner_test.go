@@ -5083,7 +5083,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 	}
 
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAny()
+	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 	rt.Call(h.a.ProveCommitAggregate, params)
 	rt.Verify()
 }
