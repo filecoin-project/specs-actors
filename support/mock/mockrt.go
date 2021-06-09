@@ -824,6 +824,11 @@ func (rt *Runtime) SetCirculatingSupply(amt abi.TokenAmount) abi.TokenAmount {
 	return amt
 }
 
+func (rt *Runtime) SetBaseFee(baseFee abi.TokenAmount) abi.TokenAmount {
+	rt.baseFee = baseFee
+	return baseFee
+}
+
 func (rt *Runtime) AddIDAddress(src addr.Address, target addr.Address) {
 	rt.require(target.Protocol() == addr.ID, "target must use ID address protocol")
 	rt.idAddresses[src] = target

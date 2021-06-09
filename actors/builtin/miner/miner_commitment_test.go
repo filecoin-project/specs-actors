@@ -1084,6 +1084,7 @@ func TestProveCommit(t *testing.T) {
 
 func TestAggregateProveCommit(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
+
 	t.Run("valid precommits then aggregate provecommit", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
@@ -1122,7 +1123,7 @@ func TestAggregateProveCommit(t *testing.T) {
 		rt.SetEpoch(proveCommitEpoch)
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
-		actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf))
+		actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), big.Zero())
 
 		// expect precommits to have been removed
 		st := getState(rt)
@@ -1206,5 +1207,49 @@ func TestAggregateProveCommit(t *testing.T) {
 		// expect 10x locked initial pledge of sector to be the same as pledge requirement
 		assert.Equal(t, tenSectorsInitialPledge, st.InitialPledge)
 
+	})
+}
+
+func TestProveCommitAggregateFailures(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	t.Run("insufficient funds for network fee", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+
+		// Make a good commitment for the proof to target.
+
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []*miner.SectorPreCommitOnChainInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommitParams := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, []abi.DealID{1})
+			precommit := actor.preCommitSector(rt, precommitParams, preCommitConf{}, i == 0)
+			precommits = append(precommits, precommit)
+		}
+		sectorNosBf, err := sectorNosBf.Copy() //flush map to run to match partition state
+		require.NoError(t, err)
+
+		// set base fee extremely high so AggregateNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
+		rt.SetEpoch(proveCommitEpoch)
+		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
+		rt.SetBalance(balance)
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		require.True(t, miner.AggregateNetworkFee(len(precommits), baseFee).GreaterThan(balance))
+
+		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), baseFee)
+		})
 	})
 }

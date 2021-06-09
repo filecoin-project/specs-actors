@@ -957,8 +957,20 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 	confirmSectorProofsValid(rt, precommitsToConfirm)
 
-	burnFunds(rt, AggregateNetworkFee(len(precommitsToConfirm), rt.BaseFee()))
+	// Compute and burn the aggregate network fee. We need to re-load the state as
+	// confirmSectorProofsValid can change it.
 	rt.StateReadonly(&st)
+	aggregateFee := AggregateNetworkFee(len(precommitsToConfirm), rt.BaseFee())
+	unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine unlocked balance")
+	if unlockedBalance.LessThan(aggregateFee) {
+		rt.Abortf(exitcode.ErrInsufficientFunds,
+			"remaining unlocked funds after prove-commit (%s) are insufficient to pay aggregation fee of %s",
+			unlockedBalance, aggregateFee,
+		)
+	}
+	burnFunds(rt, aggregateFee)
+
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
