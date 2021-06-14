@@ -36,7 +36,9 @@ var EmptyObjectCid cid.Cid
 
 const defaultGasLimit = 5_000_000_000
 
-// This is set to match the test vector default randomness value
+// This is set to match the test vector default randomness value.  If set
+// differently it will cause all generated conformance tests over randomness
+// syscalls to fail.
 // https://github.com/filecoin-project/test-vectors/blob/master/schema/schema_randomness.go#L76
 const RandString = "i_am_random_____i_am_random_____"
 
@@ -68,6 +70,7 @@ type topLevelContext struct {
 	gasUsed      int64
 	gasAvailable int64
 	// Temporary field to workaround test-vector limitations
+	// https://github.com/filecoin-project/specs-actors/issues/1454
 	fakeSyscallsAccessed bool
 }
 

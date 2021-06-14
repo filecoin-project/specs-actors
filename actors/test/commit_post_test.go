@@ -777,7 +777,8 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams)
+	res, err := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
+	require.NoError(t, err)
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
