@@ -15,25 +15,15 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
-	"github.com/ipfs/go-merkledag"
 
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipld/go-car"
 	cbg "github.com/whyrusleeping/cbor-gen"
-	xerrors "golang.org/x/xerrors"
 )
 
 // Update this when generating new vectors for a new filecoin network version
 const defaultNetworkName = "hyperdrive"
-
-// option functions for setting vector generator field cleanly
-// write state tree to encoded car file
-// deal with top of state tree not matching filecoin protocol
-// persisting runtime values
 
 type TestVector struct {
 	ID string
@@ -79,8 +69,8 @@ func SetStartState(v *VM) Option {
 			return err
 		}
 		tv.StartStateTree = root
-		dserv := dagServiceFromStore(v.Store())
-		carBytes, err := encodeCAR(dserv, root)
+		getter := nodeGetterFromStore(v.Store())
+		carBytes, err := encodeCAR(getter, root)
 		if err != nil {
 			return err
 		}
@@ -275,7 +265,7 @@ func newTestVectorSerial(tv *TestVector) (*testVectorSerial, error) {
 }
 
 // encodeCAR taken from https://github.com/filecoin-project/test-vectors/blob/master/gen/builders/car.go#L16
-func encodeCAR(dagserv format.DAGService, roots ...cid.Cid) ([]byte, error) {
+func encodeCAR(dagserv format.NodeGetter, roots ...cid.Cid) ([]byte, error) {
 	carWalkFn := func(nd format.Node) (out []*format.Link, err error) {
 		//fmt.Printf("%s: %x\n", nd.Cid(), nd.RawData())
 		for _, link := range nd.Links() {
@@ -309,71 +299,51 @@ func encodeCAR(dagserv format.DAGService, roots ...cid.Cid) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func dagServiceFromStore(store adt.Store) format.DAGService {
-	bs := &adtBlockStoreForDAGService{store: store}
-	offl := offline.Exchange(bs)
-	blkserv := blockservice.New(bs, offl)
-	return merkledag.NewDAGService(blkserv)
+// Get(context.Context, cid.Cid) (Node, error)
+
+// // GetMany returns a channel of NodeOptions given a set of CIDs.
+// GetMany(context.Context, []cid.Cid) <-chan *NodeOption
+
+type adtNodeGetter struct {
+	store adt.Store
+}
+
+var _ format.NodeGetter = (*adtNodeGetter)(nil)
+
+func (a *adtNodeGetter) Get(ctx context.Context, c cid.Cid) (format.Node, error) {
+	d := cbg.Deferred{}
+	if err := a.store.Get(ctx, c, &d); err != nil {
+		return nil, err
+	}
+	b, err := blocks.NewBlockWithCid(d.Raw, c)
+	if err != nil {
+		return nil, err
+	}
+	return format.Decode(b)
+}
+
+func (a *adtNodeGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *format.NodeOption {
+	ret := make(chan *format.NodeOption)
+	defer close(ret)
+	go func() {
+		for _, c := range cids {
+			nd, err := a.Get(ctx, c)
+			ret <- &format.NodeOption{
+				Node: nd,
+				Err:  err,
+			}
+		}
+	}()
+	return ret
+}
+
+func nodeGetterFromStore(store adt.Store) format.NodeGetter {
+	return &adtNodeGetter{store: store}
 }
 
 type adtBlockStoreForDAGService struct {
 	store adt.Store
 }
-
-var _ blockstore.Blockstore = (*adtBlockStoreForDAGService)(nil)
-
-func (a *adtBlockStoreForDAGService) DeleteBlock(c cid.Cid) error {
-	return xerrors.Errorf("cannot delete cid: %s, unsupported operation\n", c)
-}
-
-func (a *adtBlockStoreForDAGService) Has(c cid.Cid) (bool, error) {
-	// All errors will be treated as NotFound
-	_, err := a.Get(c)
-	if err != nil {
-		return false, nil
-	}
-	return true, nil
-}
-
-func (a *adtBlockStoreForDAGService) Get(c cid.Cid) (blocks.Block, error) {
-	d := cbg.Deferred{}
-	if err := a.store.Get(context.Background(), c, &d); err != nil {
-		return nil, err
-	}
-	return blocks.NewBlockWithCid(d.Raw, c)
-}
-
-func (a *adtBlockStoreForDAGService) GetSize(c cid.Cid) (int, error) {
-	d := cbg.Deferred{}
-	if err := a.store.Get(context.Background(), c, &d); err != nil {
-		return 0, err
-	}
-	return len(d.Raw), nil
-}
-
-func (a *adtBlockStoreForDAGService) Put(b blocks.Block) error {
-	d := cbg.Deferred{
-		Raw: b.RawData(),
-	}
-	_, err := a.store.Put(context.Background(), d)
-	return err
-}
-
-func (a *adtBlockStoreForDAGService) PutMany(bs []blocks.Block) error {
-	for _, b := range bs {
-		if err := a.Put(b); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *adtBlockStoreForDAGService) AllKeysChan(ctx context.Context) (<-chan cid.Cid, error) {
-	return nil, xerrors.Errorf("unsupported operation")
-}
-
-// not supported -- noop
-func (a *adtBlockStoreForDAGService) HashOnRead(enabled bool) {}
 
 // Top level state tree
 
