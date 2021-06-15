@@ -5,23 +5,37 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/xerrors"
 )
 
+/*
+  `digest` does a deterministic traversal of all files in the input directory tree
+  and hashes the appended string of all filenames.
+  This only works as an identifier under certain assumptions about filenames.
+  A sufficient assumption is that filenames contain a collision resistant hash of
+  file content.
+*/
 func main() {
 	if len(os.Args) != 2 {
 		fmt.Printf("Expected exactly one argument, path of directory to digest")
 		os.Exit(1)
 	}
 	rootDir := os.Args[1]
-	data := make([]byte, 0)
+	h := sha256.New()
 	err := filepath.Walk(rootDir+"/", func(path string, info os.FileInfo, err error) error {
-		data = append(data, []byte(path)...)
+		n, err := h.Write([]byte(path))
+		if err != nil {
+			return err
+		}
+		if n != len([]byte(path)) {
+			return xerrors.Errorf("did not write full filename %s to hash, wrote %d bytes, path has %d bytes", path, n, len([]byte(path)))
+		}
 		return nil
 	})
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
-	h := sha256.Sum256(data)
-	fmt.Printf("- %x\n", h)
+	fmt.Printf("- %x\n", h.Sum(nil))
 }

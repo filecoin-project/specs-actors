@@ -55,8 +55,7 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 			},
 		}},
 	}
-	result, err := v.ApplyMessage(provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
-	require.NoError(t, err)
+	result := vm.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
 	require.Equal(t, exitcode.Ok, result.Code)
 
 	expectedPublishSubinvocations := []vm.ExpectInvocation{

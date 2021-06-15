@@ -220,8 +220,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			ChainCommitRand:  []byte(vm.RandString),
 		}
 		// PoSt is rejected for skipping all sectors.
-		result, err := tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams, t.Name())
-		require.NoError(t, err)
+		result := vm.RequireApplyMessage(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams, t.Name())
 		assert.Equal(t, exitcode.ErrIllegalArgument, result.Code)
 
 		vm.ExpectInvocation{
@@ -667,8 +666,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res, err := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
-	require.NoError(t, err)
+	res := vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code) // fail with too many aggregates
 
 	// Fail with too few sectors
@@ -676,8 +674,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	proveCommitAggregateTooFewParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: tooFewSectorNosBf,
 	}
-	res, err = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooFewParams, t.Name())
-	require.NoError(t, err)
+	res = vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooFewParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 
 	// Fail with proof too big
@@ -686,8 +683,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 		SectorNumbers:  justRightSectorNosBf,
 		AggregateProof: make([]byte, miner.MaxAggregateProofSize+1),
 	}
-	res, err = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooBigProofParams, t.Name())
-	require.NoError(t, err)
+	res = vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooBigProofParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
@@ -729,8 +725,7 @@ func TestAggregateBadSender(t *testing.T) {
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res, err := v.ApplyMessage(addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams, t.Name())
-	require.NoError(t, err)
+	res := vm.RequireApplyMessage(t, v, addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams, t.Name())
 	assert.Equal(t, exitcode.ErrForbidden, res.Code)
 }
 
@@ -777,8 +772,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res, err := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
-	require.NoError(t, err)
+	res := vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
