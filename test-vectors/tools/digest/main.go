@@ -24,6 +24,9 @@ func main() {
 	rootDir := os.Args[1]
 	h := sha256.New()
 	err := filepath.Walk(rootDir+"/", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		n, err := h.Write([]byte(path))
 		if err != nil {
 			return err
