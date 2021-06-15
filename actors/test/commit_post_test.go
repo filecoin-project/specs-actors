@@ -217,10 +217,10 @@ func TestCommitPoStFlow(t *testing.T) {
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte("not really random"),
+			ChainCommitRand:  []byte(vm.RandString),
 		}
 		// PoSt is rejected for skipping all sectors.
-		result := tv.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		result := vm.RequireApplyMessage(t, tv, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams, t.Name())
 		assert.Equal(t, exitcode.ErrIllegalArgument, result.Code)
 
 		vm.ExpectInvocation{
@@ -562,7 +562,6 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
 	v := vm.NewVMWithSingletons(ctx, t, blkStore)
-
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
@@ -667,7 +666,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams)
+	res := vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code) // fail with too many aggregates
 
 	// Fail with too few sectors
@@ -675,7 +674,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	proveCommitAggregateTooFewParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: tooFewSectorNosBf,
 	}
-	res = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooFewParams)
+	res = vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooFewParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 
 	// Fail with proof too big
@@ -684,7 +683,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 		SectorNumbers:  justRightSectorNosBf,
 		AggregateProof: make([]byte, miner.MaxAggregateProofSize+1),
 	}
-	res = v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooBigProofParams)
+	res = vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooBigProofParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
@@ -726,7 +725,7 @@ func TestAggregateBadSender(t *testing.T) {
 	proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res := v.ApplyMessage(addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
+	res := vm.RequireApplyMessage(t, v, addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams, t.Name())
 	assert.Equal(t, exitcode.ErrForbidden, res.Code)
 }
 
@@ -773,7 +772,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	proveCommitAggregateTooManyParams := miner.ProveCommitAggregateParams{
 		SectorNumbers: sectorNosBf,
 	}
-	res := v.ApplyMessage(addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams)
+	res := vm.RequireApplyMessage(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateTooManyParams, t.Name())
 	assert.Equal(t, exitcode.ErrIllegalArgument, res.Code)
 }
 
@@ -964,7 +963,7 @@ func submitWindowPoSt(t *testing.T, v *vm.VM, worker, actor address.Address, dlI
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte("not really random"),
+		ChainCommitRand:  []byte(vm.RandString),
 	}
 	vm.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 

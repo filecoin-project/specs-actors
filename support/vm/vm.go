@@ -69,8 +69,8 @@ type InternalMessage struct {
 type ChainMessage struct {
 	Version uint64
 
-	From address.Address
 	To   address.Address
+	From address.Address
 
 	Nonce uint64
 
@@ -340,8 +340,26 @@ type MessageResult struct {
 	GasCharged int64
 }
 
-// ApplyMessage applies the message to the current state.
-func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) MessageResult {
+// ApplyMessage applies the message to the current state. It returns result of message application and any internal vm errors.
+// If test-vector environment variables are set this method generates tests-vectors as a side effect
+func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, info string) (MessageResult, error) {
+	vectorGen := newVectorGen()
+
+	if err := vectorGen.before(vm, info); err != nil {
+		return MessageResult{}, err
+	}
+
+	result, callSeq, fakesAccessed, err := vm.applyMessageInternal(from, to, value, method, params)
+	if err != nil {
+		return MessageResult{}, err
+	}
+	if err := vectorGen.after(vm, from, to, value, method, params, callSeq, result, fakesAccessed, info); err != nil {
+		return MessageResult{}, err
+	}
+	return result, nil
+}
+
+func (vm *VM) applyMessageInternal(from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) (MessageResult, uint64, bool, error) {
 	// This method does not actually execute the message itself,
 	// but rather deals with the pre/post processing of a message.
 	// (see: `invocationContext.invoke()` for the dispatch and execution)
@@ -350,46 +368,46 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// load actor from global state
 	fromID, ok := vm.NormalizeAddress(from)
 	if !ok {
-		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}, 0, false, nil
 	}
 
 	fromActor, found, err := vm.GetActor(fromID)
 	if err != nil {
-		panic(err)
+		return MessageResult{}, 0, false, err
 	}
 	if !found {
 		// Execution error; sender does not exist at time of message execution.
-		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}
+		return MessageResult{nil, exitcode.SysErrSenderInvalid, gasCharged}, 0, false, nil
+	}
+
+	// send
+	// 1. update state tree nonce
+	// 2. checkpoint state with updated nonce
+	// 3. build chain message and charge gas
+	// 4. build internal message
+	// 5. build invocation context
+	// 6. process the msg
+	callSeq := fromActor.CallSeqNum
+	fromActor.CallSeqNum = callSeq + 1
+	if err := vm.setActor(context.Background(), fromID, fromActor); err != nil {
+		return MessageResult{}, 0, false, err
 	}
 
 	// checkpoint state
 	// Even if the message fails, the following accumulated changes will be applied:
 	// - CallSeqNumber increment
-	// - sender balance withheld
 	priorRoot, err := vm.checkpoint()
 	if err != nil {
-		panic(err)
-	}
-
-	// send
-	// 1. update state tree nonce
-	// 2. build chain message and charge gas
-	// 3. build internal message
-	// 4. build invocation context
-	// 5. process the msg
-	callSeq := fromActor.CallSeqNum
-	fromActor.CallSeqNum = callSeq + 1
-	if err := vm.setActor(context.Background(), fromID, fromActor); err != nil {
-		panic(err)
+		return MessageResult{}, 0, false, err
 	}
 
 	msg, err := makeChainMessage(from, to, callSeq, value, method, params)
 	if err != nil {
-		panic(err)
+		return MessageResult{}, 0, false, err
 	}
 	var msgBuf bytes.Buffer
 	if err := msg.MarshalCBOR(&msgBuf); err != nil {
-		panic(err)
+		return MessageResult{}, 0, false, err
 	}
 	bs := msgBuf.Bytes()
 	charge := vm.gasPrices.OnChainMessage(len(bs))
@@ -397,14 +415,14 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 
 	topLevel := topLevelContext{
 		originatorStableAddress: from,
-		// this should be nonce, but we only care that it creates a unique stable address
-		originatorCallSeq:    callSeq,
-		newActorAddressCount: 0,
-		statsSource:          vm.statsSource,
-		circSupply:           vm.circSupply,
-		gasUsed:              msgGasCharge,
-		gasPrices:            vm.gasPrices,
-		gasAvailable:         defaultGasLimit,
+		originatorCallSeq:       callSeq,
+		newActorAddressCount:    0,
+		statsSource:             vm.statsSource,
+		circSupply:              vm.circSupply,
+		gasUsed:                 msgGasCharge,
+		gasPrices:               vm.gasPrices,
+		gasAvailable:            defaultGasLimit,
+		fakeSyscallsAccessed:    false,
 	}
 
 	// build internal msg
@@ -431,24 +449,24 @@ func (vm *VM) ApplyMessage(from, to address.Address, value abi.TokenAmount, meth
 	// proceed from a nested call failure.
 	if exitCode != exitcode.Ok {
 		if err := vm.rollback(priorRoot); err != nil {
-			panic(err)
+			return MessageResult{}, 0, false, err
 		}
 	} else {
 		// persist changes from final invocation if call is ok
 		if _, err := vm.checkpoint(); err != nil {
-			panic(err)
+			return MessageResult{}, 0, false, err
 		}
 	}
 
 	// serialize return and charge gas
 	var retBuf bytes.Buffer
 	if err := ret.inner.MarshalCBOR(&retBuf); err != nil {
-		panic(err)
+		return MessageResult{}, 0, false, err
 	}
 	retGasCharge := vm.gasPrices.OnChainReturnValue(len(retBuf.Bytes()))
 	gasCharged = retGasCharge.Total() + ctx.topLevel.gasUsed
 
-	return MessageResult{ret.inner, exitCode, gasCharged}
+	return MessageResult{ret.inner, exitCode, gasCharged}, callSeq, ctx.topLevel.fakeSyscallsAccessed, nil
 }
 
 func (vm *VM) StateRoot() cid.Cid {

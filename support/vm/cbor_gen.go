@@ -32,13 +32,13 @@ func (t *ChainMessage) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.From (address.Address) (struct)
-	if err := t.From.MarshalCBOR(w); err != nil {
+	// t.To (address.Address) (struct)
+	if err := t.To.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.To (address.Address) (struct)
-	if err := t.To.MarshalCBOR(w); err != nil {
+	// t.From (address.Address) (struct)
+	if err := t.From.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -127,21 +127,21 @@ func (t *ChainMessage) UnmarshalCBOR(r io.Reader) error {
 		t.Version = uint64(extra)
 
 	}
-	// t.From (address.Address) (struct)
-
-	{
-
-		if err := t.From.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.From: %w", err)
-		}
-
-	}
 	// t.To (address.Address) (struct)
 
 	{
 
 		if err := t.To.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.To: %w", err)
+		}
+
+	}
+	// t.From (address.Address) (struct)
+
+	{
+
+		if err := t.From.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.From: %w", err)
 		}
 
 	}
@@ -245,6 +245,134 @@ func (t *ChainMessage) UnmarshalCBOR(r io.Reader) error {
 
 	if _, err := io.ReadFull(br, t.Params[:]); err != nil {
 		return err
+	}
+	return nil
+}
+
+var lengthBufStateInfo0 = []byte{128}
+
+func (t *StateInfo0) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufStateInfo0); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *StateInfo0) UnmarshalCBOR(r io.Reader) error {
+	*t = StateInfo0{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 0 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	return nil
+}
+
+var lengthBufStateRoot = []byte{131}
+
+func (t *StateRoot) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufStateRoot); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Version (vm.StateTreeVersion) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.Version)); err != nil {
+		return err
+	}
+
+	// t.Actors (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.Actors); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Actors: %w", err)
+	}
+
+	// t.Info (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.Info); err != nil {
+		return xerrors.Errorf("failed to write cid field t.Info: %w", err)
+	}
+
+	return nil
+}
+
+func (t *StateRoot) UnmarshalCBOR(r io.Reader) error {
+	*t = StateRoot{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Version (vm.StateTreeVersion) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.Version = StateTreeVersion(extra)
+
+	}
+	// t.Actors (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.Actors: %w", err)
+		}
+
+		t.Actors = c
+
+	}
+	// t.Info (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.Info: %w", err)
+		}
+
+		t.Info = c
+
 	}
 	return nil
 }

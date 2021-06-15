@@ -87,7 +87,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte("not really random"),
+		ChainCommitRand:  []byte(vm.RandString),
 	}
 
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
@@ -319,7 +319,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte("not really random"),
+			ChainCommitRand:  []byte(vm.RandString),
 		}
 		vm.ApplyOk(t, tv, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
@@ -353,7 +353,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte("not really random"),
+			ChainCommitRand:  []byte(vm.RandString),
 		}
 		vm.ApplyOk(t, tv, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 
@@ -383,7 +383,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte("not really random"),
+		ChainCommitRand:  []byte(vm.RandString),
 	}
 	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 

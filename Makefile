@@ -1,5 +1,8 @@
 GO_BIN ?= go
-all: build lint test tidy
+# relative path ../../ is included in path because current working directory of tests is directory of test files
+# and all test vector generation comes from a call to go test ./actors/test
+TEST_VECTOR_PATH = ../../test-vectors
+all: build lint test tidy determinism-check
 .PHONY: all
 
 build:
@@ -27,6 +30,27 @@ gen:
 	$(GO_BIN) run ./gen/gen.go
 .PHONY: gen
 
+determinism-check: 
+	rm -rf test-vectors/determinism
+	
+	SPECS_ACTORS_DETERMINISM="$(TEST_VECTOR_PATH)/determinism" $(GO_BIN) test ./actors/test -count=1
+	$(GO_BIN) build ./test-vectors/tools/digest
+
+	if [ "`./digest ./test-vectors/determinism`" != "`cat ./test-vectors/determinism-check`" ]; then \
+		echo "test-vectors don't match expected";\
+		exit 1;\
+	fi
+
+determinism-gen: 
+	rm -rf test-vectors/determinism
+	SPECS_ACTORS_DETERMINISM="$(TEST_VECTOR_PATH)/determinism" $(GO_BIN) test ./actors/test -count=1
+	$(GO_BIN) build ./test-vectors/tools/digest
+	./digest ./test-vectors/determinism > ./test-vectors/determinism-check
+
+conformance-gen: 
+	rm -rf test-vectors/conformance
+	SPECS_ACTORS_CONFORMANCE="$(TEST_VECTOR_PATH)/conformance" $(GO_BIN) test ./actors/test -count=1
+	tar -zcf test-vectors/conformance.tar.gz test-vectors/conformance
 
 # tools
 toolspath:=support/tools
