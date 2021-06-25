@@ -3,6 +3,7 @@ package market_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -398,6 +399,98 @@ func TestMarketActor(t *testing.T) {
 			actor.withdrawProviderBalance(rt, withDrawAmt, actualWithdrawn, minerAddrs)
 			actor.checkState(rt)
 		})
+	})
+}
+
+func TestDealOpsByEpochOffset(t *testing.T) {
+	owner := tutil.NewIDAddr(t, 101)
+	provider := tutil.NewIDAddr(t, 102)
+	worker := tutil.NewIDAddr(t, 103)
+	client := tutil.NewIDAddr(t, 104)
+	control := tutil.NewIDAddr(t, 200)
+	mAddr := &minerAddrs{owner, worker, provider, []address.Address{control}}
+
+	assertNGoodDeals := func(t *testing.T, dobe *market.SetMultimap, e abi.ChainEpoch, n int) {
+		count := 0
+		err := dobe.ForEach(e, func(id abi.DealID) error {
+			assert.Equal(t, uint64(e%market.DealUpdatesInterval), uint64(id%market.DealUpdatesInterval))
+			count++
+			return nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, n, count, "unexpected deal count at epoch %d", e)
+	}
+
+	t.Run("deal starts on day boundary", func(t *testing.T) {
+		startEpoch := abi.ChainEpoch(market.DealUpdatesInterval) // 2880
+		endEpoch := startEpoch + 200*builtin.EpochsInDay
+		publishEpoch := abi.ChainEpoch(1)
+
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		rt.SetEpoch(publishEpoch)
+
+		for i := 0; i < 3*market.DealUpdatesInterval; i++ {
+			pieceCID := tutil.MakeCID(fmt.Sprintf("%d", i), &market.PieceCIDPrefix)
+			dealID := actor.generateAndPublishDealForPiece(rt, client, mAddr, startEpoch, endEpoch, pieceCID, abi.PaddedPieceSize(2048))
+			assert.Equal(t, abi.DealID(i), dealID)
+		}
+
+		// Check that DOBE has exactly 3 deals scheduled every epoch in the day following the start time
+		var st market.State
+		rt.GetState(&st)
+		dobe, err := market.AsSetMultimap(rt.AdtStore(), st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
+		require.NoError(t, err)
+		for e := abi.ChainEpoch(market.DealUpdatesInterval); e < abi.ChainEpoch(2*market.DealUpdatesInterval); e++ {
+			assertNGoodDeals(t, dobe, e, 3)
+		}
+
+		// DOBE has no deals scheduled in the previous or next day
+		for e := abi.ChainEpoch(0); e < abi.ChainEpoch(market.DealUpdatesInterval); e++ {
+			assertNGoodDeals(t, dobe, e, 0)
+		}
+		for e := 2 * abi.ChainEpoch(market.DealUpdatesInterval); e < 3*abi.ChainEpoch(market.DealUpdatesInterval); e++ {
+			assertNGoodDeals(t, dobe, e, 0)
+		}
+	})
+
+	t.Run("deal starts partway through day", func(t *testing.T) {
+		startEpoch := abi.ChainEpoch(1000)
+		endEpoch := startEpoch + 200*builtin.EpochsInDay
+		publishEpoch := abi.ChainEpoch(1)
+
+		rt, actor := basicMarketSetup(t, owner, provider, worker, client)
+		rt.SetEpoch(publishEpoch)
+
+		// First 1000 deals (startEpoch % update interval) scheduled starting in the next day
+		for i := 0; i < 1000; i++ {
+			pieceCID := tutil.MakeCID(fmt.Sprintf("%d", i), &market.PieceCIDPrefix)
+			dealID := actor.generateAndPublishDealForPiece(rt, client, mAddr, startEpoch, endEpoch, pieceCID, abi.PaddedPieceSize(2048))
+			assert.Equal(t, abi.DealID(i), dealID)
+		}
+		var st market.State
+		rt.GetState(&st)
+		dobe, err := market.AsSetMultimap(rt.AdtStore(), st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
+		require.NoError(t, err)
+		for e := abi.ChainEpoch(2880); e < abi.ChainEpoch(2880)+startEpoch; e++ {
+			assertNGoodDeals(t, dobe, e, 1)
+		}
+		// Nothing scheduled between 0 and 2880
+		for e := abi.ChainEpoch(0); e < abi.ChainEpoch(2880); e++ {
+			assertNGoodDeals(t, dobe, e, 0)
+		}
+
+		// Now add another 500 deals
+		for i := 1000; i < 1500; i++ {
+			pieceCID := tutil.MakeCID(fmt.Sprintf("%d", i), &market.PieceCIDPrefix)
+			dealID := actor.generateAndPublishDealForPiece(rt, client, mAddr, startEpoch, endEpoch, pieceCID, abi.PaddedPieceSize(2048))
+			assert.Equal(t, abi.DealID(i), dealID)
+		}
+		rt.GetState(&st)
+		dobe, err = market.AsSetMultimap(rt.AdtStore(), st.DealOpsByEpoch, builtin.DefaultHamtBitwidth, builtin.DefaultHamtBitwidth)
+		require.NoError(t, err)
+		for e := startEpoch; e < startEpoch+500; e++ {
+			assertNGoodDeals(t, dobe, e, 1)
+		}
 	})
 }
 
@@ -3146,6 +3239,27 @@ func (h *marketActorTestHarness) generateAndPublishDeal(rt *mock.Runtime, client
 	startEpoch, endEpoch abi.ChainEpoch) abi.DealID {
 
 	deal := h.generateDealAndAddFunds(rt, client, minerAddrs, startEpoch, endEpoch)
+	rt.SetCaller(minerAddrs.worker, builtin.AccountActorCodeID)
+	dealIds := h.publishDeals(rt, minerAddrs, publishDealReq{deal: deal})
+	return dealIds[0]
+}
+
+func (h *marketActorTestHarness) generateAndPublishDealForPiece(rt *mock.Runtime, client address.Address, minerAddrs *minerAddrs,
+	startEpoch, endEpoch abi.ChainEpoch, pieceCID cid.Cid, pieceSize abi.PaddedPieceSize) abi.DealID {
+
+	// generate deal
+	storagePerEpoch := big.NewInt(10)
+	clientCollateral := big.NewInt(10)
+	providerCollateral := big.NewInt(10)
+
+	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: "label", StartEpoch: startEpoch,
+		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
+
+	// add funds
+	h.addProviderFunds(rt, deal.ProviderCollateral, minerAddrs)
+	h.addParticipantFunds(rt, client, deal.ClientBalanceRequirement())
+
+	// publish
 	rt.SetCaller(minerAddrs.worker, builtin.AccountActorCodeID)
 	dealIds := h.publishDeals(rt, minerAddrs, publishDealReq{deal: deal})
 	return dealIds[0]
