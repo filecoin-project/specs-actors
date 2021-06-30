@@ -1,6 +1,8 @@
 package testing
 
 import (
+	"errors"
+
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/minio/sha256-simd"
@@ -17,11 +19,11 @@ func MakeCID(input string, prefix *cid.Prefix) cid.Cid {
 		return c
 	}
 	c, err := prefix.Sum(data)
-	switch err {
-	case mh.ErrSumNotSupported:
+	switch {
+	case errors.Is(err, mh.ErrSumNotSupported):
 		// multihash library doesn't support this hash function.
 		// just fake it.
-	case nil:
+	case err == nil:
 		return c
 	default:
 		panic(err)
