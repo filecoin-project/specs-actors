@@ -7,7 +7,7 @@ require (
 	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0
 	github.com/filecoin-project/go-bitfield v0.2.3
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
-	github.com/filecoin-project/go-state-types v0.1.1-0.20210715140315-cb1fb37068fa
+	github.com/filecoin-project/go-state-types v0.1.1-0.20210716171938-88aca2297c3a
 	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/filecoin-project/specs-actors/v2 v2.3.5-0.20210114162132-5b58b773f4fb
 	github.com/filecoin-project/specs-actors/v3 v3.1.0
