@@ -18,8 +18,8 @@ require (
 	github.com/ipfs/go-ipld-format v0.0.2
 	github.com/ipld/go-car v0.1.0
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
-	github.com/minio/sha256-simd v1.0.0
-	github.com/multiformats/go-multihash v0.0.15
+	github.com/minio/sha256-simd v0.1.1
+	github.com/multiformats/go-multihash v0.0.14
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210118024343-169e9d70c0c2
