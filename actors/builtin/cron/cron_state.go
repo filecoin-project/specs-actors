@@ -31,5 +31,11 @@ func BuiltInEntries() []Entry {
 			Receiver:  builtin.StorageMarketActorAddr,
 			MethodNum: builtin.MethodsMarket.CronTick,
 		},
+		/*
+			{
+				Receiver: builtin.TimeLockActorAddr,
+				MethodNum: builtin.MethodsTimeLock.CronTick,
+			}
+		*/
 	}
 }
