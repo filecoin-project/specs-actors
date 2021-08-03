@@ -196,25 +196,6 @@ func (q ExpirationQueue) AddActiveSectors(sectors []*SectorOnChainInfo, ssize ab
 	return snos, totalPower, totalPledge, nil
 }
 
-// Reschedules some sectors to a new (quantized) expiration epoch.
-// The sectors being rescheduled are assumed to be not faulty, and hence are removed from and re-scheduled for on-time
-// rather than early expiration.
-// The sectors' power and pledge are assumed not to change, despite the new expiration.
-func (q ExpirationQueue) RescheduleExpirations(newExpiration abi.ChainEpoch, sectors []*SectorOnChainInfo, ssize abi.SectorSize) error {
-	if len(sectors) == 0 {
-		return nil
-	}
-
-	snos, power, pledge, err := q.removeActiveSectors(sectors, ssize)
-	if err != nil {
-		return xerrors.Errorf("failed to remove sector expirations: %w", err)
-	}
-	if err = q.add(newExpiration, snos, bitfield.New(), power, NewPowerPairZero(), pledge); err != nil {
-		return xerrors.Errorf("failed to record new sector expirations: %w", err)
-	}
-	return nil
-}
-
 // Re-schedules sectors to expire at an early expiration epoch (quantized), if they wouldn't expire before then anyway.
 // The sectors must not be currently faulty, so must be registered as expiring on-time rather than early.
 // The pledge for the now-early sectors is removed from the queue.
