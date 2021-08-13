@@ -16,11 +16,11 @@ import (
 	mh "github.com/multiformats/go-multihash"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v6/support/vm"
 )
 
 type MinerAgentConfig struct {

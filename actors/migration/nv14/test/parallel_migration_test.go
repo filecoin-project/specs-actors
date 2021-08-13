@@ -6,9 +6,9 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
-	vm4 "github.com/filecoin-project/specs-actors/v4/support/vm"
-	"github.com/filecoin-project/specs-actors/v5/actors/migration/nv13"
-	adt5 "github.com/filecoin-project/specs-actors/v5/actors/util/adt"
+	vm5 "github.com/filecoin-project/specs-actors/v5/support/vm"
+	"github.com/filecoin-project/specs-actors/v6/actors/migration/nv14"
+	adt5 "github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/ipfs/go-cid"
@@ -20,14 +20,14 @@ import (
 func TestParallelMigrationCalls(t *testing.T) {
 	// Construct simple prior state tree over a synchronized store
 	ctx := context.Background()
-	log := nv13.TestLogger{TB: t}
+	log := nv14.TestLogger{TB: t}
 	bs := ipld2.NewSyncBlockStoreInMemory()
-	vm := vm4.NewVMWithSingletons(ctx, t, bs)
+	vm := vm5.NewVMWithSingletons(ctx, t, bs)
 
 	// Run migration
 	adtStore := adt5.WrapStore(ctx, cbor.NewCborStore(bs))
 	startRoot := vm.StateRoot()
-	endRootSerial, err := nv13.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv13.Config{MaxWorkers: 1}, log, nv13.NewMemMigrationCache())
+	endRootSerial, err := nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 1}, log, nv14.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	// Migrate in parallel
@@ -35,12 +35,12 @@ func TestParallelMigrationCalls(t *testing.T) {
 	grp, ctx := errgroup.WithContext(ctx)
 	grp.Go(func() error {
 		var err1 error
-		endRootParallel1, err1 = nv13.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv13.Config{MaxWorkers: 2}, log, nv13.NewMemMigrationCache())
+		endRootParallel1, err1 = nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 2}, log, nv14.NewMemMigrationCache())
 		return err1
 	})
 	grp.Go(func() error {
 		var err2 error
-		endRootParallel2, err2 = nv13.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv13.Config{MaxWorkers: 2}, log, nv13.NewMemMigrationCache())
+		endRootParallel2, err2 = nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 2}, log, nv14.NewMemMigrationCache())
 		return err2
 	})
 	require.NoError(t, grp.Wait())

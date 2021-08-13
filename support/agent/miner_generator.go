@@ -7,8 +7,8 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/pkg/errors"
 
-	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
 )
 
 // MinerGenerator adds miner agents to the simulation at a configured rate.

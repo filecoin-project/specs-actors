@@ -1,4 +1,4 @@
-module github.com/filecoin-project/specs-actors/v5
+module github.com/filecoin-project/specs-actors/v6
 
 go 1.16
 
@@ -12,6 +12,7 @@ require (
 	github.com/filecoin-project/specs-actors/v2 v2.3.5-0.20210114162132-5b58b773f4fb
 	github.com/filecoin-project/specs-actors/v3 v3.1.0
 	github.com/filecoin-project/specs-actors/v4 v4.0.0
+	github.com/filecoin-project/specs-actors/v5 v5.0.4
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-ipld-cbor v0.0.5
@@ -28,5 +29,3 @@ require (
 	golang.org/x/text v0.3.2
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )
-
-retract v5.0.0
