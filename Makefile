@@ -11,12 +11,12 @@ build:
 
 test:
 	$(GO_BIN) test ./...
-	$(GO_BIN) test -race ./actors/migration/nv13/test
+	$(GO_BIN) test -race ./actors/migration/nv14/test
 .PHONY: test
 
 test-migration:
 .PHONY: test-migration
-	$(GO_BIN) test -race ./actors/migration/nv13/test
+	$(GO_BIN) test -race ./actors/migration/nv14/test
 
 test-coverage:
 	$(GO_BIN) test -coverprofile=coverage.out ./...
