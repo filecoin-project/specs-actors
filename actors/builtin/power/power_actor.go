@@ -2,6 +2,8 @@ package power
 
 import (
 	"bytes"
+	"fmt"
+	"sort"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -383,6 +385,8 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		st.ProofValidationBatch = nil
 	})
 
+	printVerifiesSorted(verifies)
+
 	res, err := rt.BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
@@ -421,6 +425,56 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			)
 		}
 	}
+}
+
+func printVerifiesSorted(verifies map[addr.Address][]proof.SealVerifyInfo) {
+
+	// Sort miners by address id
+	sortedMiners := make([]addr.Address, len(verifies))
+	i := 0
+	for a, _ := range verifies {
+		sortedMiners[i] = a
+		i++
+	}
+	sort.Slice(sortedMiners, func(i, j int) bool {
+		idI, err := addr.IDFromAddress(sortedMiners[i])
+		if err != nil {
+			panic(fmt.Sprintf("Addr in verifies not id address: %s", sortedMiners[i]))
+		}
+		idJ, err := addr.IDFromAddress(sortedMiners[j])
+		if err != nil {
+			panic(fmt.Sprintf("Addr in verifies not id address: %s", sortedMiners[j]))
+		}
+		return idI < idJ
+	})
+
+	for _, addr := range sortedMiners {
+		// Sort svis by sector number
+		svis := verifies[addr]
+		sort.Slice(svis, func(i, j int) bool {
+			return svis[i].SectorID.Number < svis[j].SectorID.Number
+		})
+		printSVIs(addr, svis)
+	}
+
+}
+
+func printSVIs(addr addr.Address, svis []proof.SealVerifyInfo) {
+	// fmt.Printf("%s: \n\n")
+	// for i, svi := range svis {
+	// 	fmt.Printf("(svi %d (SealProof %d) (SectorID (Number %d) (ActorID %d)) (DealIDs: %v) (Randomness %x) (IRandomness %x) (Proof %x) (CommR %s) (CommD %s)) \n",
+	// 		i, svi.SealProof, svi.SectorID.Number, svi.SectorID.Miner, svi.DealIDs, svi.Randomness, svi.InteractiveRandomness, svi.Proof, svi.SealedCID, svi.UnsealedCID)
+	// }
+	// fmt.Printf("\n")
+	fmt.Printf("%s:\n", addr)
+	for i, svi := range svis {
+		buf := new(bytes.Buffer)
+		if err := svi.MarshalCBOR(buf); err != nil {
+			panic(err)
+		}
+		fmt.Printf("svi %d: %x\n", i, buf.Bytes())
+	}
+	fmt.Printf("\n")
 }
 
 func (a Actor) processDeferredCronEvents(rt Runtime) {
