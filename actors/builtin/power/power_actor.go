@@ -2,6 +2,7 @@ package power
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 
@@ -432,7 +433,7 @@ func printVerifiesSorted(verifies map[addr.Address][]proof.SealVerifyInfo) {
 	// Sort miners by address id
 	sortedMiners := make([]addr.Address, len(verifies))
 	i := 0
-	for a, _ := range verifies {
+	for a := range verifies { //nolint:nomaprange
 		sortedMiners[i] = a
 		i++
 	}
@@ -472,7 +473,8 @@ func printSVIs(addr addr.Address, svis []proof.SealVerifyInfo) {
 		if err := svi.MarshalCBOR(buf); err != nil {
 			panic(err)
 		}
-		fmt.Printf("svi %d: %x\n", i, buf.Bytes())
+
+		fmt.Printf("svi %d: %x\n", i, sha256.Sum256(buf.Bytes()))
 	}
 	fmt.Printf("\n")
 }
