@@ -386,7 +386,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 		st.ProofValidationBatch = nil
 	})
 
-	printVerifiesSorted(verifies)
+	printVerifiesSorted(verifies, rt)
 
 	res, err := rt.BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
@@ -428,7 +428,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	}
 }
 
-func printVerifiesSorted(verifies map[addr.Address][]proof.SealVerifyInfo) {
+func printVerifiesSorted(verifies map[addr.Address][]proof.SealVerifyInfo, rt runtime.Runtime) {
 
 	// Sort miners by address id
 	sortedMiners := make([]addr.Address, len(verifies))
@@ -449,34 +449,37 @@ func printVerifiesSorted(verifies map[addr.Address][]proof.SealVerifyInfo) {
 		return idI < idJ
 	})
 
+	outStr := fmt.Sprintf("BEGIN SVIs for cron epoch %d\n", rt.CurrEpoch())
 	for _, addr := range sortedMiners {
 		// Sort svis by sector number
 		svis := verifies[addr]
 		sort.Slice(svis, func(i, j int) bool {
 			return svis[i].SectorID.Number < svis[j].SectorID.Number
 		})
-		printSVIs(addr, svis)
+		outStr += stringSVIs(addr, svis)
 	}
-
+	outStr += fmt.Sprintf("END SVIs for cron epoch %d\n", rt.CurrEpoch())
+	fmt.Print(outStr)
 }
 
-func printSVIs(addr addr.Address, svis []proof.SealVerifyInfo) {
+func stringSVIs(addr addr.Address, svis []proof.SealVerifyInfo) string {
 	// fmt.Printf("%s: \n\n")
 	// for i, svi := range svis {
 	// 	fmt.Printf("(svi %d (SealProof %d) (SectorID (Number %d) (ActorID %d)) (DealIDs: %v) (Randomness %x) (IRandomness %x) (Proof %x) (CommR %s) (CommD %s)) \n",
 	// 		i, svi.SealProof, svi.SectorID.Number, svi.SectorID.Miner, svi.DealIDs, svi.Randomness, svi.InteractiveRandomness, svi.Proof, svi.SealedCID, svi.UnsealedCID)
 	// }
 	// fmt.Printf("\n")
-	fmt.Printf("%s:\n", addr)
+	sviStr := fmt.Sprintf("%s:\n", addr)
 	for i, svi := range svis {
 		buf := new(bytes.Buffer)
 		if err := svi.MarshalCBOR(buf); err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("svi %d: %x\n", i, sha256.Sum256(buf.Bytes()))
+		sviStr += fmt.Sprintf("svi %d: %x\n", i, sha256.Sum256(buf.Bytes()))
 	}
-	fmt.Printf("\n")
+	sviStr += "\n"
+	return sviStr
 }
 
 func (a Actor) processDeferredCronEvents(rt Runtime) {
