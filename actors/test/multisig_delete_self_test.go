@@ -36,7 +36,7 @@ func TestMultisigDeleteSelf2Of3RemovedIsProposer(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
@@ -87,7 +87,7 @@ func TestMultisigDeleteSelf2Of3RemovedIsApprover(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
@@ -190,7 +190,7 @@ func TestMultisigSwapsSelf2Of3(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
@@ -263,7 +263,7 @@ func TestMultisigDeleteSigner1Of2(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
@@ -308,7 +308,7 @@ func TestMultisigSwapsSelf1Of2(t *testing.T) {
 		CodeCID:           builtin.MultisigActorCodeID,
 		ConstructorParams: paramBuf.Bytes(),
 	}
-	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &initParam)
+	ret := vm.ApplyOk(t, v, addrs[0], builtin.InitActorAddr, big.Zero(), builtin.MethodsInit.Exec, &initParam)
 	initRet := ret.(*init_.ExecReturn)
 	assert.NotNil(t, initRet)
 	multisigAddr := initRet.IDAddress
