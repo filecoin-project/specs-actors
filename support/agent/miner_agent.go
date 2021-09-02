@@ -252,28 +252,29 @@ func (ma *MinerAgent) createPreCommit(s SimState, currentEpoch abi.ChainEpoch) (
 	// upgrade sector if upgrades are on, this sector has deals, and we have a cc sector
 	isUpgrade := ma.Config.UpgradeSectors && len(dealIds) > 0 && len(ma.ccSectors) > 0
 	if isUpgrade {
-		var upgradeNumber uint64
-		upgradeNumber, ma.ccSectors = PopRandom(ma.ccSectors, ma.rnd)
+		// var upgradeNumber uint64
+		// upgradeNumber, ma.ccSectors = PopRandom(ma.ccSectors, ma.rnd)
 
-		// prevent sim from attempting to upgrade to sector with shorter duration
-		sinfo, err := ma.sectorInfo(s, upgradeNumber)
-		if err != nil {
-			return message{}, err
-		}
-		if sinfo.Expiration() > expiration {
-			params.Expiration = sinfo.Expiration()
-		}
+		// // prevent sim from attempting to upgrade to sector with shorter duration
+		// sinfo, err := ma.sectorInfo(s, upgradeNumber)
+		// if err != nil {
+		// 	return message{}, err
+		// }
+		// if sinfo.Expiration() > expiration {
+		// 	params.Expiration = sinfo.Expiration()
+		// }
 
-		dlInfo, pIdx, err := ma.dlInfoForSector(s, upgradeNumber)
-		if err != nil {
-			return message{}, err
-		}
+		// dlInfo, pIdx, err := ma.dlInfoForSector(s, upgradeNumber)
+		// if err != nil {
+		// 	return message{}, err
+		// }
 
-		params.ReplaceCapacity = true
-		params.ReplaceSectorNumber = abi.SectorNumber(upgradeNumber)
-		params.ReplaceSectorDeadline = dlInfo.Index
-		params.ReplaceSectorPartition = pIdx
-		ma.UpgradedSectors++
+		// params.ReplaceCapacity = true
+		// params.ReplaceSectorNumber = abi.SectorNumber(upgradeNumber)
+		// params.ReplaceSectorDeadline = dlInfo.Index
+		// params.ReplaceSectorPartition = pIdx
+		// ma.UpgradedSectors++
+		panic("agent test using old cc upgrade")
 	}
 
 	// assume PreCommit succeeds and schedule prove commit
@@ -736,18 +737,18 @@ func filterSlice(ns []uint64, toRemove map[uint64]bool) []uint64 {
 	return nextLive
 }
 
-func (ma *MinerAgent) sectorInfo(v SimState, sectorNumber uint64) (SimSectorInfo, error) {
-	mSt, err := v.MinerState(ma.IDAddress)
-	if err != nil {
-		return nil, err
-	}
+// func (ma *MinerAgent) sectorInfo(v SimState, sectorNumber uint64) (SimSectorInfo, error) {
+// 	mSt, err := v.MinerState(ma.IDAddress)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	sector, err := mSt.LoadSectorInfo(v.Store(), sectorNumber)
-	if err != nil {
-		return nil, err
-	}
-	return sector, nil
-}
+// 	sector, err := mSt.LoadSectorInfo(v.Store(), sectorNumber)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return sector, nil
+// }
 
 func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.Info, uint64, error) {
 	mSt, err := v.MinerState(ma.IDAddress)

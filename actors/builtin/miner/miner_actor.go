@@ -720,14 +720,8 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		maxActivation := currEpoch + MaxProveCommitDuration[precommit.SealProof]
 		validateExpiration(rt, maxActivation, precommit.Expiration, precommit.SealProof)
 
-		if precommit.ReplaceCapacity && len(precommit.DealIDs) == 0 {
-			rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector without committing deals")
-		}
-		if precommit.ReplaceSectorDeadline >= WPoStPeriodDeadlines {
-			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d", precommit.ReplaceSectorDeadline)
-		}
-		if precommit.ReplaceSectorNumber > abi.MaxSectorNumber {
-			rt.Abortf(exitcode.ErrIllegalArgument, "invalid sector number %d", precommit.ReplaceSectorNumber)
+		if precommit.ReplaceCapacity {
+			rt.Abortf(exitcode.SysErrForbidden, "cc upgrade through precommit discontinued, use lightweight cc upgrade instead")
 		}
 
 		sectorsDeals[i] = market.SectorDeals{
@@ -1095,8 +1089,6 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 	// Ideally, we'd combine some of these operations, but at least we have
 	// a constant number of them.
 
-	// Committed-capacity sectors licensed for early removal by new sectors being proven.
-	replaceSectors := make(DeadlineSectorMap)
 	activation := rt.CurrEpoch()
 	// Pre-commits for new sectors.
 	var validPreCommits []*SectorPreCommitOnChainInfo
@@ -1123,15 +1115,6 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 		}
 
 		validPreCommits = append(validPreCommits, precommit)
-
-		if precommit.Info.ReplaceCapacity {
-			err := replaceSectors.AddValues(
-				precommit.Info.ReplaceSectorDeadline,
-				precommit.Info.ReplaceSectorPartition,
-				uint64(precommit.Info.ReplaceSectorNumber),
-			)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to record sectors for replacement")
-		}
 	}
 
 	// When all prove commits have failed abort early
@@ -1147,11 +1130,6 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 	store := adt.AsStore(rt)
 	rt.StateTransaction(&st, func() {
 		info := getMinerInfo(rt, &st)
-		// Schedule expiration for replaced sectors to the end of their next deadline window.
-		// They can't be removed right now because we want to challenge them immediately before termination.
-		replaced, err := st.RescheduleSectorExpirations(store, rt.CurrEpoch(), info.SectorSize, replaceSectors)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector expirations")
-		replacedBySectorNumber := asMapBySectorNumber(replaced)
 
 		newSectorNos := make([]abi.SectorNumber, 0, len(validPreCommits))
 		for _, precommit := range validPreCommits {
@@ -1174,8 +1152,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 
 			// Lower-bound the pledge by that of the sector being replaced.
 			// Record the replaced age and reward rate for termination fee calculations.
-			replacedPledge, replacedAge, replacedDayReward := replacedSectorParameters(rt, precommit, replacedBySectorNumber)
-			initialPledge = big.Max(initialPledge, replacedPledge)
+			_, replacedAge, replacedDayReward := zeroReplacedSectorParameters()
 
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
@@ -1199,7 +1176,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 			totalPledge = big.Add(totalPledge, initialPledge)
 		}
 
-		err = st.PutSectors(store, newSectors...)
+		err := st.PutSectors(store, newSectors...)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put new sectors")
 
 		err = st.DeletePrecommittedSectors(store, newSectorNos...)
@@ -2723,28 +2700,8 @@ func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) 
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
 }
 
-func asMapBySectorNumber(sectors []*SectorOnChainInfo) map[abi.SectorNumber]*SectorOnChainInfo {
-	m := make(map[abi.SectorNumber]*SectorOnChainInfo, len(sectors))
-	for _, s := range sectors {
-		m[s.SectorNumber] = s
-	}
-	return m
-}
-
-func replacedSectorParameters(rt Runtime, precommit *SectorPreCommitOnChainInfo,
-	replacedByNum map[abi.SectorNumber]*SectorOnChainInfo) (pledge abi.TokenAmount, age abi.ChainEpoch, dayReward big.Int) {
-	if !precommit.Info.ReplaceCapacity {
-		return big.Zero(), abi.ChainEpoch(0), big.Zero()
-	}
-	replaced, ok := replacedByNum[precommit.Info.ReplaceSectorNumber]
-	if !ok {
-		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", precommit.Info.ReplaceSectorNumber)
-	}
-	// The sector will actually be active for the period between activation and its next proving deadline,
-	// but this covers the period for which we will be looking to the old sector for termination fees.
-	return replaced.InitialPledge,
-		maxEpoch(0, rt.CurrEpoch()-replaced.Activation),
-		replaced.ExpectedDayReward
+func zeroReplacedSectorParameters() (pledge abi.TokenAmount, age abi.ChainEpoch, dayReward big.Int) {
+	return big.Zero(), abi.ChainEpoch(0), big.Zero()
 }
 
 // Update worker address with pending worker key if exists and delay has passed
@@ -2858,7 +2815,7 @@ func minEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
 	return b
 }
 
-func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch {
+func maxEpoch(a, b abi.ChainEpoch) abi.ChainEpoch { //nolint:deadcode,unused
 	if a > b {
 		return a
 	}
