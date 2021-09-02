@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 
@@ -272,58 +271,6 @@ func TestPartitions(t *testing.T) {
 		err := partition.DeclareFaultsRecovered(sectorArr, sectorSize, bf(99))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not all sectors are assigned to the partition")
-	})
-
-	t.Run("reschedules expirations", func(t *testing.T) {
-		store, partition := setup(t)
-
-		unprovenSector := testSector(13, 7, 55, 65, 1006)
-		allSectors := append(sectors[:len(sectors):len(sectors)], unprovenSector)
-		sectorArr := sectorsArr(t, store, allSectors)
-
-		// Mark sector 2 faulty, we should skip it when rescheduling
-		faultSet := bf(2)
-		_, _, _, err := partition.RecordFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
-		require.NoError(t, err)
-
-		// Add an unproven sector. We _should_ reschedule the expiration.
-		// This is fine as we don't allow actually _expiring_ sectors
-		// while there are unproven sectors.
-		power, err := partition.AddSectors(
-			store, false,
-			[]*miner.SectorOnChainInfo{unprovenSector},
-			sectorSize, quantSpec,
-		)
-		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{unprovenSector})
-		assert.True(t, expectedPower.Equals(power))
-
-		// reschedule
-		replaced, err := partition.RescheduleExpirations(store, sectorArr, 18, bf(2, 4, 6, 7), sectorSize, quantSpec)
-		require.NoError(t, err)
-
-		// Assert we returned the sector infos of the replaced sectors
-		assert.Len(t, replaced, 3)
-		sort.Slice(replaced, func(i, j int) bool {
-			return replaced[i].SectorNumber < replaced[j].SectorNumber
-		})
-		assert.Equal(t, abi.SectorNumber(4), replaced[0].SectorNumber)
-		assert.Equal(t, abi.SectorNumber(6), replaced[1].SectorNumber)
-		assert.Equal(t, abi.SectorNumber(7), replaced[2].SectorNumber)
-
-		// We need to change the actual sector infos so our queue validation works.
-		rescheduled := rescheduleSectors(t, 18, allSectors, bf(4, 6, 7))
-
-		// partition power and sector categorization should remain the same
-		assertPartitionState(t, store, partition, quantSpec, sectorSize, rescheduled, bf(1, 2, 3, 4, 5, 6, 7), bf(2), bf(), bf(), bf(7))
-
-		// sectors should move to new expiration group
-		assertPartitionExpirationQueue(t, store, partition, quantSpec, []expectExpirationGroup{
-			{expiration: 5, sectors: bf(1, 2)},
-			{expiration: 9, sectors: bf(3)},
-			{expiration: 13, sectors: bf(5)},
-			{expiration: 21, sectors: bf(4, 6, 7)},
-		})
 	})
 
 	t.Run("replace sectors", func(t *testing.T) {
@@ -926,20 +873,6 @@ func emptyPartition(t *testing.T, store adt.Store) *miner.Partition {
 	p, err := miner.ConstructPartition(store)
 	require.NoError(t, err)
 	return p
-}
-
-func rescheduleSectors(t *testing.T, target abi.ChainEpoch, sectors []*miner.SectorOnChainInfo, filter bitfield.BitField) []*miner.SectorOnChainInfo {
-	toReschedule, err := filter.AllMap(miner.AddressedSectorsMax)
-	require.NoError(t, err)
-	output := make([]*miner.SectorOnChainInfo, len(sectors))
-	for i, sector := range sectors {
-		cpy := *sector
-		if toReschedule[uint64(cpy.SectorNumber)] {
-			cpy.Expiration = target
-		}
-		output[i] = &cpy
-	}
-	return output
 }
 
 func sectorsAsMap(sectors []*miner.SectorOnChainInfo) map[abi.SectorNumber]*miner.SectorOnChainInfo {

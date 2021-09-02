@@ -298,48 +298,6 @@ func TestExpirationQueue(t *testing.T) {
 		assert.Equal(t, 0, int(queue.Length()))
 	})
 
-	t.Run("reschedules sectors to expire later", func(t *testing.T) {
-		queue := emptyExpirationQueue(t)
-		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
-		require.NoError(t, err)
-
-		_, err = queue.Root()
-		require.NoError(t, err)
-
-		err = queue.RescheduleExpirations(abi.ChainEpoch(20), sectors[:3], sectorSize)
-		require.NoError(t, err)
-
-		_, err = queue.Root()
-		require.NoError(t, err)
-
-		// expect 3 rescheduled sectors to be bundled into 1 set
-		assert.Equal(t, 4, int(queue.Length()))
-
-		// rescheduled sectors are no longer scheduled before epoch 8
-		set, err := queue.PopUntil(7)
-		require.NoError(t, err)
-		assertBitfieldEmpty(t, set.OnTimeSectors)
-		assert.Equal(t, 4, int(queue.Length()))
-
-		// pop off sectors before new expiration and expect only the rescheduled set to remain
-		_, err = queue.PopUntil(19)
-		require.NoError(t, err)
-		assert.Equal(t, 1, int(queue.Length()))
-
-		// pop off rescheduled sectors
-		set, err = queue.PopUntil(20)
-		require.NoError(t, err)
-		assert.Equal(t, 0, int(queue.Length()))
-
-		// expect all sector stats from first 3 sectors to belong to new expiration set
-		assertBitfieldEquals(t, set.OnTimeSectors, 1, 2, 3)
-		assertBitfieldEmpty(t, set.EarlySectors)
-
-		assert.Equal(t, big.NewInt(3003), set.OnTimePledge)
-		assert.True(t, set.ActivePower.Equals(miner.PowerForSectors(sectorSize, sectors[:3])))
-		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
-	})
-
 	t.Run("reschedules sectors as faults", func(t *testing.T) {
 		// Create 3 expiration sets with 2 sectors apiece
 		queue := emptyExpirationQueueWithQuantizing(t, builtin.NewQuantSpec(4, 1), testAmtBitwidth)
@@ -460,43 +418,6 @@ func TestExpirationQueue(t *testing.T) {
 
 		assert.True(t, set.ActivePower.Equals(miner.NewPowerPairZero()))
 		assert.True(t, set.FaultyPower.Equals(miner.NewPowerPairZero()))
-	})
-
-	t.Run("reschedule expirations then reschedule as fault", func(t *testing.T) {
-		// Create expiration 3 sets with 2 sectors apiece
-		queue := emptyExpirationQueueWithQuantizing(t, builtin.NewQuantSpec(4, 1), testAmtBitwidth)
-		_, _, _, err := queue.AddActiveSectors(sectors, sectorSize)
-		require.NoError(t, err)
-
-		_, err = queue.Root()
-		require.NoError(t, err)
-
-		// reschedule 2 from second group to first
-		toReschedule := []*miner.SectorOnChainInfo{sectors[2]}
-		err = queue.RescheduleExpirations(2, toReschedule, sectorSize)
-		require.NoError(t, err)
-
-		// now reschedule one sector in first group and another in second group as faults to expire in first set
-		faults := []*miner.SectorOnChainInfo{sectors[1], sectors[2]}
-		power, err := queue.RescheduleAsFaults(4, faults, sectorSize)
-		require.NoError(t, err)
-
-		expectedPower := miner.PowerForSectors(sectorSize, faults)
-		assert.Equal(t, expectedPower, power)
-
-		// expect 0, 1, 2, 3 in first group
-		set, err := queue.PopUntil(5)
-		require.NoError(t, err)
-		assertBitfieldEquals(t, set.OnTimeSectors, 1, 2, 3)
-		assert.Equal(t, miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[0]}), set.ActivePower)
-		assert.Equal(t, expectedPower, set.FaultyPower)
-
-		// expect rest to come later
-		set, err = queue.PopUntil(20)
-		require.NoError(t, err)
-		assertBitfieldEquals(t, set.OnTimeSectors, 4, 5, 6)
-		assert.Equal(t, miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sectors[3], sectors[4], sectors[5]}), set.ActivePower)
-		assert.Equal(t, miner.NewPowerPairZero(), set.FaultyPower)
 	})
 
 	t.Run("reschedule recover restores all sector stats", func(t *testing.T) {
@@ -684,13 +605,6 @@ func TestExpirationQueue(t *testing.T) {
 	t.Run("adding no sectors leaves the queue empty", func(t *testing.T) {
 		queue := emptyExpirationQueueWithQuantizing(t, builtin.NewQuantSpec(4, 1), testAmtBitwidth)
 		_, _, _, err := queue.AddActiveSectors(nil, sectorSize)
-		require.NoError(t, err)
-		assert.Zero(t, queue.Length())
-	})
-
-	t.Run("rescheduling no expirations leaves the queue empty", func(t *testing.T) {
-		queue := emptyExpirationQueueWithQuantizing(t, builtin.NewQuantSpec(4, 1), testAmtBitwidth)
-		err := queue.RescheduleExpirations(10, nil, sectorSize)
 		require.NoError(t, err)
 		assert.Zero(t, queue.Length())
 	})
