@@ -75,7 +75,7 @@ type WithdrawBalanceParams = market0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.EmptyValue {
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
 	if params.Amount.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
@@ -109,7 +109,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 
 	code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return nil
+	return &amountExtracted
 }
 
 // Deposits the received value into the balance held in escrow.
