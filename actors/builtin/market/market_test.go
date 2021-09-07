@@ -2871,7 +2871,7 @@ func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withD
 	require.NotNil(h.t, withdrawn)
 	rt.Verify()
 
-	assert.Equal(h.t, expectedSend, *withdrawn)
+	assert.Equal(h.t, expectedSend, *withdrawn, "return value indicates %s withdrawn but expected %s", *withdrawn, expectedSend)
 }
 
 func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client address.Address, withDrawAmt, expectedSend abi.TokenAmount) {
@@ -2889,7 +2889,7 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 	require.NotNil(h.t, withdrawn)
 	rt.Verify()
 
-	assert.Equal(h.t, expectedSend, *withdrawn)
+	assert.Equal(h.t, expectedSend, *withdrawn, "return value indicates %s withdrawn but expected %s", *withdrawn, expectedSend)
 }
 
 func (h *marketActorTestHarness) cronTickNoChange(rt *mock.Runtime, client, provider address.Address) {
