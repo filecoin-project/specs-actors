@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -141,10 +142,10 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 //}
 type PublishStorageDealsParams = market0.PublishStorageDealsParams
 
-//type PublishStorageDealsReturn struct {
-//	IDs []abi.DealID
-//}
-type PublishStorageDealsReturn = market0.PublishStorageDealsReturn
+type PublishStorageDealsReturn struct {
+	IDs        []abi.DealID
+	ValidDeals bitfield.BitField
+}
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
@@ -196,16 +197,20 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
-			validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower)
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
 			}
-
 			client, ok := rt.ResolveAddress(deal.Proposal.Client)
 			if !ok {
 				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
 			}
+
+			if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
+				rt.Log(rtt.INFO, "invalid deal: %s", err)
+				continue
+			}
+
 			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
 			deal.Proposal.Provider = provider
 			resolvedAddrs[deal.Proposal.Client] = client
@@ -717,57 +722,58 @@ func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sec
 	return nil
 }
 
-func validateDeal(rt Runtime, deal ClientDealProposal, networkRawPower, networkQAPower, baselinePower abi.StoragePower) {
+func validateDeal(rt Runtime, deal ClientDealProposal, networkRawPower, networkQAPower, baselinePower abi.StoragePower) error {
 	if err := dealProposalIsInternallyValid(rt, deal); err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Invalid deal proposal: %s", err)
+		return xerrors.Errorf("Invalid deal proposal %w", err)
 	}
 
 	proposal := deal.Proposal
 
 	if len(proposal.Label) > DealMaxLabelSize {
-		rt.Abortf(exitcode.ErrIllegalArgument, "deal label can be at most %d bytes, is %d", DealMaxLabelSize, len(proposal.Label))
+		return xerrors.Errorf("deal label can be at most %d bytes, is %d", DealMaxLabelSize, len(proposal.Label))
 	}
 
 	if err := proposal.PieceSize.Validate(); err != nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proposal piece size is invalid: %v", err)
+		return xerrors.Errorf("proposal piece size is invalid: %w", err)
 	}
 
 	if !proposal.PieceCID.Defined() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID undefined")
+		return xerrors.Errorf("proposal PieceCid undefined")
 	}
 
 	if proposal.PieceCID.Prefix() != PieceCIDPrefix {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proposal PieceCID had wrong prefix")
+		return xerrors.Errorf("proposal PieceCID had wrong prefix")
 	}
 
 	if proposal.EndEpoch <= proposal.StartEpoch {
-		rt.Abortf(exitcode.ErrIllegalArgument, "proposal end before proposal start")
+		return xerrors.Errorf("proposal end before proposal start")
 	}
 
 	if rt.CurrEpoch() > proposal.StartEpoch {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal start epoch has already elapsed.")
+		return xerrors.Errorf("Deal start epoch has already elapsed")
 	}
 
 	minDuration, maxDuration := DealDurationBounds(proposal.PieceSize)
 	if proposal.Duration() < minDuration || proposal.Duration() > maxDuration {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Deal duration out of bounds.")
+		return xerrors.Errorf("Deal duration out of bounds")
 	}
 
 	minPrice, maxPrice := DealPricePerEpochBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.StoragePricePerEpoch.LessThan(minPrice) || proposal.StoragePricePerEpoch.GreaterThan(maxPrice) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Storage price out of bounds.")
+		return xerrors.Errorf("Storage price out of bounds")
 	}
 
 	minProviderCollateral, maxProviderCollateral := DealProviderCollateralBounds(proposal.PieceSize, proposal.VerifiedDeal,
 		networkRawPower, networkQAPower, baselinePower, rt.TotalFilCircSupply())
 	if proposal.ProviderCollateral.LessThan(minProviderCollateral) || proposal.ProviderCollateral.GreaterThan(maxProviderCollateral) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Provider collateral out of bounds.")
+		return xerrors.Errorf("Provider collateral out of bounds")
 	}
 
 	minClientCollateral, maxClientCollateral := DealClientCollateralBounds(proposal.PieceSize, proposal.Duration())
 	if proposal.ClientCollateral.LessThan(minClientCollateral) || proposal.ClientCollateral.GreaterThan(maxClientCollateral) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Client collateral out of bounds.")
+		return xerrors.Errorf("Client collateral out of bounds")
 	}
+	return nil
 }
 
 //
