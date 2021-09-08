@@ -481,8 +481,12 @@ func GetDealState(t *testing.T, vm *VM, dealID abi.DealID) (*market.DealState, b
 //
 
 func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}) cbor.Marshaler {
+	return ApplyCode(t, v, from, to, value, method, params, exitcode.Ok)
+}
+
+func ApplyCode(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, code exitcode.ExitCode) cbor.Marshaler {
 	result := RequireApplyMessage(t, v, from, to, value, method, params, t.Name())
-	require.Equal(t, exitcode.Ok, result.Code, "unexpected exit code")
+	require.Equal(t, code, result.Code, "unexpected exit code")
 	return result.Ret
 }
 
@@ -490,6 +494,12 @@ func RequireApplyMessage(t *testing.T, v *VM, from, to address.Address, value ab
 	result, err := v.ApplyMessage(from, to, value, method, params, name)
 	require.NoError(t, err)
 	return result
+}
+
+func RequireNormalizeAddress(t *testing.T, addr address.Address, v *VM) address.Address {
+	idAddr, found := v.NormalizeAddress((addr))
+	require.True(t, found)
+	return idAddr
 }
 
 //

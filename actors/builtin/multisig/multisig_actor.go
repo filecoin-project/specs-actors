@@ -238,7 +238,7 @@ func (a Actor) Approve(rt runtime.Runtime, params *TxnIDParams) *ApproveReturn {
 		ptx, err := adt.AsMap(adt.AsStore(rt), st.PendingTxns, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pending transactions")
 
-		txn = getTransaction(rt, ptx, params.ID, params.ProposalHash, true)
+		txn = getTransaction(rt, ptx, params.ID, params.ProposalHash)
 	})
 
 	// if the transaction already has enough approvers, execute it without "processing" this approval.
@@ -500,7 +500,7 @@ func (a Actor) approveTransaction(rt runtime.Runtime, txnID TxnID, txn *Transact
 	return executeTransactionIfApproved(rt, st, txnID, txn)
 }
 
-func getTransaction(rt runtime.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte, checkHash bool) *Transaction {
+func getTransaction(rt runtime.Runtime, ptx *adt.Map, txnID TxnID, proposalHash []byte) *Transaction {
 	// get transaction from the state trie
 	var txn Transaction
 	found, err := ptx.Get(txnID, &txn)
@@ -509,11 +509,11 @@ func getTransaction(rt runtime.Runtime, ptx *adt.Map, txnID TxnID, proposalHash 
 		rt.Abortf(exitcode.ErrNotFound, "no such transaction %v for approval", txnID)
 	}
 
-	// confirm the hashes match
-	if checkHash {
+	// confirm the hashes match, if present.
+	if proposalHash != nil {
 		calculatedHash, err := ComputeProposalHash(&txn, rt.HashBlake2b)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to compute proposal hash for %v", txnID)
-		if proposalHash != nil && !bytes.Equal(proposalHash, calculatedHash[:]) {
+		if !bytes.Equal(proposalHash, calculatedHash[:]) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "hash does not match proposal params (ensure requester is an ID address)")
 		}
 	}
