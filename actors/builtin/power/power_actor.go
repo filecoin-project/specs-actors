@@ -9,11 +9,15 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
+
+	//"github.com/filecoin-project/specs-actors/actors/builtin/power"
+
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	initact "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
@@ -386,6 +390,14 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	res, err := rt.BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
+	var pwr CurrentTotalPowerReturn
+	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
+	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
+
+	var rewret reward.ThisEpochRewardReturn
+	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
+	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
+
 	for _, m := range miners {
 		vres, ok := res[m]
 		if !ok {
@@ -415,7 +427,10 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			_ = rt.Send(
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
-				&builtin.ConfirmSectorProofsParams{Sectors: successful},
+				&builtin.ConfirmSectorProofsParams{Sectors: successful,
+					RewardStatsThisEpochRewardSmoothed: rewret.ThisEpochRewardSmoothed,
+					RewardStatsThisEpochBaselinePower:  rewret.ThisEpochBaselinePower,
+					PwrTotalQualityAdjPowerSmoothed:    pwr.QualityAdjPowerSmoothed},
 				abi.NewTokenAmount(0),
 				&builtin.Discard{},
 			)
