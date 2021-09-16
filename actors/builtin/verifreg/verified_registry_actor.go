@@ -8,6 +8,7 @@ import (
 
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	verifreg0 "github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -272,6 +273,8 @@ type RestoreBytesParams = verifreg0.RestoreBytesParams
 // Called by HandleInitTimeoutDeals from StorageMarketActor when a VerifiedDeal fails to init.
 // Restore allowable cap for the client, creating new entry if the client has been deleted.
 func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi.EmptyValue {
+	// XXX: wasn't sure if this was where you intended to add logs, but I only really saw this called in tests...
+	rt.Log(rtt.INFO, "in RestoreBytes")
 	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
 
 	if params.DealSize.LessThan(MinVerifiedDealSize) {
