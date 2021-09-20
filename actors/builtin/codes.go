@@ -35,17 +35,17 @@ func init() {
 	builtinActors = make(map[cid.Cid]*actorInfo)
 
 	for id, info := range map[*cid.Cid]*actorInfo{ //nolint:nomaprange
-		&SystemActorCodeID:           {name: "fil/5/system"},
-		&InitActorCodeID:             {name: "fil/5/init"},
-		&CronActorCodeID:             {name: "fil/5/cron"},
-		&StoragePowerActorCodeID:     {name: "fil/5/storagepower"},
-		&StorageMinerActorCodeID:     {name: "fil/5/storageminer"},
-		&StorageMarketActorCodeID:    {name: "fil/5/storagemarket"},
-		&PaymentChannelActorCodeID:   {name: "fil/5/paymentchannel"},
-		&RewardActorCodeID:           {name: "fil/5/reward"},
-		&VerifiedRegistryActorCodeID: {name: "fil/5/verifiedregistry"},
-		&AccountActorCodeID:          {name: "fil/5/account", signer: true},
-		&MultisigActorCodeID:         {name: "fil/5/multisig", signer: true},
+		&SystemActorCodeID:           {name: "fil/6/system"},
+		&InitActorCodeID:             {name: "fil/6/init"},
+		&CronActorCodeID:             {name: "fil/6/cron"},
+		&StoragePowerActorCodeID:     {name: "fil/6/storagepower"},
+		&StorageMinerActorCodeID:     {name: "fil/6/storageminer"},
+		&StorageMarketActorCodeID:    {name: "fil/6/storagemarket"},
+		&PaymentChannelActorCodeID:   {name: "fil/6/paymentchannel"},
+		&RewardActorCodeID:           {name: "fil/6/reward"},
+		&VerifiedRegistryActorCodeID: {name: "fil/6/verifiedregistry"},
+		&AccountActorCodeID:          {name: "fil/6/account", signer: true},
+		&MultisigActorCodeID:         {name: "fil/6/multisig", signer: true},
 	} {
 		c, err := builder.Sum([]byte(info.name))
 		if err != nil {
