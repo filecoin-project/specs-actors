@@ -5073,7 +5073,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 
 	// confirmSectorProofsValid
 	{
-		h.confirmSectorProofsValidInternal(rt, conf, precommits...)
+		h.confirmSectorProofsValidInternal(rt, conf, false, precommits...)
 	}
 
 	// burn networkFee
@@ -5088,9 +5088,11 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 	rt.Verify()
 }
 
-func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
-	// expect calls to get network stats
-	expectQueryNetworkInfo(rt, h)
+func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, isPrecomputed bool, precommits ...*miner.SectorPreCommitOnChainInfo) {
+	// expect calls to get network stats if we haven't precomputed
+	if !isPrecomputed {
+		expectQueryNetworkInfo(rt, h)
+	}
 
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitOnChainInfo
@@ -5145,7 +5147,7 @@ func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf p
 }
 
 func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
-	h.confirmSectorProofsValidInternal(rt, conf, precommits...)
+	h.confirmSectorProofsValidInternal(rt, conf, false, precommits...)
 	var allSectorNumbers []abi.SectorNumber
 	for _, precommit := range precommits {
 		allSectorNumbers = append(allSectorNumbers, precommit.Info.SectorNumber)

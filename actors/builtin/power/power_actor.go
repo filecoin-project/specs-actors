@@ -390,13 +390,13 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	res, err := rt.BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
-	var pwr CurrentTotalPowerReturn
-	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
-	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
-
 	var rewret reward.ThisEpochRewardReturn
 	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
 	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
+
+	var pwr CurrentTotalPowerReturn
+	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
+	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
 
 	for _, m := range miners {
 		vres, ok := res[m]
@@ -428,6 +428,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
 				&builtin.ConfirmSectorProofsParams{Sectors: successful,
+					PrecomputeRewardPowerStats:         true,
 					RewardStatsThisEpochRewardSmoothed: rewret.ThisEpochRewardSmoothed,
 					RewardStatsThisEpochBaselinePower:  rewret.ThisEpochBaselinePower,
 					PwrTotalQualityAdjPowerSmoothed:    pwr.QualityAdjPowerSmoothed},

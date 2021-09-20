@@ -20,8 +20,10 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	mineract "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v6/support/mock"
 	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
 )
@@ -551,6 +553,7 @@ func TestCron(t *testing.T) {
 		expectedPower := big.NewInt(0)
 		rt.SetEpoch(1)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		expectQueryNetworkInfo(rt, actor)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, abi.NewTokenAmount(0), nil, 0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
@@ -611,6 +614,8 @@ func TestCron(t *testing.T) {
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		expectQueryNetworkInfo(rt, actor)
+
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
@@ -720,6 +725,7 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(1)
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
+		//expectQueryNetworkInfo(rt, actor)
 
 		actor.enrollCronEvent(rt, miner1, 2, []byte{})
 		actor.enrollCronEvent(rt, miner2, 2, []byte{})
@@ -1011,9 +1017,19 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		// send will only be for the first and third sector as the middle sector will fail verification
 		cs := []confirmedSectorSend{{miner1, []abi.SectorNumber{info1.Number, info3.Number}}}
 
+		expectQueryNetworkInfo(rt, ac)
+
+		st := getState(rt)
+
 		// expect sends for confirmed sectors
 		for _, cs := range cs {
-			param := &builtin.ConfirmSectorProofsParams{Sectors: cs.sectorNums}
+			param := &builtin.ConfirmSectorProofsParams{
+				Sectors:                            cs.sectorNums,
+				PrecomputeRewardPowerStats:         true,
+				RewardStatsThisEpochRewardSmoothed: ac.thisEpochRewardSmoothed,
+				RewardStatsThisEpochBaselinePower:  ac.thisEpochBaselinePower,
+				PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,
+			}
 			rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
 		}
 
@@ -1074,18 +1090,24 @@ func verifyEmptyMap(t testing.TB, rt *mock.Runtime, cid cid.Cid) {
 
 type spActorHarness struct {
 	power.Actor
-	t               *testing.T
-	minerSeq        int
-	sealProof       abi.RegisteredSealProof
-	windowPoStProof abi.RegisteredPoStProof
+	t                       *testing.T
+	minerSeq                int
+	sealProof               abi.RegisteredSealProof
+	windowPoStProof         abi.RegisteredPoStProof
+	thisEpochBaselinePower  big.Int
+	thisEpochRewardSmoothed smoothing.FilterEstimate
 }
 
 func newHarness(t *testing.T) *spActorHarness {
+	rwd := big.Mul(big.NewIntUnsigned(10), big.NewIntUnsigned(1e18))
+
 	return &spActorHarness{
-		Actor:           power.Actor{},
-		t:               t,
-		sealProof:       abi.RegisteredSealProof_StackedDrg32GiBV1_1,
-		windowPoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		Actor:                   power.Actor{},
+		t:                       t,
+		sealProof:               abi.RegisteredSealProof_StackedDrg32GiBV1_1,
+		windowPoStProof:         abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		thisEpochBaselinePower:  abi.NewStoragePower(1 << 50),           // XXX: unsure if this is right
+		thisEpochRewardSmoothed: smoothing.TestingConstantEstimate(rwd), // XXX: unsure if this is right
 	}
 }
 
@@ -1122,9 +1144,19 @@ type confirmedSectorSend struct {
 func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpoch, expectedRawPower abi.StoragePower,
 	confirmedSectors []confirmedSectorSend, infos map[addr.Address][]proof.SealVerifyInfo) {
 
+	expectQueryNetworkInfo(rt, h)
+
+	st := getState(rt)
+
 	// expect sends for confirmed sectors
 	for _, cs := range confirmedSectors {
-		param := &builtin.ConfirmSectorProofsParams{Sectors: cs.sectorNums}
+		param := &builtin.ConfirmSectorProofsParams{
+			Sectors:                            cs.sectorNums,
+			PrecomputeRewardPowerStats:         true,
+			RewardStatsThisEpochRewardSmoothed: h.thisEpochRewardSmoothed,
+			RewardStatsThisEpochBaselinePower:  h.thisEpochBaselinePower,
+			PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,
+		}
 		rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
 	}
 
@@ -1139,7 +1171,7 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 	rt.Call(h.Actor.OnEpochTickEnd, nil)
 	rt.Verify()
 
-	st := getState(rt)
+	st = getState(rt)
 	require.Nil(h.t, st.ProofValidationBatch)
 }
 
@@ -1321,6 +1353,36 @@ func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, ex
 	rawBytePower, qualityAdjPower := power.CurrentTotalPower(st)
 	assert.Equal(h.t, expectedRaw, rawBytePower)
 	assert.Equal(h.t, expectedQA, qualityAdjPower)
+}
+
+func expectQueryNetworkInfo(rt *mock.Runtime, h *spActorHarness) {
+	st := getState(rt)
+
+	currentPower := power.CurrentTotalPowerReturn{
+		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+	}
+
+	currentReward := reward.ThisEpochRewardReturn{
+		ThisEpochBaselinePower:  h.thisEpochBaselinePower,
+		ThisEpochRewardSmoothed: h.thisEpochRewardSmoothed,
+	}
+	rt.ExpectSend(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.ThisEpochReward,
+		nil,
+		big.Zero(),
+		&currentReward,
+		exitcode.Ok,
+	)
+
+	rt.ExpectSend(
+		builtin.StoragePowerActorAddr,
+		builtin.MethodsPower.CurrentTotalPower,
+		nil,
+		big.Zero(),
+		&currentPower,
+		exitcode.Ok,
+	)
 }
 
 func (h *spActorHarness) expectMinersAboveMinPower(rt *mock.Runtime, count int64) {
