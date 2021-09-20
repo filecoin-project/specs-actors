@@ -20,16 +20,6 @@ import (
 )
 
 func main() {
-	// Common types
-	//if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof",
-	//proof.SectorInfo{}, // Aliased from v0
-	//proof.SealVerifyInfo{}, // Aliased from v0
-	//proof.PoStProof{}, // Aliased from v0
-	//proof.WindowPoStVerifyInfo{}, // Aliased from v0
-	//proof.WinningPoStVerifyInfo{}, // Aliased from v0
-	//); err != nil {
-	//	panic(err)
-	//}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
