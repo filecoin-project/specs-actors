@@ -18,6 +18,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v6/support/vm"

@@ -137,10 +137,9 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 	return nil
 }
 
-//type PublishStorageDealsParams struct {
-//	Deals []ClientDealProposal
-//}
-type PublishStorageDealsParams = market0.PublishStorageDealsParams
+type PublishStorageDealsParams struct {
+	Deals []ClientDealProposal
+}
 
 type PublishStorageDealsReturn struct {
 	IDs        []abi.DealID
@@ -189,69 +188,61 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	var newDealIds []abi.DealID
 	var st State
+	proposalCids := make(map[cid.Cid]struct{})
+	validDeals := make([]ClientDealProposal, 0)
 	rt.StateTransaction(&st, func() {
-		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
-			withDealProposals(WritePermission).withDealsByEpoch(WritePermission).withEscrowTable(WritePermission).
-			withLockedTable(WritePermission).build()
+		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(ReadOnlyPermission).
+			withEscrowTable(ReadOnlyPermission).withLockedTable(ReadOnlyPermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
-		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		for di, deal := range params.Deals {
 
 			if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
-				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish deals from different providers at the same time")
+				rt.Log(rtt.INFO, "invalid deal %d: cannot publish deals from multiple providers in one batch", di)
+				continue
 			}
 			client, ok := rt.ResolveAddress(deal.Proposal.Client)
 			if !ok {
-				rt.Abortf(exitcode.ErrNotFound, "failed to resolve client address %v", deal.Proposal.Client)
-			}
-
-			if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
-				rt.Log(rtt.INFO, "invalid deal: %s", err)
+				rt.Log(rtt.INFO, "invalid deal %d: failed to resolve proposal.Client address %v for deal ", di, deal.Proposal.Client)
 				continue
 			}
+			if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
+				rt.Log(rtt.INFO, "invalid deal %d: %s", di, err)
+				continue
+			}
+
+			// assert lock up covers deal
+			msm
+
+			// assert not pending
+			pcid, err := deal.ProposalCid()
+			// check proposalCids for duplication within message batch
+			// check state PendingProposals for duplication across messages
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
+			duplicateInState, err := msm.pendingDeals.Has(abi.CidKey(pcid))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
+			_, duplicateInMessage := proposalCids[pcid]
+			if duplicateInState || duplicateInMessage {
+				rt.Log(rtt.INFO, "invalid deal %d: cannot publish duplicate deal proposal %s", di)
+				continue
+			}
+			proposalCids[pcid] = struct{}{}
 
 			// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
 			deal.Proposal.Provider = provider
 			resolvedAddrs[deal.Proposal.Client] = client
 			deal.Proposal.Client = client
 
-			err := msm.lockClientAndProviderBalances(&deal.Proposal)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock balance")
+			validDeals = append(validDeals, deal)
 
-			id := msm.generateStorageDealID()
-
-			pcid, err := deal.Proposal.Cid()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
-
-			has, err := msm.pendingDeals.Has(abi.CidKey(pcid))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
-			if has {
-				rt.Abortf(exitcode.ErrIllegalArgument, "cannot publish duplicate deals")
-			}
-
-			err = msm.pendingDeals.Put(abi.CidKey(pcid))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
-
-			err = msm.dealProposals.Set(id, &deal.Proposal)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
-
-			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
-			// schedule too many deals for the same tick.
-			processEpoch := GenRandNextEpoch(deal.Proposal.StartEpoch, id)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
-
-			err = msm.dealsByEpoch.Put(processEpoch, id)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal ops by epoch")
-
-			newDealIds = append(newDealIds, id)
 		}
+		builtin.RequireParam(rt, len(validDeals) > 0, "All deal proposals invalid")
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 	})
 
-	for _, deal := range params.Deals {
+	for _, deal := range validDeals {
 		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
 		// Either the DealSize is within the available DataCap of the VerifiedClient
 		// or this message will fail. We do not allow a deal that is partially verified.
@@ -272,6 +263,42 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
 		}
 	}
+
+	rt.StateTransaction(&st, func() {
+		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
+			withDealProposals(WritePermission).withDealsByEpoch(WritePermission).withEscrowTable(WritePermission).
+			withLockedTable(WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
+		// This should only fail on programmer error because all expected invalid conditions should be filtered in the first set of checks.
+		for di, validDeal := range validDeals {
+			err := msm.lockClientAndProviderBalances(&deal.Proposal)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock balance")
+
+			id := msm.generateStorageDealID()
+
+			pcid, err := deal.Proposal.Cid()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
+
+			err = msm.pendingDeals.Put(abi.CidKey(pcid))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
+
+			err = msm.dealProposals.Set(id, &deal.Proposal)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
+
+			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
+			// schedule too many deals for the same tick.
+			processEpoch := GenRandNextEpoch(deal.Proposal.StartEpoch, id)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
+
+			err = msm.dealsByEpoch.Put(processEpoch, id)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal ops by epoch")
+
+			newDealIds = append(newDealIds, id)
+		}
+
+	})
 
 	return &PublishStorageDealsReturn{IDs: newDealIds}
 }

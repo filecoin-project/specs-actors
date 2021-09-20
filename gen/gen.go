@@ -163,6 +163,7 @@ func main() {
 		market.SectorDeals{},
 		market.SectorWeights{},
 		market.DealState{},
+		market.PublishStorageDealsReturn{},
 	); err != nil {
 		panic(err)
 	}

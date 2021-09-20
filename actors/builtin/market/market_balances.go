@@ -98,3 +98,16 @@ func (m *marketStateMutation) maybeLockBalance(addr addr.Address, amount abi.Tok
 	}
 	return nil
 }
+
+// Return true when the funds in escrow for the input address can cover an additional lockup of amountToLock
+func (m *marketStateMutation) balanceCovered(addr addr.Address, amountToLock abi.TokenAmount) (bool, error) {
+	prevLocked, err := m.lockedTable.Get(addr)
+	if err != nil {
+		return false, xerrors.Errorf("failed to get locked balance: %w", err)
+	}
+	escrowBalance, err := m.escrowTable.Get(addr)
+	if err != nil {
+		return false, xerrors.Errorf("failed to get escrow balance: %w", err)
+	}
+	return big.Add(prevLocked, amountToLock).GreaterThan(escrowBalance), nil
+}

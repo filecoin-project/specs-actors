@@ -1,7 +1,9 @@
 package market
 
 import (
+	"github.com/filecoin-project/go-state-types/crypto"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/ipfs/go-cid"
 )
 
 //var PieceCIDPrefix = cid.Prefix{
@@ -45,8 +47,19 @@ var PieceCIDPrefix = market0.PieceCIDPrefix
 type DealProposal = market0.DealProposal
 
 // ClientDealProposal is a DealProposal signed by a client
-//type ClientDealProposal struct {
-//	Proposal        DealProposal
-//	ClientSignature crypto.Signature
-//}
-type ClientDealProposal = market0.ClientDealProposal
+type ClientDealProposal struct {
+	Proposal        DealProposal
+	ClientSignature crypto.Signature
+
+	// internal cache
+	cid cid.Cid
+}
+
+func (c *ClientDealProposal) ProposalCid() (cid.Cid, error) {
+	var err error
+	if c.cid.Equals(cid.Undef) {
+		c.cid, err = c.Proposal.Cid()
+		return c.cid, err
+	}
+	return c.cid, nil
+}
