@@ -5152,7 +5152,11 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	}
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{Sectors: allSectorNumbers})
+
+	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{
+		Sectors:                    allSectorNumbers,
+		PrecomputeRewardPowerStats: false,
+	})
 	rt.Verify()
 }
 

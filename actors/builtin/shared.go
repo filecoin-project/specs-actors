@@ -41,11 +41,6 @@ func (b *CBORBytes) UnmarshalCBOR(r io.Reader) error {
 	return err
 }
 
-func (b ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
-	_, err := w.Write([]byte("aaaaa"))
-	return err
-}
-
 // Aborts with an ErrIllegalState if predicate is not true.
 // This method is intended for use like an assertion.
 // Don't use this shorthand for states which are logically possible, as it will hide (non-)coverage of
@@ -96,10 +91,17 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
+// stub for codegen
+// func (b ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
+// 	_, err := w.Write([]byte("aaaaa"))
+// 	return err
+// }
+
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
 // can instead both alias the v2 version.
 type ConfirmSectorProofsParams struct {
 	Sectors                            []abi.SectorNumber
+	PrecomputeRewardPowerStats         bool
 	RewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate
 	RewardStatsThisEpochBaselinePower  abi.StoragePower
 	PwrTotalQualityAdjPowerSmoothed    smoothing.FilterEstimate
