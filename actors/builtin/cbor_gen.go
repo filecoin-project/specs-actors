@@ -121,7 +121,7 @@ func (t *MinerAddrs) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufConfirmSectorProofsParams = []byte{132}
+var lengthBufConfirmSectorProofsParams = []byte{133}
 
 func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -146,6 +146,11 @@ func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 		if err := cbg.CborWriteHeader(w, cbg.MajUnsignedInt, uint64(v)); err != nil {
 			return err
 		}
+	}
+
+	// t.PrecomputeRewardPowerStats (bool) (bool)
+	if err := cbg.WriteBool(w, t.PrecomputeRewardPowerStats); err != nil {
+		return err
 	}
 
 	// t.RewardStatsThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
@@ -179,7 +184,7 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -216,6 +221,23 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 		t.Sectors[i] = abi.SectorNumber(val)
 	}
 
+	// t.PrecomputeRewardPowerStats (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.PrecomputeRewardPowerStats = false
+	case 21:
+		t.PrecomputeRewardPowerStats = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
 	// t.RewardStatsThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
