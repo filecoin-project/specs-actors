@@ -110,12 +110,16 @@ func TestOnEpochTickEnd(t *testing.T) {
 		// Original send to storage power actor
 		To:     builtin.StoragePowerActorAddr,
 		Method: builtin.MethodsPower.OnEpochTickEnd,
-		SubInvocations: []vm.ExpectInvocation{{
-			// expect call to reward to update kpi
-			To:     builtin.RewardActorAddr,
-			Method: builtin.MethodsReward.UpdateNetworkKPI,
-			From:   builtin.StoragePowerActorAddr,
-		}},
+		SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+			{
+				// expect call to reward to update kpi
+				To:     builtin.RewardActorAddr,
+				Method: builtin.MethodsReward.UpdateNetworkKPI,
+				From:   builtin.StoragePowerActorAddr,
+			},
+		},
 	}.Matches(t, v.Invocations()[0])
 
 	// create new vm at cron epoch with existing state
@@ -130,20 +134,22 @@ func TestOnEpochTickEnd(t *testing.T) {
 		// Original send to storage power actor
 		To:     builtin.StoragePowerActorAddr,
 		Method: builtin.MethodsPower.OnEpochTickEnd,
-		SubInvocations: []vm.ExpectInvocation{{
-
-			// expect call back to miner that was set up in create miner
-			To:     minerAddrs.IDAddress,
-			Method: builtin.MethodsMiner.OnDeferredCronEvent,
-			From:   builtin.StoragePowerActorAddr,
-			Value:  vm.ExpectAttoFil(big.Zero()),
-			Params: vm.ExpectBytes(cronConfig.Payload),
-		}, {
-
-			// expect call to reward to update kpi
-			To:     builtin.RewardActorAddr,
-			Method: builtin.MethodsReward.UpdateNetworkKPI,
-			From:   builtin.StoragePowerActorAddr,
-		}},
+		SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+			{
+				// expect call back to miner that was set up in create miner
+				To:     minerAddrs.IDAddress,
+				Method: builtin.MethodsMiner.OnDeferredCronEvent,
+				From:   builtin.StoragePowerActorAddr,
+				Value:  vm.ExpectAttoFil(big.Zero()),
+				Params: vm.ExpectBytes(cronConfig.Payload),
+			},
+			{
+				// expect call to reward to update kpi
+				To:     builtin.RewardActorAddr,
+				Method: builtin.MethodsReward.UpdateNetworkKPI,
+				From:   builtin.StoragePowerActorAddr,
+			}},
 	}.Matches(t, v.Invocations()[0])
 }

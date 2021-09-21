@@ -75,10 +75,12 @@ func TestCommitPoStFlow(t *testing.T) {
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						// XXX why are we calling this again? problematic?
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-
 						// The call to burnt funds indicates the overdue precommit has been penalized
 						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: vm.ExpectAttoFil(precommits[0].PreCommitDeposit)},
 						// No re-enrollment of cron because burning of PCD discontinues miner cron scheduling
@@ -133,11 +135,11 @@ func TestCommitPoStFlow(t *testing.T) {
 		Method: builtin.MethodsCron.EpochTick,
 		SubInvocations: []vm.ExpectInvocation{
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				// expect confirm sector proofs valid because we prove committed,
 				// but not an on deferred cron event because this is not a deadline boundary
 				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
-					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
 				}},
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
@@ -253,7 +255,10 @@ func TestCommitPoStFlow(t *testing.T) {
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
+						/// XXX there are two of these!!! why
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
@@ -401,11 +406,11 @@ func TestMeasurePoRepGas(t *testing.T) {
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					// expect confirm sector proofs valid because we prove committed,
 					// but not an on deferred cron event because this is not a deadline boundary
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
-						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
 					}},
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
@@ -849,6 +854,8 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 		Method: builtin.MethodsCron.EpochTick,
 		SubInvocations: []vm.ExpectInvocation{
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				// expect no confirm sector proofs valid because we prove committed with aggregation.
 				// expect no on deferred cron event because this is not a deadline boundary
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
