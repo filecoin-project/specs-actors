@@ -462,7 +462,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// The deal may have expired and been deleted before the sector is terminated.
 			// Log the dealID for the dealProposal and continue execution for other deals
 			if !found {
-				rt.Log(rtt.INFO, "couldn't find deal %v", dealID)
+				rt.Log(rtt.INFO, "couldn't find deal %d", dealID)
 				continue
 			}
 			builtin.RequireState(rt, deal.Provider == minerAddr, "caller %v is not the provider %v of deal %v",
@@ -470,7 +470,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// do not slash expired deals
 			if deal.EndEpoch <= params.Epoch {
-				rt.Log(rtt.INFO, "deal %v expired, not slashing", dealID)
+				rt.Log(rtt.INFO, "deal %d expired, not slashing", dealID)
 				continue
 			}
 
@@ -484,7 +484,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// if a deal is already slashed, we don't need to do anything here.
 			if state.SlashEpoch != epochUndefined {
-				rt.Log(rtt.INFO, "deal %v already slashed", dealID)
+				rt.Log(rtt.INFO, "deal %d already slashed", dealID)
 				continue
 			}
 

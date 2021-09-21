@@ -455,12 +455,6 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			sectorInfos, err := sectors.LoadForProof(postResult.Sectors, postResult.IgnoredSectors)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post verification")
 
-			// XXX: does this logging already happen up on line 441 that starts `if noSectors` ?
-			// XXX: I don't know if I understand the difference?
-			if len(sectorInfos) == 0 {
-				rt.Log(rtt.INFO, "in PoSt verification, all sectors were faults")
-			}
-
 			err = verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "window post failed")
 		}
@@ -2092,7 +2086,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.E
 			scheduleEarlyTerminationWork(rt)
 		}
 	default:
-		rt.Log(rtt.INFO, "unhandled payload EventType in OnDeferredCronEvent")
+		rt.Log(rtt.ERROR, "unhandled payload EventType in OnDeferredCronEvent")
 	}
 
 	var st State
@@ -2636,7 +2630,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {
 	if amt.GreaterThan(big.Zero()) {
-		rt.Log(rtt.INFO, "burnFunds called with amt=%d attoFIL", amt)
+		rt.Log(rtt.INFO, "burnFunds called with amt=%d attoFIL. receiver address %v", amt, rt.Receiver())
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}

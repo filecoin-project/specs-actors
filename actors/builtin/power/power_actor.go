@@ -271,7 +271,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 		if st.ProofValidationBatch == nil {
 			mmap, err = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty proof validation set")
-			rt.Log(rtt.INFO, "ProofValidationBatch created")
+			rt.Log(rtt.DEBUG, "ProofValidationBatch created")
 		} else {
 			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
@@ -411,8 +411,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 				seen[snum] = struct{}{}
 				successful = append(successful, snum)
 			} else {
-				// XXX: unsure whether this is the right/helpful thing to be logging here.
-				rt.Log(rtt.WARN, "a proof failed from miner %s!", m)
+				rt.Log(rtt.INFO, "a proof failed from miner %s", m)
 			}
 		}
 
