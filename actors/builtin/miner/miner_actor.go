@@ -2126,6 +2126,9 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 	// TODO: We're using the current power+epoch reward. Technically, we
 	// should use the power/reward at the time of termination.
 	// https://github.com/filecoin-project/specs-actors/v6/pull/648
+	// TODO #2: for the fix to issue 799 we precompute these in OnEpochTickEnd and
+	// pass them in to another function. perhaps could do that here too?
+	// but unsure with above TODO.
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
