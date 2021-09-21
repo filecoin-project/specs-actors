@@ -78,7 +78,6 @@ func TestCommitPoStFlow(t *testing.T) {
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						// XXX-799 this happens twice- see comment in miner_actor.go in processEarlyTerminations function
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// The call to burnt funds indicates the overdue precommit has been penalized
@@ -258,7 +257,6 @@ func TestCommitPoStFlow(t *testing.T) {
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						// XXX-799 this happens twice- see comment in miner_actor.go in processEarlyTerminations function
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},

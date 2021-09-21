@@ -111,6 +111,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 		To:     builtin.StoragePowerActorAddr,
 		Method: builtin.MethodsPower.OnEpochTickEnd,
 		SubInvocations: []vm.ExpectInvocation{
+			// get data from reward and power actors for any eventual calls to confirmsectorproofsparams
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{
@@ -135,6 +136,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 		To:     builtin.StoragePowerActorAddr,
 		Method: builtin.MethodsPower.OnEpochTickEnd,
 		SubInvocations: []vm.ExpectInvocation{
+			// get data from reward and power actors for any eventual calls to confirmsectorproofsparams
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{

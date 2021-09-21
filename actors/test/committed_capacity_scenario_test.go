@@ -188,7 +188,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						// XXX-799 this happens twice- see comment in miner_actor.go in processEarlyTerminations function
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// pre-commit deposit is burnt
@@ -284,7 +283,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						// XXX-799 this happens twice- see comment in miner_actor.go in processEarlyTerminations function
 						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// power is removed for old sector and pledge is burnt

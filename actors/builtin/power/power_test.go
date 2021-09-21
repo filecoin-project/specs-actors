@@ -729,7 +729,6 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(1)
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
-		//expectQueryNetworkInfo(rt, actor)
 
 		actor.enrollCronEvent(rt, miner1, 2, []byte{})
 		actor.enrollCronEvent(rt, miner2, 2, []byte{})
@@ -1035,7 +1034,6 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		for _, cs := range cs {
 			param := &builtin.ConfirmSectorProofsParams{
 				Sectors:                            cs.sectorNums,
-				PrecomputeRewardPowerStats:         true,
 				RewardStatsThisEpochRewardSmoothed: ac.thisEpochRewardSmoothed,
 				RewardStatsThisEpochBaselinePower:  ac.thisEpochBaselinePower,
 				PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,
@@ -1162,7 +1160,6 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 	for _, cs := range confirmedSectors {
 		param := &builtin.ConfirmSectorProofsParams{
 			Sectors:                            cs.sectorNums,
-			PrecomputeRewardPowerStats:         true,
 			RewardStatsThisEpochRewardSmoothed: h.thisEpochRewardSmoothed,
 			RewardStatsThisEpochBaselinePower:  h.thisEpochBaselinePower,
 			PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,

@@ -428,7 +428,6 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
 				&builtin.ConfirmSectorProofsParams{Sectors: successful,
-					PrecomputeRewardPowerStats:         true,
 					RewardStatsThisEpochRewardSmoothed: rewret.ThisEpochRewardSmoothed,
 					RewardStatsThisEpochBaselinePower:  rewret.ThisEpochBaselinePower,
 					PwrTotalQualityAdjPowerSmoothed:    pwr.QualityAdjPowerSmoothed},

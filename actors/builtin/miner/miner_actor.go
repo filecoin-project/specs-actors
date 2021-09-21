@@ -956,9 +956,14 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 
-	confirmSectorProofsValid(rt, precommitsToConfirm, &builtin.ConfirmSectorProofsParams{
-		PrecomputeRewardPowerStats: false,
-	})
+	var rewret reward.ThisEpochRewardReturn
+	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
+	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
+	var pwr power.CurrentTotalPowerReturn
+	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
+	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
+
+	confirmSectorProofsValid(rt, precommitsToConfirm, rewret.ThisEpochBaselinePower, rewret.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
 
 	// Compute and burn the aggregate network fee. We need to re-load the state as
 	// confirmSectorProofsValid can change it.
@@ -1064,32 +1069,19 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
-	confirmSectorProofsValid(rt, precommittedSectors, params)
+	confirmSectorProofsValid(rt, precommittedSectors,
+		params.RewardStatsThisEpochBaselinePower,
+		params.RewardStatsThisEpochRewardSmoothed,
+		params.PwrTotalQualityAdjPowerSmoothed)
 
 	return nil
 }
 
-func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainInfo, params *builtin.ConfirmSectorProofsParams) {
-	var rewardStatsThisEpochBaselinePower big.Int
-	var rewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate
-	var pwrTotalQualityAdjPowerSmoothed smoothing.FilterEstimate
-
-	if params.PrecomputeRewardPowerStats {
-		rewardStatsThisEpochRewardSmoothed = params.RewardStatsThisEpochRewardSmoothed
-		rewardStatsThisEpochBaselinePower = params.RewardStatsThisEpochBaselinePower
-		pwrTotalQualityAdjPowerSmoothed = params.PwrTotalQualityAdjPowerSmoothed
-	} else {
-		var rewret reward.ThisEpochRewardReturn
-		rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
-		builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
-		var pwr power.CurrentTotalPowerReturn
-		powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
-		builtin.RequireSuccess(rt, powretcode, "failed to check current power")
-
-		rewardStatsThisEpochRewardSmoothed = rewret.ThisEpochRewardSmoothed
-		rewardStatsThisEpochBaselinePower = rewret.ThisEpochBaselinePower
-		pwrTotalQualityAdjPowerSmoothed = pwr.QualityAdjPowerSmoothed
-	}
+func confirmSectorProofsValid(rt Runtime,
+	preCommits []*SectorPreCommitOnChainInfo,
+	rewardStatsThisEpochBaselinePower big.Int,
+	rewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate,
+	pwrTotalQualityAdjPowerSmoothed smoothing.FilterEstimate) {
 
 	circulatingSupply := rt.TotalFilCircSupply()
 
@@ -2126,9 +2118,6 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 	// TODO: We're using the current power+epoch reward. Technically, we
 	// should use the power/reward at the time of termination.
 	// https://github.com/filecoin-project/specs-actors/v6/pull/648
-	// TODO #2: for the fix to issue 799 we precompute these in OnEpochTickEnd and
-	// pass them in to another function. perhaps could do that here too?
-	// but unsure with above TODO.
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 

@@ -5029,6 +5029,8 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
 	}
+	expectQueryNetworkInfo(rt, h)
+
 	// Expect randomness queries for provided precommits
 	var sealRands []abi.SealRandomness
 	var sealIntRands []abi.InteractiveSealRandomness
@@ -5073,7 +5075,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 
 	// confirmSectorProofsValid
 	{
-		h.confirmSectorProofsValidInternal(rt, conf, false, precommits...)
+		h.confirmSectorProofsValidInternal(rt, conf, precommits...)
 	}
 
 	// burn networkFee
@@ -5088,12 +5090,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 	rt.Verify()
 }
 
-func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, isPrecomputed bool, precommits ...*miner.SectorPreCommitOnChainInfo) {
-	// expect calls to get network stats if we haven't precomputed
-	if !isPrecomputed {
-		expectQueryNetworkInfo(rt, h)
-	}
-
+func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitOnChainInfo
 	for _, precommit := range precommits {
@@ -5147,7 +5144,7 @@ func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf p
 }
 
 func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
-	h.confirmSectorProofsValidInternal(rt, conf, false, precommits...)
+	h.confirmSectorProofsValidInternal(rt, conf, precommits...)
 	var allSectorNumbers []abi.SectorNumber
 	for _, precommit := range precommits {
 		allSectorNumbers = append(allSectorNumbers, precommit.Info.SectorNumber)
@@ -5156,8 +5153,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{
-		Sectors:                    allSectorNumbers,
-		PrecomputeRewardPowerStats: false,
+		Sectors:                            allSectorNumbers,
+		RewardStatsThisEpochRewardSmoothed: h.epochRewardSmooth,
+		RewardStatsThisEpochBaselinePower:  h.baselinePower,
+		PwrTotalQualityAdjPowerSmoothed:    h.epochQAPowerSmooth,
 	})
 	rt.Verify()
 }

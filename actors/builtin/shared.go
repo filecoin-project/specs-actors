@@ -91,17 +91,10 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
-// stub for codegen
-// func (b ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
-// 	_, err := w.Write([]byte("aaaaa"))
-// 	return err
-// }
-
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
 // can instead both alias the v2 version.
 type ConfirmSectorProofsParams struct {
 	Sectors                            []abi.SectorNumber
-	PrecomputeRewardPowerStats         bool
 	RewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate
 	RewardStatsThisEpochBaselinePower  abi.StoragePower
 	PwrTotalQualityAdjPowerSmoothed    smoothing.FilterEstimate
