@@ -1,6 +1,6 @@
 module github.com/filecoin-project/specs-actors/v6
 
-go 1.16
+go 1.17
 
 require (
 	github.com/filecoin-project/go-address v0.0.5
