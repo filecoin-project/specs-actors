@@ -636,6 +636,7 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(4)
 		expectedRawBytePower := big.NewInt(0)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		expectQueryNetworkInfo(rt, actor)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
@@ -650,6 +651,7 @@ func TestCron(t *testing.T) {
 		// run cron again in the future
 		rt.SetEpoch(6)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+		expectQueryNetworkInfo(rt, actor)
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
@@ -703,6 +705,8 @@ func TestCron(t *testing.T) {
 		// process batch verifies first
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
+		expectQueryNetworkInfo(rt, actor)
+
 		// only expect second deferred cron event call
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
 
@@ -745,11 +749,14 @@ func TestCron(t *testing.T) {
 		// process batch verifies first
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
+		expectQueryNetworkInfo(rt, actor)
+
 		// First send fails
 		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
 
 		// Subsequent one still invoked
 		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
+
 		// Reward actor still invoked
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
@@ -775,6 +782,9 @@ func TestCron(t *testing.T) {
 		// Next epoch, only the reward actor is invoked
 		rt.SetEpoch(3)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
+
+		expectQueryNetworkInfo(rt, actor)
+
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -1355,6 +1365,8 @@ func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, ex
 	assert.Equal(h.t, expectedQA, qualityAdjPower)
 }
 
+/// at the start of every onEpochTickEnd, cron should get these values- they're necessary for ConfirmSectorProofsValid but don't change, so they only need to be looked up once.
+/// should expect these two sends in the tests and mock up the values as needed...
 func expectQueryNetworkInfo(rt *mock.Runtime, h *spActorHarness) {
 	st := getState(rt)
 
