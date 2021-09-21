@@ -2085,6 +2085,8 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.E
 		if processEarlyTerminations(rt) {
 			scheduleEarlyTerminationWork(rt)
 		}
+	default:
+		rt.Log(rtt.ERROR, "unhandled payload EventType in OnDeferredCronEvent")
 	}
 
 	var st State
@@ -2124,6 +2126,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		// This can happen if we end up processing early terminations
 		// before the cron callback fires.
 		if result.IsEmpty() {
+			rt.Log(rtt.INFO, "no early terminations (maybe cron callback hasn't happened yet?)")
 			return
 		}
 
@@ -2171,6 +2174,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 
 	// We didn't do anything, abort.
 	if result.IsEmpty() {
+		rt.Log(rtt.INFO, "no early terminations")
 		return more
 	}
 
@@ -2407,6 +2411,8 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 }
 
 func scheduleEarlyTerminationWork(rt Runtime) {
+	rt.Log(rtt.INFO, "scheduling early terminations with cron...")
+
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
 		EventType: CronEventProcessEarlyTerminations,
 	})
@@ -2624,6 +2630,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {
 	if amt.GreaterThan(big.Zero()) {
+		rt.Log(rtt.INFO, "burnFunds called with amt=%d attoFIL. receiver address %v", amt, rt.Receiver())
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}

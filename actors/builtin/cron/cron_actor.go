@@ -3,6 +3,7 @@ package cron
 import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 	cron0 "github.com/filecoin-project/specs-actors/actors/builtin/cron"
 	"github.com/ipfs/go-cid"
 
@@ -56,10 +57,14 @@ func (a Actor) EpochTick(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
 	var st State
+
 	rt.StateReadonly(&st)
 	for _, entry := range st.Entries {
-		_ = rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0), &builtin.Discard{})
+		code := rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0), &builtin.Discard{})
 		// Any error and return value are ignored.
+		if code.IsError() {
+			rt.Log(rtt.ERROR, "cron failed to send entry to %s, send error code %d", entry.Receiver, code)
+		}
 	}
 
 	return nil
