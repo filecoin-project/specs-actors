@@ -10,8 +10,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 
-	//"github.com/filecoin-project/specs-actors/actors/builtin/power"
-
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
@@ -427,7 +425,8 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 			_ = rt.Send(
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
-				&builtin.ConfirmSectorProofsParams{Sectors: successful,
+				&builtin.ConfirmSectorProofsParams{
+					Sectors:                            successful,
 					RewardStatsThisEpochRewardSmoothed: rewret.ThisEpochRewardSmoothed,
 					RewardStatsThisEpochBaselinePower:  rewret.ThisEpochBaselinePower,
 					PwrTotalQualityAdjPowerSmoothed:    pwr.QualityAdjPowerSmoothed},

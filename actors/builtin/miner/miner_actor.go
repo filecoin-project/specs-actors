@@ -956,12 +956,8 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 
-	var rewret reward.ThisEpochRewardReturn
-	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
-	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
-	var pwr power.CurrentTotalPowerReturn
-	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
-	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
+	rewret := requestCurrentEpochBlockReward(rt)
+	pwr := requestCurrentTotalPower(rt)
 
 	confirmSectorProofsValid(rt, precommitsToConfirm, rewret.ThisEpochBaselinePower, rewret.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
 
@@ -1069,19 +1065,14 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
-	confirmSectorProofsValid(rt, precommittedSectors,
-		params.RewardStatsThisEpochBaselinePower,
-		params.RewardStatsThisEpochRewardSmoothed,
-		params.PwrTotalQualityAdjPowerSmoothed)
+	confirmSectorProofsValid(rt, precommittedSectors, params.RewardStatsThisEpochBaselinePower,
+		params.RewardStatsThisEpochRewardSmoothed, params.PwrTotalQualityAdjPowerSmoothed)
 
 	return nil
 }
 
-func confirmSectorProofsValid(rt Runtime,
-	preCommits []*SectorPreCommitOnChainInfo,
-	rewardStatsThisEpochBaselinePower big.Int,
-	rewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate,
-	pwrTotalQualityAdjPowerSmoothed smoothing.FilterEstimate) {
+func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainInfo, thisEpochBaselinePower big.Int,
+	thisEpochRewardSmoothed smoothing.FilterEstimate, qualityAdjPowerSmoothed smoothing.FilterEstimate) {
 
 	circulatingSupply := rt.TotalFilCircSupply()
 
@@ -1166,13 +1157,13 @@ func confirmSectorProofsValid(rt Runtime,
 			}
 			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
 
-			dayReward := ExpectedRewardForPower(rewardStatsThisEpochRewardSmoothed, pwrTotalQualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+			dayReward := ExpectedRewardForPower(thisEpochRewardSmoothed, qualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
 			// The storage pledge is recorded for use in computing the penalty if this sector is terminated
 			// before its declared expiration.
 			// It's not capped to 1 FIL, so can exceed the actual initial pledge requirement.
-			storagePledge := ExpectedRewardForPower(rewardStatsThisEpochRewardSmoothed, pwrTotalQualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
-			initialPledge := InitialPledgeForPower(pwr, rewardStatsThisEpochBaselinePower, rewardStatsThisEpochRewardSmoothed,
-				pwrTotalQualityAdjPowerSmoothed, circulatingSupply)
+			storagePledge := ExpectedRewardForPower(thisEpochRewardSmoothed, qualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
+			initialPledge := InitialPledgeForPower(pwr, thisEpochBaselinePower, thisEpochRewardSmoothed,
+				qualityAdjPowerSmoothed, circulatingSupply)
 
 			// Lower-bound the pledge by that of the sector being replaced.
 			// Record the replaced age and reward rate for termination fee calculations.

@@ -1114,8 +1114,8 @@ func newHarness(t *testing.T) *spActorHarness {
 		t:                       t,
 		sealProof:               abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 		windowPoStProof:         abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		thisEpochBaselinePower:  abi.NewStoragePower(1 << 50),           // XXX: unsure if this is right
-		thisEpochRewardSmoothed: smoothing.TestingConstantEstimate(rwd), // XXX: unsure if this is right
+		thisEpochBaselinePower:  abi.NewStoragePower(1 << 50),
+		thisEpochRewardSmoothed: smoothing.TestingConstantEstimate(rwd),
 	}
 }
 
