@@ -109,5 +109,6 @@ func (m *marketStateMutation) balanceCovered(addr addr.Address, amountToLock abi
 	if err != nil {
 		return false, xerrors.Errorf("failed to get escrow balance: %w", err)
 	}
+
 	return big.Add(prevLocked, amountToLock).LessThanEqual(escrowBalance), nil
 }

@@ -51,6 +51,10 @@ func checkUnsafeInputs(t *testing.T, name string, typ reflect.Type) {
 		for i := 0; i < typ.NumField(); i++ {
 			f := typ.Field(i)
 
+			if f.PkgPath != "" { // the field is unexported so does not need to be checked
+				continue
+			}
+
 			if f.Tag.Get("checked") == "true" {
 				if f.Type != tCID {
 					t.Fatal("expected checked value to be cid.Cid")

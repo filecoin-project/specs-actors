@@ -234,6 +234,11 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			continue
 		}
 
+		// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
+		params.Deals[di].Proposal.Provider = provider
+		resolvedAddrs[deal.Proposal.Client] = client
+		params.Deals[di].Proposal.Client = client
+
 		// drop duplicate deals
 		pcid, err := deal.ProposalCid()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
@@ -248,11 +253,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			continue
 		}
 		proposalCids[pcid] = struct{}{}
-
-		// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
-		deal.Proposal.Provider = provider
-		resolvedAddrs[deal.Proposal.Client] = client
-		deal.Proposal.Client = client
 
 		validInputBf.Set(uint64(di))
 	}
@@ -274,14 +274,11 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		// Either the DealSize is within the available DataCap of the VerifiedClient
 		// or this message will fail. We do not allow a deal that is partially verified.
 		if deal.Proposal.VerifiedDeal {
-			resolvedClient, ok := resolvedAddrs[deal.Proposal.Client]
-			builtin.RequireParam(rt, ok, "could not get resolvedClient client address")
-
 			code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
 				builtin.MethodsVerifiedRegistry.UseBytes,
 				&verifreg.UseBytesParams{
-					Address:  resolvedClient,
+					Address:  deal.Proposal.Client,
 					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
 				},
 				abi.NewTokenAmount(0),
