@@ -189,7 +189,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	// Drop invalid deals
 	var st State
 	proposalCids := make(map[cid.Cid]struct{})
-	lockupNeed := make(map[addr.Address]abi.TokenAmount)
+	totalClientLockup := make(map[addr.Address]abi.TokenAmount)
+	totalProviderLockup := abi.NewTokenAmount(0)
 
 	validInputBf := bitfield.New()
 	rt.StateReadonly(&st)
@@ -215,6 +216,23 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		}
 
 		// drop deals with insufficient lock up to cover costs
+		if _, ok := totalClientLockup[client]; !ok {
+			totalClientLockup[client] = abi.NewTokenAmount(0)
+		}
+		totalClientLockup[client] = big.Sum(totalClientLockup[client], deal.Proposal.ClientBalanceRequirement())
+		clientBalanceOk, err := msm.balanceCovered(client, totalClientLockup[client])
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check client balance coverage")
+		if !clientBalanceOk {
+			rt.Log(rtt.INFO, "invalid deal: %d: insufficient client funds to cover proposal cost")
+			continue
+		}
+		totalProviderLockup = big.Sum(totalProviderLockup, deal.Proposal.ProviderCollateral)
+		providerBalanceOk, err := msm.balanceCovered(provider, totalProviderLockup)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check provider balance coverage")
+		if !providerBalanceOk {
+			rt.Log(rtt.INFO, "invalid deal: %d: insufficient provider funds to cover proposal cost")
+			continue
+		}
 
 		// drop duplicate deals
 		pcid, err := deal.ProposalCid()
@@ -317,7 +335,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 	})
 
-	return &PublishStorageDealsReturn{IDs: newDealIds}
+	return &PublishStorageDealsReturn{
+		IDs:        newDealIds,
+		ValidDeals: validInputBf,
+	}
 }
 
 // Changed since v2:
