@@ -52,7 +52,7 @@ func (s State) MarshalCBOR(w io.Writer) error {
 func (s State) UnmarshalCBOR(r io.Reader) error {
 	var cint cbg.CborInt
 	err := cint.UnmarshalCBOR(r)
-	s.Value = int64(cint)
+	s.Value = int64(cint) //nolint:staticcheck
 	return err
 }
 
