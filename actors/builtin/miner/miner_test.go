@@ -5153,10 +5153,10 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{
-		Sectors:                            allSectorNumbers,
-		RewardStatsThisEpochRewardSmoothed: h.epochRewardSmooth,
-		RewardStatsThisEpochBaselinePower:  h.baselinePower,
-		PwrTotalQualityAdjPowerSmoothed:    h.epochQAPowerSmooth,
+		Sectors:                 allSectorNumbers,
+		RewardSmoothed:          h.epochRewardSmooth,
+		RewardBaselinePower:     h.baselinePower,
+		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	})
 	rt.Verify()
 }
@@ -5776,20 +5776,20 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	// Preamble
-	rwd := reward.ThisEpochRewardReturn{
-		ThisEpochBaselinePower:  h.baselinePower,
-		ThisEpochRewardSmoothed: h.epochRewardSmooth,
-	}
-	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rwd, exitcode.Ok)
-	networkPower := big.NewIntUnsigned(1 << 50)
-	rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
-		&power.CurrentTotalPowerReturn{
-			RawBytePower:            networkPower,
-			QualityAdjPower:         networkPower,
-			PledgeCollateral:        h.networkPledge,
-			QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
-		},
-		exitcode.Ok)
+	// rwd := reward.ThisEpochRewardReturn{
+	// 	ThisEpochBaselinePower:  h.baselinePower,
+	// 	ThisEpochRewardSmoothed: h.epochRewardSmooth,
+	// }
+	//rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rwd, exitcode.Ok)
+	// networkPower := big.NewIntUnsigned(1 << 50)
+	// rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
+	// 	&power.CurrentTotalPowerReturn{
+	// 		RawBytePower:            networkPower,
+	// 		QualityAdjPower:         networkPower,
+	// 		PledgeCollateral:        h.networkPledge,
+	// 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
+	// 	},
+	// 	exitcode.Ok)
 
 	powerDelta := miner.NewPowerPairZero()
 	if config.detectedFaultsPowerDelta != nil {
@@ -5853,8 +5853,10 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	}
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
-		EventType: miner.CronEventProvingDeadline,
+	rt.Call(h.a.OnDeferredCronEvent, &builtin.DeferredCronEventPayload{
+		EventType:               miner.CronEventProvingDeadline,
+		RewardSmoothed:          h.epochRewardSmooth,
+		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	})
 	rt.Verify()
 }

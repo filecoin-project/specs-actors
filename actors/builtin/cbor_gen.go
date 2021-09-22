@@ -148,18 +148,18 @@ func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.RewardStatsThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
-	if err := t.RewardStatsThisEpochRewardSmoothed.MarshalCBOR(w); err != nil {
+	// t.RewardSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.RewardSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.RewardStatsThisEpochBaselinePower (big.Int) (struct)
-	if err := t.RewardStatsThisEpochBaselinePower.MarshalCBOR(w); err != nil {
+	// t.RewardBaselinePower (big.Int) (struct)
+	if err := t.RewardBaselinePower.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.PwrTotalQualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
-	if err := t.PwrTotalQualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -216,30 +216,30 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 		t.Sectors[i] = abi.SectorNumber(val)
 	}
 
-	// t.RewardStatsThisEpochRewardSmoothed (smoothing.FilterEstimate) (struct)
+	// t.RewardSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
-		if err := t.RewardStatsThisEpochRewardSmoothed.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RewardStatsThisEpochRewardSmoothed: %w", err)
+		if err := t.RewardSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RewardSmoothed: %w", err)
 		}
 
 	}
-	// t.RewardStatsThisEpochBaselinePower (big.Int) (struct)
+	// t.RewardBaselinePower (big.Int) (struct)
 
 	{
 
-		if err := t.RewardStatsThisEpochBaselinePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RewardStatsThisEpochBaselinePower: %w", err)
+		if err := t.RewardBaselinePower.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RewardBaselinePower: %w", err)
 		}
 
 	}
-	// t.PwrTotalQualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
-		if err := t.PwrTotalQualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.PwrTotalQualityAdjPowerSmoothed: %w", err)
+		if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed: %w", err)
 		}
 
 	}

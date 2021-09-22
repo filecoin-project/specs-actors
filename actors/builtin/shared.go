@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
@@ -96,13 +97,43 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
+func (b *DeferredCronEventPayload) UnmarshalCBOR(r io.Reader) error {
+	var c bytes.Buffer
+	_, err := c.ReadFrom(r)
+	*b = DeferredCronEventPayload{}
+	return err
+}
+
+func (b DeferredCronEventPayload) MarshalCBOR(w io.Writer) error {
+	_, err := w.Write([]byte("aaaa"))
+	return err
+}
+
+type DeferredCronEventPayload struct {
+	EventType               miner0.CronEventType
+	RewardSmoothed          smoothing.FilterEstimate
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
+}
+
+// func (b *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
+// 	var c bytes.Buffer
+// 	_, err := c.ReadFrom(r)
+// 	*b = ConfirmSectorProofsParams{}
+// 	return err
+// }
+
+// func (b ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
+// 	_, err := w.Write([]byte("aaaa"))
+// 	return err
+// }
+
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
 // can instead both alias the v2 version.
 type ConfirmSectorProofsParams struct {
-	Sectors                            []abi.SectorNumber
-	RewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate
-	RewardStatsThisEpochBaselinePower  abi.StoragePower
-	PwrTotalQualityAdjPowerSmoothed    smoothing.FilterEstimate
+	Sectors                 []abi.SectorNumber
+	RewardSmoothed          smoothing.FilterEstimate
+	RewardBaselinePower     abi.StoragePower
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
 
 // ResolveToIDAddr resolves the given address to it's ID address form.
