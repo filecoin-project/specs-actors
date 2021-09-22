@@ -75,7 +75,8 @@ type WithdrawBalanceParams = market0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.EmptyValue {
+// Returns the amount withdrawn.
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
 	if params.Amount.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
@@ -106,10 +107,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 
 		amountExtracted = ex
 	})
-
 	code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return nil
+	return &amountExtracted
 }
 
 // Deposits the received value into the balance held in escrow.
@@ -130,7 +130,6 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 
 		err = msm.escrowTable.Add(nominal, msgValue)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add balance to escrow table")
-
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 	})
