@@ -5029,6 +5029,8 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 		}
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.ComputeDataCommitment, &cdcParams, big.Zero(), &cdcRet, exitcode.Ok)
 	}
+	expectQueryNetworkInfo(rt, h)
+
 	// Expect randomness queries for provided precommits
 	var sealRands []abi.SealRandomness
 	var sealIntRands []abi.InteractiveSealRandomness
@@ -5089,9 +5091,6 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 }
 
 func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf proveCommitConf, precommits ...*miner.SectorPreCommitOnChainInfo) {
-	// expect calls to get network stats
-	expectQueryNetworkInfo(rt, h)
-
 	// Prepare for and receive call to ConfirmSectorProofsValid.
 	var validPrecommits []*miner.SectorPreCommitOnChainInfo
 	for _, precommit := range precommits {
@@ -5152,7 +5151,13 @@ func (h *actorHarness) confirmSectorProofsValid(rt *mock.Runtime, conf proveComm
 	}
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
-	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{Sectors: allSectorNumbers})
+
+	rt.Call(h.a.ConfirmSectorProofsValid, &builtin.ConfirmSectorProofsParams{
+		Sectors:                            allSectorNumbers,
+		RewardStatsThisEpochRewardSmoothed: h.epochRewardSmooth,
+		RewardStatsThisEpochBaselinePower:  h.baselinePower,
+		PwrTotalQualityAdjPowerSmoothed:    h.epochQAPowerSmooth,
+	})
 	rt.Verify()
 }
 
