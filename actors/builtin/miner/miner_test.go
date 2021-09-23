@@ -5837,9 +5837,13 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 			makeDeadlineCronEventParams(h.t, config.expectedEnrollment), big.Zero(), nil, exitcode.Ok)
 	}
 
+	eventPayloadBuf := bytes.Buffer{}
+	payload := &miner0.CronEventPayload{EventType: miner.CronEventProvingDeadline}
+	require.NoError(h.t, payload.MarshalCBOR(&eventPayloadBuf), "failed to marshal event payload")
+
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &builtin.DeferredCronEventParams{
-		EventType:               miner.CronEventProvingDeadline,
+		EventPayload:            eventPayloadBuf.Bytes(),
 		RewardSmoothed:          h.epochRewardSmooth,
 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
 	})

@@ -2099,14 +2099,18 @@ const (
 	CronEventProcessEarlyTerminations = miner0.CronEventProcessEarlyTerminations
 )
 
-func (a Actor) OnDeferredCronEvent(rt Runtime, payload *builtin.DeferredCronEventParams) *abi.EmptyValue {
+func (a Actor) OnDeferredCronEvent(rt Runtime, params *builtin.DeferredCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	var payload miner0.CronEventPayload
+	err := payload.UnmarshalCBOR(bytes.NewBuffer(params.EventPayload))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unmarshal miner cron payload into expected structure")
 
 	switch payload.EventType {
 	case CronEventProvingDeadline:
-		handleProvingDeadline(rt, payload.RewardSmoothed, payload.QualityAdjPowerSmoothed)
+		handleProvingDeadline(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 	case CronEventProcessEarlyTerminations:
-		if processEarlyTerminations(rt, payload.RewardSmoothed, payload.QualityAdjPowerSmoothed) {
+		if processEarlyTerminations(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed) {
 			scheduleEarlyTerminationWork(rt)
 		}
 	default:
@@ -2115,7 +2119,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *builtin.DeferredCronEven
 
 	var st State
 	rt.StateReadonly(&st)
-	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	return nil
 }

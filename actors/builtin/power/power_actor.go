@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 
-	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
@@ -487,11 +486,8 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 
 	for _, event := range cronEvents {
 
-		var payload miner0.CronEventPayload
-		err := payload.UnmarshalCBOR(bytes.NewBuffer(event.CallbackPayload))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unmarshal miner cron payload into expected structure")
 		input := builtin.DeferredCronEventParams{
-			EventType:               payload.EventType,
+			EventPayload:            event.CallbackPayload,
 			RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 		}
