@@ -3,12 +3,14 @@ package test
 import (
 	"testing"
 
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v6/actors/states"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -79,4 +81,11 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 	}.Matches(t, v.LastInvocation())
 
 	return result.Ret.(*market.PublishStorageDealsReturn)
+}
+
+func requireActor(t *testing.T, v *vm.VM, addr address.Address) *states.Actor {
+	a, found, err := v.GetActor(addr)
+	require.NoError(t, err)
+	require.True(t, found)
+	return a
 }

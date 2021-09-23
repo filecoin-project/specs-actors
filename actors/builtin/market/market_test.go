@@ -2863,9 +2863,15 @@ func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withD
 		ProviderOrClientAddress: miner.provider,
 		Amount:                  withDrawAmt,
 	}
+
 	rt.ExpectSend(miner.owner, builtin.MethodSend, nil, expectedSend, nil, exitcode.Ok)
-	rt.Call(h.WithdrawBalance, &params)
+	ret := rt.Call(h.WithdrawBalance, &params)
+	withdrawn, ok := ret.(*abi.TokenAmount)
+	require.True(h.t, ok, "unexpected return type from WithdrawBalance")
+	require.NotNil(h.t, withdrawn)
 	rt.Verify()
+
+	assert.Equal(h.t, expectedSend, *withdrawn, "return value indicates %s withdrawn but expected %s", *withdrawn, expectedSend)
 }
 
 func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client address.Address, withDrawAmt, expectedSend abi.TokenAmount) {
@@ -2877,8 +2883,13 @@ func (h *marketActorTestHarness) withdrawClientBalance(rt *mock.Runtime, client 
 		ProviderOrClientAddress: client,
 		Amount:                  withDrawAmt,
 	}
-	rt.Call(h.WithdrawBalance, &params)
+	ret := rt.Call(h.WithdrawBalance, &params)
+	withdrawn, ok := ret.(*abi.TokenAmount)
+	require.True(h.t, ok, "unexpected return type from WithdrawBalance")
+	require.NotNil(h.t, withdrawn)
 	rt.Verify()
+
+	assert.Equal(h.t, expectedSend, *withdrawn, "return value indicates %s withdrawn but expected %s", *withdrawn, expectedSend)
 }
 
 func (h *marketActorTestHarness) cronTickNoChange(rt *mock.Runtime, client, provider address.Address) {

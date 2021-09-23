@@ -5859,19 +5859,24 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.Verify()
 }
 
-func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, amountWithdrawn, expectedDebtRepaid abi.TokenAmount) {
+func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, expectedWithdrawn, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(h.owner)
 
-	rt.ExpectSend(h.owner, builtin.MethodSend, nil, amountWithdrawn, nil, exitcode.Ok)
+	rt.ExpectSend(h.owner, builtin.MethodSend, nil, expectedWithdrawn, nil, exitcode.Ok)
 	if expectedDebtRepaid.GreaterThan(big.Zero()) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
 	}
-	rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
+	ret := rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
+	withdrawn, ok := ret.(*abi.TokenAmount)
+	require.True(h.t, ok)
+	require.NotNil(h.t, withdrawn)
 
 	rt.Verify()
+
+	assert.Equal(h.t, expectedWithdrawn, *withdrawn, "return value indicates %s withdrawn but expected %s", *withdrawn, expectedWithdrawn)
 }
 
 func (h *actorHarness) repayDebt(rt *mock.Runtime, value, expectedRepayedFromVest, expectedRepaidFromBalance abi.TokenAmount) {

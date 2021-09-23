@@ -75,7 +75,8 @@ type WithdrawBalanceParams = market0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the balance held in escrow.
 // If less than the specified amount is available, yields the entire available balance.
-func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.EmptyValue {
+// Returns the amount withdrawn.
+func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
 	if params.Amount.LessThan(big.Zero()) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "negative amount %v", params.Amount)
 	}
@@ -106,10 +107,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.E
 
 		amountExtracted = ex
 	})
-
 	code := rt.Send(recipient, builtin.MethodSend, nil, amountExtracted, &builtin.Discard{})
 	builtin.RequireSuccess(rt, code, "failed to send funds")
-	return nil
+	return &amountExtracted
 }
 
 // Deposits the received value into the balance held in escrow.
@@ -130,7 +130,6 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 
 		err = msm.escrowTable.Add(nominal, msgValue)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add balance to escrow table")
-
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
 	})
@@ -460,8 +459,9 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			deal, found, err := msm.dealProposals.Get(dealID)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get deal proposal %v", dealID)
 			// The deal may have expired and been deleted before the sector is terminated.
-			// Nothing to do, but continue execution for the other deals.
+			// Log the dealID for the dealProposal and continue execution for other deals
 			if !found {
+				rt.Log(rtt.INFO, "couldn't find deal %d", dealID)
 				continue
 			}
 			builtin.RequireState(rt, deal.Provider == minerAddr, "caller %v is not the provider %v of deal %v",
@@ -469,6 +469,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// do not slash expired deals
 			if deal.EndEpoch <= params.Epoch {
+				rt.Log(rtt.INFO, "deal %d expired, not slashing", dealID)
 				continue
 			}
 
@@ -482,6 +483,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// if a deal is already slashed, we don't need to do anything here.
 			if state.SlashEpoch != epochUndefined {
+				rt.Log(rtt.INFO, "deal %d already slashed", dealID)
 				continue
 			}
 

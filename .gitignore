@@ -19,3 +19,6 @@ digest
 
 support/tools/bin
 gen/command-line-arguments
+
+digest
+test-vectors/determinism/

@@ -4,6 +4,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	rtt "github.com/filecoin-project/go-state-types/rt"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/math"
@@ -191,7 +192,7 @@ func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
 	currBalance := rt.CurrentBalance()
 	toBurn, err := st.repayDebts(currBalance)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "unlocked balance can not repay fee debt")
-
+	rt.Log(rtt.INFO, "RepayDebtsOrAbort was called and succeeded")
 	return toBurn
 }
 
