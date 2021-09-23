@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -833,20 +834,20 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 					a.addParticipantFunds(rt, client, big.Sub(d.ClientBalanceRequirement(), big.NewInt(1)))
 					a.addProviderFunds(rt, d.ProviderCollateral, mAddrs)
 				},
-				exitCode: exitcode.ErrInsufficientFunds,
+				exitCode: exitcode.ErrIllegalArgument,
 			},
 			"provider does not have enough balance for collateral": {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					a.addParticipantFunds(rt, client, d.ClientBalanceRequirement())
 					a.addProviderFunds(rt, big.Sub(d.ProviderCollateral, big.NewInt(1)), mAddrs)
 				},
-				exitCode: exitcode.ErrInsufficientFunds,
+				exitCode: exitcode.ErrIllegalArgument,
 			},
 			"unable to resolve client address": {
 				setup: func(_ *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					d.Client = tutil.NewBLSAddr(t, 1)
 				},
-				exitCode: exitcode.ErrNotFound,
+				exitCode: exitcode.ErrIllegalArgument,
 			},
 			"signature is invalid": {
 				setup: func(_ *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
@@ -859,13 +860,13 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					a.addProviderFunds(rt, d.ProviderCollateral, mAddrs)
 				},
-				exitCode: exitcode.ErrInsufficientFunds,
+				exitCode: exitcode.ErrIllegalArgument,
 			},
 			"no entry for provider in locked  balance table": {
 				setup: func(rt *mock.Runtime, a *marketActorTestHarness, d *market.DealProposal) {
 					a.addParticipantFunds(rt, client, d.ClientBalanceRequirement())
 				},
-				exitCode: exitcode.ErrInsufficientFunds,
+				exitCode: exitcode.ErrIllegalArgument,
 			},
 			"bad piece CID": {
 				setup: func(_ *mock.Runtime, _ *marketActorTestHarness, d *market.DealProposal) {
@@ -934,7 +935,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
-			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
 
@@ -956,7 +957,7 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			expectQueryNetworkInfo(rt, actor)
 			rt.SetCaller(worker, builtin.AccountActorCodeID)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
-			rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
+			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 				rt.Call(actor.PublishStorageDeals, params)
 			})
 
@@ -983,9 +984,11 @@ func TestPublishStorageDealsFailures(t *testing.T) {
 			rt.ExpectVerifySignature(crypto.Signature{}, deal1.Client, mustCbor(&deal1), nil)
 			rt.ExpectVerifySignature(crypto.Signature{}, deal2.Client, mustCbor(&deal2), nil)
 
-			rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-				rt.Call(actor.PublishStorageDeals, params)
-			})
+			ret := rt.Call(actor.PublishStorageDeals, params)
+			psdRet := ret.(*market.PublishStorageDealsReturn)
+			valid, err := psdRet.ValidDeals.All(math.MaxUint64)
+			require.NoError(t, err)
+			assert.Equal(t, []uint64{0}, valid)
 
 			rt.Verify()
 			actor.checkState(rt)

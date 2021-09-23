@@ -201,6 +201,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	for di, deal := range params.Deals {
 
 		// drop malformed deals
+		if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
+			rt.Log(rtt.INFO, "invalid deal %d: %s", di, err)
+			continue
+		}
 		if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
 			rt.Log(rtt.INFO, "invalid deal %d: cannot publish deals from multiple providers in one batch", di)
 			continue
@@ -208,10 +212,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		client, ok := rt.ResolveAddress(deal.Proposal.Client)
 		if !ok {
 			rt.Log(rtt.INFO, "invalid deal %d: failed to resolve proposal.Client address %v for deal ", di, deal.Proposal.Client)
-			continue
-		}
-		if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
-			rt.Log(rtt.INFO, "invalid deal %d: %s", di, err)
 			continue
 		}
 
