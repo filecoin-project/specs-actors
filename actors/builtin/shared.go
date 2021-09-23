@@ -97,35 +97,11 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
-func (b *DeferredCronEventPayload) UnmarshalCBOR(r io.Reader) error {
-	var c bytes.Buffer
-	_, err := c.ReadFrom(r)
-	*b = DeferredCronEventPayload{}
-	return err
-}
-
-func (b DeferredCronEventPayload) MarshalCBOR(w io.Writer) error {
-	_, err := w.Write([]byte("aaaa"))
-	return err
-}
-
-type DeferredCronEventPayload struct {
+type DeferredCronEventParams struct {
 	EventType               miner0.CronEventType
 	RewardSmoothed          smoothing.FilterEstimate
 	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
-
-// func (b *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
-// 	var c bytes.Buffer
-// 	_, err := c.ReadFrom(r)
-// 	*b = ConfirmSectorProofsParams{}
-// 	return err
-// }
-
-// func (b ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
-// 	_, err := w.Write([]byte("aaaa"))
-// 	return err
-// }
 
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
 // can instead both alias the v2 version.

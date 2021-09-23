@@ -618,7 +618,7 @@ func TestCron(t *testing.T) {
 		expectQueryNetworkInfo(rt, actor)
 		st := getState(rt)
 
-		input := builtin.DeferredCronEventPayload{
+		input := builtin.DeferredCronEventParams{
 			EventType:               miner.CronEventProvingDeadline,
 			RewardSmoothed:          actor.thisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
@@ -665,7 +665,7 @@ func TestCron(t *testing.T) {
 
 		st := getState(rt)
 
-		input := builtin.DeferredCronEventPayload{
+		input := builtin.DeferredCronEventParams{
 			EventType:               miner.CronEventProvingDeadline,
 			RewardSmoothed:          actor.thisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,

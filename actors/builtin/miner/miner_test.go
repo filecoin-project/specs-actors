@@ -5776,21 +5776,6 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	rt.ExpectValidateCallerAddr(builtin.StoragePowerActorAddr)
 
 	// Preamble
-	// rwd := reward.ThisEpochRewardReturn{
-	// 	ThisEpochBaselinePower:  h.baselinePower,
-	// 	ThisEpochRewardSmoothed: h.epochRewardSmooth,
-	// }
-	//rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rwd, exitcode.Ok)
-	// networkPower := big.NewIntUnsigned(1 << 50)
-	// rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(),
-	// 	&power.CurrentTotalPowerReturn{
-	// 		RawBytePower:            networkPower,
-	// 		QualityAdjPower:         networkPower,
-	// 		PledgeCollateral:        h.networkPledge,
-	// 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,
-	// 	},
-	// 	exitcode.Ok)
-
 	powerDelta := miner.NewPowerPairZero()
 	if config.detectedFaultsPowerDelta != nil {
 		powerDelta = powerDelta.Add(*config.detectedFaultsPowerDelta)
@@ -5853,7 +5838,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 	}
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
-	rt.Call(h.a.OnDeferredCronEvent, &builtin.DeferredCronEventPayload{
+	rt.Call(h.a.OnDeferredCronEvent, &builtin.DeferredCronEventParams{
 		EventType:               miner.CronEventProvingDeadline,
 		RewardSmoothed:          h.epochRewardSmooth,
 		QualityAdjPowerSmoothed: h.epochQAPowerSmooth,

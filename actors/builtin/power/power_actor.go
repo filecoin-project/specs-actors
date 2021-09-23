@@ -490,7 +490,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 		var payload miner0.CronEventPayload
 		err := payload.UnmarshalCBOR(bytes.NewBuffer(event.CallbackPayload))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unmarshal miner cron payload into expected structure")
-		input := builtin.DeferredCronEventPayload{
+		input := builtin.DeferredCronEventParams{
 			EventType:               payload.EventType,
 			RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
