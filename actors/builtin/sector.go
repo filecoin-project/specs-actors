@@ -2,7 +2,7 @@ package builtin
 
 import (
 	stabi "github.com/filecoin-project/go-state-types/abi"
-	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 )
 
 // Policy values associated with a seal proof type.
@@ -66,7 +66,7 @@ func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, e
 func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
 	info, ok := SealProofPoliciesV11[p]
 	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
+		return 0, xerrors.Errorf("unsupported proof type: %w", p)
 	}
 	return info.SectorMaxLifetime, nil
 }
@@ -82,7 +82,7 @@ func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpo
 func ConsensusMinerMinPower(p stabi.RegisteredPoStProof) (stabi.StoragePower, error) {
 	info, ok := PoStProofPolicies[p]
 	if !ok {
-		return stabi.NewStoragePower(0), errors.Errorf("unsupported proof type: %v", p)
+		return stabi.NewStoragePower(0), xerrors.Errorf("unsupported proof type: %w", p)
 	}
 	return info.ConsensusMinerMinPower, nil
 }
@@ -124,7 +124,7 @@ var PoStProofPolicies = map[stabi.RegisteredPoStProof]*PoStProofPolicy{
 func PoStProofWindowPoStPartitionSectors(p stabi.RegisteredPoStProof) (uint64, error) {
 	info, ok := PoStProofPolicies[p]
 	if !ok {
-		return 0, errors.Errorf("unsupported proof type: %v", p)
+		return 0, xerrors.Errorf("unsupported proof type: %w", p)
 	}
 	return info.WindowPoStPartitionSectors, nil
 }

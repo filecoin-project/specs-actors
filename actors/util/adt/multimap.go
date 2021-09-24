@@ -4,7 +4,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
@@ -67,7 +66,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 
 	// Append to the array.
 	if err = array.AppendContinuous(value); err != nil {
-		return errors.Wrapf(err, "failed to add multimap key %v value %v", key, value)
+		return xerrors.Wrapf(err, "failed to add multimap key %v value %w", key, value)
 	}
 
 	c, err := array.Root()
@@ -79,7 +78,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 	newArrayRoot := cbg.CborCid(c)
 	err = mm.mp.Put(key, &newArrayRoot)
 	if err != nil {
-		return errors.Wrapf(err, "failed to store multimap values")
+		return xerrors.Wrapf(err, "failed to store multimap values")
 	}
 	return nil
 }
@@ -87,7 +86,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 // Removes all values for a key.
 func (mm *Multimap) RemoveAll(key abi.Keyer) error {
 	if _, err := mm.mp.TryDelete(key); err != nil {
-		return errors.Wrapf(err, "failed to delete multimap key %v root %v", key, mm.mp.root)
+		return xerrors.Wrapf(err, "failed to delete multimap key %w root %w", key, mm.mp.root)
 	}
 	return nil
 }
@@ -127,7 +126,7 @@ func (mm *Multimap) Get(key abi.Keyer) (*Array, bool, error) {
 	var arrayRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &arrayRoot)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to load multimap key %v", key)
+		return nil, false, xerrors.Wrapf(err, "failed to load multimap key %w", key)
 	}
 	var array *Array
 	if found {

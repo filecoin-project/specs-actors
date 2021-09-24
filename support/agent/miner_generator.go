@@ -5,7 +5,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/cbor"
-	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
@@ -69,13 +69,13 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
 			if !ok {
-				return errors.Errorf("create miner return has wrong type: %v", ret)
+				return xerrors.Errorf("create miner return has wrong type: %w", ret)
 			}
 
 			var worker, owner address.Address
 			params, ok := msg.Params.(*power.CreateMinerParams)
 			if !ok {
-				return errors.Errorf("create miner params has wrong type: %v", msg.Params)
+				return xerrors.Errorf("create miner params has wrong type: %w", msg.Params)
 			} else {
 				worker = params.Worker
 				owner = params.Owner

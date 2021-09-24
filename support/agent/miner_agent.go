@@ -14,7 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/ipfs/go-cid"
 	mh "github.com/multiformats/go-multihash"
-	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
@@ -337,7 +337,7 @@ func (ma *MinerAgent) createFault(v SimState) ([]message, error) {
 
 	parts := ma.deadlines[faultDlInfo.Index]
 	if pIdx >= uint64(len(parts)) {
-		return nil, errors.Errorf("sector %d in deadline %d has unregistered partition %d",
+		return nil, xerrors.Errorf("sector %d in deadline %d has unregistered partition %d",
 			faultNumber, faultDlInfo.Index, pIdx)
 	}
 	parts[pIdx].faults.Set(faultNumber)
@@ -385,14 +385,14 @@ func (ma *MinerAgent) createRecovery(v SimState) ([]message, error) {
 
 	parts := ma.deadlines[recoveryDlInfo.Index]
 	if pIdx >= uint64(len(parts)) {
-		return nil, errors.Errorf("recovered sector %d in deadline %d has unregistered partition %d",
+		return nil, xerrors.Errorf("recovered sector %d in deadline %d has unregistered partition %d",
 			recoveryNumber, recoveryDlInfo.Index, pIdx)
 	}
 	if set, err := parts[pIdx].faults.IsSet(recoveryNumber); err != nil {
-		return nil, errors.Errorf("could not check if %d in deadline %d partition %d is faulty",
+		return nil, xerrors.Errorf("could not check if %d in deadline %d partition %d is faulty",
 			recoveryNumber, recoveryDlInfo.Index, pIdx)
 	} else if !set {
-		return nil, errors.Errorf("recovery %d in deadline %d partition %d was not a fault",
+		return nil, xerrors.Errorf("recovery %d in deadline %d partition %d was not a fault",
 			recoveryNumber, recoveryDlInfo.Index, pIdx)
 	}
 
@@ -483,7 +483,7 @@ func (ma *MinerAgent) publishStorageDeals() []message {
 			// add returned deal ids to be included within sectors
 			publishReturn, ok := ret.(*market.PublishStorageDealsReturn)
 			if !ok {
-				return errors.Errorf("create miner return has wrong type: %v", ret)
+				return xerrors.Errorf("create miner return has wrong type: %w", ret)
 			}
 
 			for idx, dealId := range publishReturn.IDs {

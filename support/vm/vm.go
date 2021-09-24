@@ -14,7 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/rt"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/ipfs/go-cid"
-	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
@@ -236,7 +236,7 @@ func (vm *VM) rollback(root cid.Cid) error {
 	var err error
 	vm.actors, err = adt.AsMap(vm.store, root, builtin.DefaultHamtBitwidth)
 	if err != nil {
-		return errors.Wrapf(err, "failed to load node for %s", root)
+		return xerrors.Wrapf(err, "failed to load node for %s", root)
 	}
 
 	// reset the root node
@@ -260,7 +260,7 @@ func (vm *VM) GetActor(a address.Address) (*states.Actor, bool, error) {
 // This method will not check if the actor previously existed, it will blindly overwrite it.
 func (vm *VM) setActor(_ context.Context, key address.Address, a *states.Actor) error {
 	if err := vm.actors.Put(abi.AddrKey(key), a); err != nil {
-		return errors.Wrap(err, "setting actor in state tree failed")
+		return xerrors.Wrap(err, "setting actor in state tree failed")
 	}
 	vm.actorsDirty = true
 	return nil
@@ -277,7 +277,7 @@ func (vm *VM) SetActorState(ctx context.Context, key address.Address, state cbor
 		return err
 	}
 	if !found {
-		return errors.Errorf("could not find actor %s to set state", key)
+		return xerrors.Errorf("could not find actor %s to set state", key)
 	}
 	a.Head = stateCid
 	return vm.setActor(ctx, key, a)
@@ -315,10 +315,10 @@ func (vm *VM) NormalizeAddress(addr address.Address) (address.Address, bool) {
 	// resolve the target address via the InitActor, and attempt to load state.
 	initActorEntry, found, err := vm.GetActor(builtin.InitActorAddr)
 	if err != nil {
-		panic(errors.Wrapf(err, "failed to load init actor"))
+		panic(xerrors.Wrapf(err, "failed to load init actor"))
 	}
 	if !found {
-		panic(errors.Wrapf(err, "no init actor"))
+		panic(xerrors.Wrapf(err, "no init actor"))
 	}
 
 	// get a view into the actor state
@@ -479,7 +479,7 @@ func (vm *VM) GetState(addr address.Address, out cbor.Unmarshaler) error {
 		return err
 	}
 	if !found {
-		return errors.Errorf("actor %v not found", addr)
+		return xerrors.Errorf("actor %v not found", addr)
 	}
 	return vm.store.Get(vm.ctx, act.Head, out)
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/filecoin-project/go-state-types/rt"
 	cid "github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
-	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
 
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
@@ -162,7 +161,7 @@ func (s *Sim) Tick() error {
 
 		// for now, assume everything should work
 		if result.Code != exitcode.Ok {
-			return errors.Errorf("exitcode %d: message failed: %v\n%s\n", result.Code, msg, strings.Join(s.v.GetLogs(), "\n"))
+			return xerrors.Errorf("exitcode %d: message failed: %w\n%s\n", result.Code, msg, strings.Join(s.v.GetLogs(), "\n"))
 		}
 
 		if msg.ReturnHandler != nil {
@@ -193,7 +192,7 @@ func (s *Sim) Tick() error {
 		return err
 	}
 	if result.Code != exitcode.Ok {
-		return errors.Errorf("exitcode %d: cron message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
+		return xerrors.Errorf("exitcode %d: cron message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
 	}
 
 	// store last stats
@@ -326,7 +325,7 @@ func (s *Sim) rewardMiner(addr address.Address, wins uint64) error {
 		return err
 	}
 	if result.Code != exitcode.Ok {
-		return errors.Errorf("exitcode %d: reward message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
+		return xerrors.Errorf("exitcode %d: reward message failed:\n%s\n", result.Code, strings.Join(s.v.GetLogs(), "\n"))
 	}
 	return nil
 }
@@ -378,7 +377,7 @@ func computeCircSupply(v SimVM) error {
 	if err != nil {
 		return err
 	} else if !found {
-		return errors.Errorf("burnt actor not found at %v", builtin.BurntFundsActorAddr)
+		return xerrors.Errorf("burnt actor not found at %w", builtin.BurntFundsActorAddr)
 	}
 
 	v.SetCirculatingSupply(big.Sum(DisbursedAmount, rewardSt.TotalStoragePowerReward,

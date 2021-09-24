@@ -20,7 +20,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/minio/blake2b-simd"
 	mh "github.com/multiformats/go-multihash"
-	"github.com/pkg/errors"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	init_ "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
@@ -908,7 +908,7 @@ func decodeBytes(t reflect.Type, argBytes []byte) (interface{}, error) {
 	// This would be better fixed in then encoding library.
 	obj := v.Elem().Interface()
 	if _, ok := obj.(cbor.Unmarshaler); !ok {
-		return nil, errors.New("method argument cannot be decoded")
+		return nil, xerrors.New("method argument cannot be decoded")
 	}
 
 	buf := bytes.NewBuffer(argBytes)

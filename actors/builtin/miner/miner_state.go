@@ -12,7 +12,6 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	xc "github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	xerrors "golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -371,7 +370,7 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	var info SectorPreCommitOnChainInfo
 	found, err := precommitted.Get(SectorKey(sectorNo), &info)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
+		return nil, false, xerrors.Wrapf(err, "failed to load precommitment for %w", sectorNo)
 	}
 	return &info, found, nil
 }
@@ -418,7 +417,7 @@ func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.Secto
 		var info SectorPreCommitOnChainInfo
 		found, err := precommitted.Get(SectorKey(sectorNo), &info)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to load precommitment for %v", sectorNo)
+			return nil, xerrors.Wrapf(err, "failed to load precommitment for %w", sectorNo)
 		}
 		if !found {
 			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"
@@ -635,7 +634,7 @@ func (st *State) AssignSectorsToDeadlines(
 //
 // Returns hasMore if we still have more early terminations to process.
 func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors uint64) (result TerminationResult, hasMore bool, err error) {
-	stopErr := errors.New("stop error")
+	stopErr := xerrors.New("stop error")
 
 	// Anything to do? This lets us avoid loading the deadlines if there's nothing to do.
 	noEarlyTerminations, err := st.EarlyTerminations.IsEmpty()
