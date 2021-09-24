@@ -147,7 +147,7 @@ func (mm *SetMultimap) get(key abi.Keyer) (*adt.Set, bool, error) {
 	var setRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &setRoot)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to load set key: %w", err, key)
+		return nil, false, xerrors.Errorf("failed to load set key: %w: %w", key, err)
 	}
 	var set *adt.Set
 	if found {
