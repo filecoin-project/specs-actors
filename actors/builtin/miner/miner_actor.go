@@ -752,6 +752,14 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 	feeToBurn := abi.NewTokenAmount(0)
 	var needsCron bool
 	rt.StateTransaction(&st, func() {
+		// Aggregate fee applies only when batching.
+		if len(params.Sectors) > 1 {
+			aggregateFee := AggregatePreCommitNetworkFee(len(params.Sectors), rt.BaseFee())
+			// AggregateFee applied to fee debt to consolidate burn with outstanding debts
+			err := st.ApplyPenalty(aggregateFee)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
+		}
+
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
