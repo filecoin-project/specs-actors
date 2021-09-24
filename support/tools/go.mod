@@ -129,6 +129,7 @@ require (
 	github.com/ultraware/whitespace v0.0.4 // indirect
 	github.com/uudashr/gocognit v1.0.5 // indirect
 	github.com/yeya24/promlinter v0.1.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
 	golang.org/x/text v0.3.6 // indirect
