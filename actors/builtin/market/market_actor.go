@@ -136,10 +136,9 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 	return nil
 }
 
-//type PublishStorageDealsParams struct {
-//	Deals []ClientDealProposal
-//}
-type PublishStorageDealsParams = market0.PublishStorageDealsParams
+type PublishStorageDealsParams struct {
+	Deals []ClientDealProposal
+}
 
 //type PublishStorageDealsReturn struct {
 //	IDs []abi.DealID

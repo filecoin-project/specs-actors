@@ -161,7 +161,7 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 		VerifiedDeal:         false,
 		Client:               dca.account,
 		Provider:             provider.Address(),
-		Label:                dca.account.String() + ":" + strconv.Itoa(dca.DealCount),
+		Label:                []byte(dca.account.String() + ":" + strconv.Itoa(dca.DealCount)),
 		StartEpoch:           dealStart,
 		EndEpoch:             dealEnd,
 		StoragePricePerEpoch: price,
