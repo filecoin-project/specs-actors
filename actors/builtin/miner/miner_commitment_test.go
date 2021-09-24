@@ -1246,7 +1246,7 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 		rt.SetBalance(balance)
 		baseFee := big.NewInt(1e16)
 		rt.SetBaseFee(baseFee)
-		require.True(t, miner.AggregateNetworkFee(len(precommits), baseFee).GreaterThan(balance))
+		require.True(t, miner.AggregateProveCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), baseFee)

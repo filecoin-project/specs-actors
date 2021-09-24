@@ -218,34 +218,43 @@ func TestPrecommitDepositAndInitialPledgePostiive(t *testing.T) {
 func TestAggregateNetworkFee(t *testing.T) {
 
 	t.Run("Constant fee per sector when base fee is below 2 nFIL", func(t *testing.T) {
-		oneSectorFee := miner.AggregateNetworkFee(1, big.Zero())
-		tenSectorFee := miner.AggregateNetworkFee(10, big.Zero())
-		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
-		fortySectorFee := miner.AggregateNetworkFee(40, builtin.OneNanoFIL)
-		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+		feeFuncs := []func(int, abi.TokenAmount) abi.TokenAmount{miner.AggregateProveCommitNetworkFee, miner.AggregatePreCommitNetworkFee}
+		for _, feeFunc := range feeFuncs {
+
+			oneSectorFee := feeFunc(1, big.Zero())
+			tenSectorFee := feeFunc(10, big.Zero())
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
+			fortySectorFee := feeFunc(40, builtin.OneNanoFIL)
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+		}
 	})
 
 	t.Run("Fee increases iff basefee crosses threshold", func(t *testing.T) {
-		atNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
-		atBalanceMinusOneBaseFee := miner.AggregateNetworkFee(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
-		atBalanceBaseFee := miner.AggregateNetworkFee(10, miner.BatchBalancer)
-		atBalancePlusOneBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
-		atBalancePlusTwoBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
-		atBalanceTimesTwoBaseFee := miner.AggregateNetworkFee(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+		feeFuncs := []func(int, abi.TokenAmount) abi.TokenAmount{miner.AggregateProveCommitNetworkFee, miner.AggregatePreCommitNetworkFee}
+		for _, feeFunc := range feeFuncs {
 
-		assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
-		assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))
-		assert.True(t, atBalanceBaseFee.LessThan(atBalancePlusOneBaseFee))
-		assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
-		assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
+			atNoBaseFee := feeFunc(10, big.Zero())
+			atBalanceMinusOneBaseFee := feeFunc(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
+			atBalanceBaseFee := feeFunc(10, miner.BatchBalancer)
+			atBalancePlusOneBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
+			atBalancePlusTwoBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
+			atBalanceTimesTwoBaseFee := feeFunc(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+
+			assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
+			assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))
+			assert.True(t, atBalanceBaseFee.LessThan(atBalancePlusOneBaseFee))
+			assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
+			assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
+		}
 	})
 
 	t.Run("Regression tests", func(t *testing.T) {
-		tenAtNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
+		tenAtNoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, big.Zero()), miner.AggregatePreCommitNetworkFee(10, big.Zero()))
 		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtNoBaseFee)
-		tenAtOneNanoBaseFee := miner.AggregateNetworkFee(10, builtin.OneNanoFIL)
+		tenAtOneNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, builtin.OneNanoFIL), miner.AggregatePreCommitNetworkFee(10, builtin.OneNanoFIL))
 		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtOneNanoBaseFee)
-		hundredAtThreeNanoBaseFee := miner.AggregateNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL))
+		hundredAtThreeNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)),
+			miner.AggregatePreCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)))
 		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(985999455)), hundredAtThreeNanoBaseFee)
 	})
 }

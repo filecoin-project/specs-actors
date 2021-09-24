@@ -964,7 +964,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	// Compute and burn the aggregate network fee. We need to re-load the state as
 	// confirmSectorProofsValid can change it.
 	rt.StateReadonly(&st)
-	aggregateFee := AggregateNetworkFee(len(precommitsToConfirm), rt.BaseFee())
+	aggregateFee := AggregateProveCommitNetworkFee(len(precommitsToConfirm), rt.BaseFee())
 	unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to determine unlocked balance")
 	if unlockedBalance.LessThan(aggregateFee) {

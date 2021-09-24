@@ -5080,7 +5080,7 @@ func (h *actorHarness) proveCommitAggregateSector(rt *mock.Runtime, conf proveCo
 
 	// burn networkFee
 	{
-		expectedFee := miner.AggregateNetworkFee(len(precommits), baseFee)
+		expectedFee := miner.AggregateProveCommitNetworkFee(len(precommits), baseFee)
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedFee, nil, exitcode.Ok)
 	}
 
