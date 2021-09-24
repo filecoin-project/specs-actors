@@ -96,18 +96,6 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
-func (b DeferredCronEventParams) MarshalCBOR(w io.Writer) error {
-	_, err := w.Write([]byte("aafjdlskafjdsla"))
-	return err
-}
-
-func (b *DeferredCronEventParams) UnmarshalCBOR(r io.Reader) error {
-	var c bytes.Buffer
-	_, err := c.ReadFrom(r)
-	*b = DeferredCronEventParams{}
-	return err
-}
-
 type DeferredCronEventParams struct {
 	EventPayload            []byte
 	RewardSmoothed          smoothing.FilterEstimate

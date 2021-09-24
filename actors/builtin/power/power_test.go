@@ -609,7 +609,7 @@ func TestCron(t *testing.T) {
 
 		rt.SetEpoch(1)
 		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
-		actor.enrollCronEvent(rt, miner2, 4, []byte{0x2, 0x3})
+		actor.enrollCronEvent(rt, miner2, 4, []byte{0x1, 0x3})
 
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
