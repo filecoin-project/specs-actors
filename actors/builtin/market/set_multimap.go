@@ -67,7 +67,7 @@ func (mm *SetMultimap) Put(epoch abi.ChainEpoch, v abi.DealID) error {
 
 	// Add to the set.
 	if err = set.Put(dealKey(v)); err != nil {
-		return xerrors.Errorf("failed to add key to set %w: %w", epoch, err)
+		return xerrors.Errorf("failed to add key to set %v: %w", epoch, err)
 	}
 
 	src, err := set.Root()
@@ -100,7 +100,7 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 	// Add to the set.
 	for _, v := range vs {
 		if err = set.Put(dealKey(v)); err != nil {
-			return xerrors.Errorf("failed to add key to set %w: %w", epoch, err)
+			return xerrors.Errorf("failed to add key to set %v: %w", epoch, err)
 		}
 	}
 
@@ -147,7 +147,7 @@ func (mm *SetMultimap) get(key abi.Keyer) (*adt.Set, bool, error) {
 	var setRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &setRoot)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to load set key: %w: %w", key, err)
+		return nil, false, xerrors.Errorf("failed to load set key: %v: %w", key, err)
 	}
 	var set *adt.Set
 	if found {

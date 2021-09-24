@@ -66,7 +66,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 
 	// Append to the array.
 	if err = array.AppendContinuous(value); err != nil {
-		return xerrors.Errorf("failed to add multimap key %v value %w: %w", key, value, err)
+		return xerrors.Errorf("failed to add multimap key %v value %v: %w", key, value, err)
 	}
 
 	c, err := array.Root()
@@ -86,7 +86,7 @@ func (mm *Multimap) Add(key abi.Keyer, value cbor.Marshaler) error {
 // Removes all values for a key.
 func (mm *Multimap) RemoveAll(key abi.Keyer) error {
 	if _, err := mm.mp.TryDelete(key); err != nil {
-		return xerrors.Errorf("failed to delete multimap key %w root %w: %w", key, mm.mp.root, err)
+		return xerrors.Errorf("failed to delete multimap key %v root %v: %w", key, mm.mp.root, err)
 	}
 	return nil
 }
@@ -126,7 +126,7 @@ func (mm *Multimap) Get(key abi.Keyer) (*Array, bool, error) {
 	var arrayRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &arrayRoot)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to load multimap key %w: %w", key, err)
+		return nil, false, xerrors.Errorf("failed to load multimap key %v: %w", key, err)
 	}
 	var array *Array
 	if found {

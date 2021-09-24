@@ -268,7 +268,7 @@ func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
 	found, err := claims.Get(abi.AddrKey(a), &out)
 	if err != nil {
-		return nil, false, xerrors.Errorf("failed to get claim for address %w: %w", a, err)
+		return nil, false, xerrors.Errorf("failed to get claim for address %v: %w", a, err)
 	}
 	if !found {
 		return nil, false, nil
