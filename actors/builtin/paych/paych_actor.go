@@ -7,9 +7,9 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	paych0 "github.com/filecoin-project/specs-actors/actors/builtin/paych"
-	paych2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/paych"
 
 	"github.com/ipfs/go-cid"
 
@@ -94,43 +94,53 @@ func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Add
 ////////////////////////////////////////////////////////////////////////////////
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
-
-// type UpdateChannelStateParams struct {
-// 	Sv     SignedVoucher
-// 	Secret []byte
-// }
-type UpdateChannelStateParams = paych2.UpdateChannelStateParams
+type UpdateChannelStateParams struct {
+	Sv     SignedVoucher
+	Secret []byte
+}
 
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
-//type SignedVoucher struct {
-//	// ChannelAddr is the address of the payment channel this signed voucher is valid for
-//	ChannelAddr addr.Address
-//	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
-//	TimeLockMin abi.ChainEpoch
-//	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
-//	// TimeLockMax set to 0 means no timeout
-//	TimeLockMax abi.ChainEpoch
-//	// (optional) The SecretPreImage is used by `To` to validate
-//	SecretPreimage []byte
-//	// (optional) Extra can be specified by `From` to add a verification method to the voucher.
-//	Extra *ModVerifyParams
-//	// Specifies which lane the Voucher merges into (will be created if does not exist)
-//	Lane uint64
-//	// Nonce is set by `From` to prevent redemption of stale vouchers on a lane
-//	Nonce uint64
-//	// Amount voucher can be redeemed for
-//	Amount big.Int
-//	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
-//	MinSettleHeight abi.ChainEpoch
-//
-//	// (optional) Set of lanes to be merged into `Lane`
-//	Merges []Merge
-//
-//	// Sender's signature over the voucher
-//	Signature *crypto.Signature
-//}
-type SignedVoucher = paych0.SignedVoucher
+type SignedVoucher struct {
+	oldSV paych0.SignedVoucher
+	// ChannelAddr is the address of the payment channel this signed voucher is valid for
+	ChannelAddr addr.Address
+	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
+	TimeLockMin abi.ChainEpoch
+	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
+	// TimeLockMax set to 0 means no timeout
+	TimeLockMax abi.ChainEpoch
+	// (optional) The SecretHash is used by `To` to validate
+	SecretHash []byte
+	// (optional) Extra can be specified by `From` to add a verification method to the voucher.
+	Extra *ModVerifyParams
+	// Specifies which lane the Voucher merges into (will be created if does not exist)
+	Lane uint64
+	// Nonce is set by `From` to prevent redemption of stale vouchers on a lane
+	Nonce uint64
+	// Amount voucher can be redeemed for
+	Amount big.Int
+	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
+	MinSettleHeight abi.ChainEpoch
+
+	// (optional) Set of lanes to be merged into `Lane`
+	Merges []Merge
+
+	// Sender's signature over the voucher
+	Signature *crypto.Signature
+}
+
+func (t *SignedVoucher) SigningBytes() ([]byte, error) {
+	osv := *t
+	osv.Signature = nil
+
+	buf := new(bytes.Buffer)
+	if err := osv.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
 
 // Modular Verification method
 //type ModVerifyParams struct {
@@ -203,9 +213,9 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 		rt.Abortf(exitcode.ErrIllegalArgument, "voucher amount must be non-negative, was %v", sv.Amount)
 	}
 
-	if len(sv.SecretPreimage) > 0 {
+	if len(sv.SecretHash) > 0 {
 		hashedSecret := rt.HashBlake2b(params.Secret)
-		if !bytes.Equal(hashedSecret[:], sv.SecretPreimage) {
+		if !bytes.Equal(hashedSecret[:], sv.SecretHash) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "incorrect secret!")
 		}
 	}
