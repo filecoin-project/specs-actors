@@ -370,7 +370,7 @@ func (st *State) GetPrecommittedSector(store adt.Store, sectorNo abi.SectorNumbe
 	var info SectorPreCommitOnChainInfo
 	found, err := precommitted.Get(SectorKey(sectorNo), &info)
 	if err != nil {
-		return nil, false, xerrors.Wrapf(err, "failed to load precommitment for %w", sectorNo)
+		return nil, false, xerrors.Errorf("failed to load precommitment for %w: %w", sectorNo, err)
 	}
 	return &info, found, nil
 }
@@ -417,7 +417,7 @@ func (st *State) FindPrecommittedSectors(store adt.Store, sectorNos ...abi.Secto
 		var info SectorPreCommitOnChainInfo
 		found, err := precommitted.Get(SectorKey(sectorNo), &info)
 		if err != nil {
-			return nil, xerrors.Wrapf(err, "failed to load precommitment for %w", sectorNo)
+			return nil, xerrors.Errorf("failed to load precommitment for %w: %w", sectorNo, err)
 		}
 		if !found {
 			// TODO #564 log: "failed to get precommitted sector on sector %d, dropping from prove commit set"

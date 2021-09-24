@@ -67,7 +67,7 @@ func (mm *SetMultimap) Put(epoch abi.ChainEpoch, v abi.DealID) error {
 
 	// Add to the set.
 	if err = set.Put(dealKey(v)); err != nil {
-		return xerrors.Wrapf(err, "failed to add key to set %w", epoch)
+		return xerrors.Errorf("failed to add key to set %w: %w", epoch, err)
 	}
 
 	src, err := set.Root()
@@ -78,7 +78,7 @@ func (mm *SetMultimap) Put(epoch abi.ChainEpoch, v abi.DealID) error {
 	newSetRoot := cbg.CborCid(src)
 	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
-		return xerrors.Wrapf(err, "failed to store set")
+		return xerrors.Errorf("failed to store set: %w", err)
 	}
 	return nil
 }
@@ -100,7 +100,7 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 	// Add to the set.
 	for _, v := range vs {
 		if err = set.Put(dealKey(v)); err != nil {
-			return xerrors.Wrapf(err, "failed to add key to set %w", epoch)
+			return xerrors.Errorf("failed to add key to set %w: %w", epoch, err)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (mm *SetMultimap) PutMany(epoch abi.ChainEpoch, vs []abi.DealID) error {
 	newSetRoot := cbg.CborCid(src)
 	err = mm.mp.Put(k, &newSetRoot)
 	if err != nil {
-		return xerrors.Wrapf(err, "failed to store set")
+		return xerrors.Errorf("failed to store set: %w", err)
 	}
 	return nil
 }
@@ -147,7 +147,7 @@ func (mm *SetMultimap) get(key abi.Keyer) (*adt.Set, bool, error) {
 	var setRoot cbg.CborCid
 	found, err := mm.mp.Get(key, &setRoot)
 	if err != nil {
-		return nil, false, xerrors.Wrapf(err, "failed to load set key %w", key)
+		return nil, false, xerrors.Errorf("failed to load set key: %w", err, key)
 	}
 	var set *adt.Set
 	if found {

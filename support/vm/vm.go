@@ -236,7 +236,7 @@ func (vm *VM) rollback(root cid.Cid) error {
 	var err error
 	vm.actors, err = adt.AsMap(vm.store, root, builtin.DefaultHamtBitwidth)
 	if err != nil {
-		return xerrors.Wrapf(err, "failed to load node for %s", root)
+		return xerrors.Errorf("failed to load node for %s: %w", root, err)
 	}
 
 	// reset the root node
@@ -260,7 +260,7 @@ func (vm *VM) GetActor(a address.Address) (*states.Actor, bool, error) {
 // This method will not check if the actor previously existed, it will blindly overwrite it.
 func (vm *VM) setActor(_ context.Context, key address.Address, a *states.Actor) error {
 	if err := vm.actors.Put(abi.AddrKey(key), a); err != nil {
-		return xerrors.Wrap(err, "setting actor in state tree failed")
+		return xerrors.Errorf("setting actor in state tree failed: %w", err)
 	}
 	vm.actorsDirty = true
 	return nil
@@ -315,10 +315,10 @@ func (vm *VM) NormalizeAddress(addr address.Address) (address.Address, bool) {
 	// resolve the target address via the InitActor, and attempt to load state.
 	initActorEntry, found, err := vm.GetActor(builtin.InitActorAddr)
 	if err != nil {
-		panic(xerrors.Wrapf(err, "failed to load init actor"))
+		panic(xerrors.Errorf("failed to load init actor: %w", err))
 	}
 	if !found {
-		panic(xerrors.Wrapf(err, "no init actor"))
+		panic(xerrors.Errorf("no init actor: %w", err))
 	}
 
 	// get a view into the actor state

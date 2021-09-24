@@ -132,7 +132,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	minerNominalPower := claim.RawBytePower
 	minerMinPower, err := builtin.ConsensusMinerMinPower(claim.WindowPoStProofType)
 	if err != nil {
-		return false, xerrors.Wrap(err, "could not get miner min power from proof type")
+		return false, xerrors.Errorf("could not get miner min power from proof type: %w", err)
 	}
 
 	// if miner is larger than min power requirement, we're set
@@ -268,7 +268,7 @@ func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
 	found, err := claims.Get(abi.AddrKey(a), &out)
 	if err != nil {
-		return nil, false, xerrors.Wrapf(err, "failed to get claim for address %w", a)
+		return nil, false, xerrors.Errorf("failed to get claim for address %w: %w", a, err)
 	}
 	if !found {
 		return nil, false, nil
