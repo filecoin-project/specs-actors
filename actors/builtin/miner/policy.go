@@ -242,7 +242,7 @@ func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, 
 	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, builtin.SectorQualityPrecision)
 
 	// Average of weighted space time: (scaledUpWeightedSumSpaceTime / sectorSpaceTime * 10)
-	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), builtin.QualityBaseMultiplier)
+	return big.Div(scaledUpWeightedSumSpaceTime, big.Mul(builtin.QualityBaseMultiplier, sectorSpaceTime))
 }
 
 // The power for a sector size, committed duration, and weight.
