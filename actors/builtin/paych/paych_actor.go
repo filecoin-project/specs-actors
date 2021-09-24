@@ -102,7 +102,6 @@ type UpdateChannelStateParams struct {
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
 type SignedVoucher struct {
-	oldSV paych0.SignedVoucher
 	// ChannelAddr is the address of the payment channel this signed voucher is valid for
 	ChannelAddr addr.Address
 	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
