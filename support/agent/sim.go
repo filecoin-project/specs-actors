@@ -161,7 +161,7 @@ func (s *Sim) Tick() error {
 
 		// for now, assume everything should work
 		if result.Code != exitcode.Ok {
-			return xerrors.Errorf("exitcode %d: message failed: %w\n%s\n", result.Code, msg, strings.Join(s.v.GetLogs(), "\n"))
+			return xerrors.Errorf("exitcode %d: message failed: %v\n%s\n", result.Code, msg, strings.Join(s.v.GetLogs(), "\n"))
 		}
 
 		if msg.ReturnHandler != nil {
@@ -377,7 +377,7 @@ func computeCircSupply(v SimVM) error {
 	if err != nil {
 		return err
 	} else if !found {
-		return xerrors.Errorf("burnt actor not found at %w", builtin.BurntFundsActorAddr)
+		return xerrors.Errorf("burnt actor not found at %v", builtin.BurntFundsActorAddr)
 	}
 
 	v.SetCirculatingSupply(big.Sum(DisbursedAmount, rewardSt.TotalStoragePowerReward,

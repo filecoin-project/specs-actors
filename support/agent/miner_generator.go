@@ -69,13 +69,13 @@ func (mg *MinerGenerator) createMiner(owner address.Address, cfg MinerAgentConfi
 		ReturnHandler: func(s SimState, msg message, ret cbor.Marshaler) error {
 			createMinerRet, ok := ret.(*power.CreateMinerReturn)
 			if !ok {
-				return xerrors.Errorf("create miner return has wrong type: %w", ret)
+				return xerrors.Errorf("create miner return has wrong type: %v", ret)
 			}
 
 			var worker, owner address.Address
 			params, ok := msg.Params.(*power.CreateMinerParams)
 			if !ok {
-				return xerrors.Errorf("create miner params has wrong type: %w", msg.Params)
+				return xerrors.Errorf("create miner params has wrong type: %v", msg.Params)
 			} else {
 				worker = params.Worker
 				owner = params.Owner

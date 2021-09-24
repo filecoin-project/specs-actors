@@ -483,7 +483,7 @@ func (ma *MinerAgent) publishStorageDeals() []message {
 			// add returned deal ids to be included within sectors
 			publishReturn, ok := ret.(*market.PublishStorageDealsReturn)
 			if !ok {
-				return xerrors.Errorf("create miner return has wrong type: %w", ret)
+				return xerrors.Errorf("create miner return has wrong type: %v", ret)
 			}
 
 			for idx, dealId := range publishReturn.IDs {
