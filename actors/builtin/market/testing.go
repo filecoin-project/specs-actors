@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 
 	"github.com/ipfs/go-cid"
-	"github.com/pkg/errors"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -228,7 +228,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 		err = dealOps.mp.ForEach(&setRoot, func(key string) error {
 			epoch, err := binary.ReadUvarint(bytes.NewReader([]byte(key)))
 			if err != nil {
-				return errors.Wrapf(err, "deal ops has key that is not an int: %s", key)
+				return xerrors.Errorf("deal ops has key that is not an int: %s: %w", key, err)
 			}
 
 			dealOpEpochCount++

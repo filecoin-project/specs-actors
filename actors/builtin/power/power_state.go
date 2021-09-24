@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -127,13 +126,13 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 		return false, err
 	}
 	if !ok {
-		return false, errors.Errorf("no claim for actor %v", miner)
+		return false, xerrors.Errorf("no claim for actor %w", miner)
 	}
 
 	minerNominalPower := claim.RawBytePower
 	minerMinPower, err := builtin.ConsensusMinerMinPower(claim.WindowPoStProofType)
 	if err != nil {
-		return false, errors.Wrap(err, "could not get miner min power from proof type")
+		return false, xerrors.Errorf("could not get miner min power from proof type: %w", err)
 	}
 
 	// if miner is larger than min power requirement, we're set
@@ -269,7 +268,7 @@ func getClaim(claims *adt.Map, a addr.Address) (*Claim, bool, error) {
 	var out Claim
 	found, err := claims.Get(abi.AddrKey(a), &out)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "failed to get claim for address %v", a)
+		return nil, false, xerrors.Errorf("failed to get claim for address %v: %w", a, err)
 	}
 	if !found {
 		return nil, false, nil
