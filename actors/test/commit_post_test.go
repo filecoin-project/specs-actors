@@ -869,14 +869,12 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 	}
-	invocsFirst := append(invocsCommon, vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent})
+	invocFirst := vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}
 
 	sectorIndex := 0
 	for sectorIndex < count {
+		msgSectorIndexStart := sectorIndex
 		invocs := invocsCommon
-		if expectCronEnrollment && sectorIndex == 0 {
-			invocs = invocsFirst
-		}
 
 		// Prepare message.
 		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
@@ -896,6 +894,14 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 		if sectorIndex == count && sectorIndex%batchSize != 0 {
 			// Trim the last, partial batch.
 			params.Sectors = params.Sectors[:sectorIndex%batchSize]
+		}
+
+		// Finalize invocation expectation list
+		if len(params.Sectors) > 1 {
+			invocs = append(invocs, vm.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend})
+		}
+		if expectCronEnrollment && msgSectorIndexStart == 0 {
+			invocs = append(invocs, invocFirst)
 		}
 		vm.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
 		vm.ExpectInvocation{

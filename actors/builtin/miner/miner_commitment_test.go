@@ -440,6 +440,7 @@ func TestPreCommitBatch(t *testing.T) {
 		name           string
 		batchSize      int
 		balanceSurplus abi.TokenAmount
+		baseFee        abi.TokenAmount
 		deals          []dealSpec
 		exit           exitcode.ExitCode
 		error          string
@@ -447,14 +448,17 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "one sector",
 		batchSize:      1,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 	}, {
 		name:           "max sectors",
 		batchSize:      32,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 	}, {
 		name:           "one deal",
 		batchSize:      3,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		deals: []dealSpec{{
 			size:         32 << 30,
 			verifiedSize: 0,
@@ -464,6 +468,7 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "many deals",
 		batchSize:      3,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		deals: []dealSpec{{
 			size:         32 << 30,
 			verifiedSize: 0,
@@ -481,17 +486,20 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "empty batch",
 		batchSize:      0,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		exit:           exitcode.ErrIllegalArgument,
 		error:          "batch empty",
 	}, {
 		name:           "too many sectors",
 		batchSize:      257,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		exit:           exitcode.ErrIllegalArgument,
 		error:          "batch of 257 too large",
 	}, {
 		name:           "insufficient balance",
 		batchSize:      10,
+		baseFee:        big.Zero(),
 		balanceSurplus: abi.NewTokenAmount(1).Neg(),
 		exit:           exitcode.ErrInsufficientFunds,
 		error:          "insufficient funds",
@@ -522,6 +530,7 @@ func TestPreCommitBatch(t *testing.T) {
 				firstForMiner: true,
 			}
 			deposits := make([]big.Int, batchSize)
+
 			for i := 0; i < batchSize; i++ {
 				deals := dealSpec{}
 				if len(test.deals) > i {
@@ -539,13 +548,16 @@ func TestPreCommitBatch(t *testing.T) {
 				}
 				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, sectors[i].Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
 				deposits[i] = miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+
 			}
+			netFee := miner.AggregatePreCommitNetworkFee(batchSize, test.baseFee)
 			totalDeposit := big.Sum(deposits...)
-			rt.SetBalance(big.Add(totalDeposit, test.balanceSurplus))
+			totalBalance := big.Add(netFee, totalDeposit)
+			rt.SetBalance(big.Add(totalBalance, test.balanceSurplus))
 
 			if test.exit != exitcode.Ok {
 				rt.ExpectAbortContainsMessage(test.exit, test.error, func() {
-					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, test.baseFee)
 
 					// State untouched.
 					st := getState(rt)
@@ -555,7 +567,7 @@ func TestPreCommitBatch(t *testing.T) {
 				})
 				return
 			}
-			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, test.baseFee)
 
 			// Check precommits
 			st := getState(rt)
@@ -607,7 +619,7 @@ func TestPreCommitBatch(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sector expiration", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true}, big.Zero())
 		})
 	})
 
@@ -628,7 +640,7 @@ func TestPreCommitBatch(t *testing.T) {
 			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 		}
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "duplicate sector number 100", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true}, big.Zero())
 		})
 	})
 }
@@ -789,7 +801,7 @@ func TestProveCommit(t *testing.T) {
 			firstForMiner: true,
 		}
 
-		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, big.Zero())
 
 		rt.SetEpoch(proveCommitEpoch)
 		noDealPower := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-proveCommitEpoch, big.Zero(), big.Zero())

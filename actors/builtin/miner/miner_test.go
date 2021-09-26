@@ -4892,7 +4892,7 @@ type preCommitBatchConf struct {
 	firstForMiner bool
 }
 
-func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreCommitSectorBatchParams, conf preCommitBatchConf) []*miner.SectorPreCommitOnChainInfo {
+func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreCommitSectorBatchParams, conf preCommitBatchConf, baseFee abi.TokenAmount) []*miner.SectorPreCommitOnChainInfo {
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 	{
@@ -4933,8 +4933,11 @@ func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreC
 		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
 	st := getState(rt)
-	if st.FeeDebt.GreaterThan(big.Zero()) {
-		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, st.FeeDebt, nil, exitcode.Ok)
+	// burn networkFee
+	if st.FeeDebt.GreaterThan(big.Zero()) || len(params.Sectors) > 1 {
+		expectedNetworkFee := miner.AggregatePreCommitNetworkFee(len(params.Sectors), baseFee)
+		expectedBurn := big.Add(expectedNetworkFee, st.FeeDebt)
+		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedBurn, nil, exitcode.Ok)
 	}
 
 	if conf.firstForMiner {
