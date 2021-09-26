@@ -188,7 +188,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	// Drop invalid deals
 	var st State
-	proposalCids := make(map[cid.Cid]struct{})
+	proposalCidLookup := make(map[cid.Cid]struct{})
+	validProposalCids := make([]cid.Cid, 0)
+	validDeals := make([]ClientDealProposal, 0, len(params.Deals))
 	totalClientLockup := make(map[addr.Address]abi.TokenAmount)
 	totalProviderLockup := abi.NewTokenAmount(0)
 
@@ -200,7 +202,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 	for di, deal := range params.Deals {
 
-		// drop malformed deals
+		/*
+			drop malformed deals
+		*/
 		if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
 			rt.Log(rtt.INFO, "invalid deal %d: %s", di, err)
 			continue
@@ -215,7 +219,9 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			continue
 		}
 
-		// drop deals with insufficient lock up to cover costs
+		/*
+			drop deals with insufficient lock up to cover costs
+		*/
 		if _, ok := totalClientLockup[client]; !ok {
 			totalClientLockup[client] = abi.NewTokenAmount(0)
 		}
@@ -234,12 +240,15 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			continue
 		}
 
-		// Normalise provider and client addresses in the proposal stored on chain (after signature verification).
-		params.Deals[di].Proposal.Provider = provider
+		/*
+			drop duplicate deals
+		*/
+		// Normalise provider and client addresses in the proposal stored on chain.
+		// Must happen after signature verification and before taking cid.
+		deal.Proposal.Provider = provider
 		resolvedAddrs[deal.Proposal.Client] = client
-		params.Deals[di].Proposal.Client = client
+		deal.Proposal.Client = client
 
-		// drop duplicate deals
 		pcid, err := deal.ProposalCid()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
@@ -247,38 +256,22 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		// check state PendingProposals for duplication across messages
 		duplicateInState, err := msm.pendingDeals.Has(abi.CidKey(pcid))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
-		_, duplicateInMessage := proposalCids[pcid]
+		_, duplicateInMessage := proposalCidLookup[pcid]
 		if duplicateInState || duplicateInMessage {
 			rt.Log(rtt.INFO, "invalid deal %d: cannot publish duplicate deal proposal %s", di)
 			continue
 		}
-		proposalCids[pcid] = struct{}{}
 
-		validInputBf.Set(uint64(di))
-	}
-
-	validDealCount, err := validInputBf.Count()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count valid deals in bitfield")
-	builtin.RequireParam(rt, validDealCount > 0, "All deal proposals invalid")
-
-	validDeals := make([]ClientDealProposal, 0, validDealCount)
-	// Use datacap and drop verified deals unable to acquire datacap
-	for di, deal := range params.Deals {
-		markedValid, err := validInputBf.IsSet(uint64(di))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check if deal marked valid in bitfield")
-		if !markedValid {
-			continue
-		}
-
-		// Check VerifiedClient allowed cap and deduct PieceSize from cap.
-		// Either the DealSize is within the available DataCap of the VerifiedClient
-		// or this message will fail. We do not allow a deal that is partially verified.
+		/*
+			check VerifiedClient allowed cap and deduct PieceSize from cap
+			drop deals with a DealSize that cannot be fully covered by VerifiedClient's available DataCap
+		*/
 		if deal.Proposal.VerifiedDeal {
 			code := rt.Send(
 				builtin.VerifiedRegistryActorAddr,
 				builtin.MethodsVerifiedRegistry.UseBytes,
 				&verifreg.UseBytesParams{
-					Address:  deal.Proposal.Client,
+					Address:  client,
 					DealSize: big.NewIntUnsigned(uint64(deal.Proposal.PieceSize)),
 				},
 				abi.NewTokenAmount(0),
@@ -289,10 +282,21 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				validInputBf.Unset(uint64(di))
 				continue
 			}
-			builtin.RequireSuccess(rt, code, "failed to add verified deal for client: %v", deal.Proposal.Client)
 		}
+
+		// update valid deal state
+		proposalCidLookup[pcid] = struct{}{}
+		validProposalCids = append(validProposalCids, pcid)
 		validDeals = append(validDeals, deal)
+		validInputBf.Set(uint64(di))
 	}
+
+	builtin.RequirePredicate(rt, len(validDeals) == len(validProposalCids), exitcode.ErrIllegalState,
+		"%d valid deals but %d valid proposal cids", len(validDeals), len(validProposalCids))
+
+	validDealCount, err := validInputBf.Count()
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count valid deals in bitfield")
+	builtin.RequireParam(rt, validDealCount > 0, "All deal proposals invalid")
 
 	var newDealIds []abi.DealID
 	rt.StateTransaction(&st, func() {
@@ -303,22 +307,20 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 
 		// All storage dealProposals will be added in an atomic transaction; this operation will be unrolled if any of them fails.
 		// This should only fail on programmer error because all expected invalid conditions should be filtered in the first set of checks.
-		for di, validDeal := range validDeals {
+		for vdi, validDeal := range validDeals {
 			err := msm.lockClientAndProviderBalances(&validDeal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock balance")
 
 			id := msm.generateStorageDealID()
 
-			pcid, err := validDeal.Proposal.Cid()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
-
+			pcid := validProposalCids[vdi]
 			err = msm.pendingDeals.Put(abi.CidKey(pcid))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set pending deal")
 
 			err = msm.dealProposals.Set(id, &validDeal.Proposal)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal")
 
-			// We should randomize the first epoch for when the deal will be processed so an attacker isn't able to
+			// We randomize the first epoch for when the deal will be processed so an attacker isn't able to
 			// schedule too many deals for the same tick.
 			processEpoch := GenRandNextEpoch(validDeal.Proposal.StartEpoch, id)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to generate random process epoch")
