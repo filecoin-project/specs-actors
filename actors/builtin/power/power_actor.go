@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
+	xerrors "golang.org/x/xerrors"
 
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/ipfs/go-cid"
@@ -218,7 +219,9 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
 	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
 
-	a.processBatchProofVerifies(rt, rewret)
+	if err := a.processBatchProofVerifies(rt, rewret); err != nil {
+		rt.Log(rtt.ERROR, "unexpected error processing batch proof verifies: %s. Skipping all verification for epoch %d", err, rt.CurrEpoch())
+	}
 	a.processDeferredCronEvents(rt, rewret)
 
 	var st State
@@ -343,12 +346,13 @@ func validateMinerHasClaim(rt Runtime, st State, minerAddr addr.Address) {
 	}
 }
 
-func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewardReturn) {
+func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewardReturn) error {
 	var st State
 
 	var miners []addr.Address
 	verifies := make(map[addr.Address][]proof.SealVerifyInfo)
 
+	var stErr error
 	rt.StateTransaction(&st, func() {
 		store := adt.AsStore(rt)
 		if st.ProofValidationBatch == nil {
@@ -356,18 +360,28 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 			return
 		}
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proofs validation batch")
+		if err != nil {
+			stErr = xerrors.Errorf("failed to load proofs validation batch: %w", err)
+			return
+		}
 
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
+		if err != nil {
+			stErr = xerrors.Errorf("failed to load claims: %w", err)
+			return
+		}
 
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
 			a, err := addr.NewFromBytes([]byte(k))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to parse address key")
+			if err != nil {
+				return xerrors.Errorf("failed to parse address key: %w", err)
+			}
 
 			// refuse to process proofs for miner with no claim
 			found, err := claims.Has(abi.AddrKey(a))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
+			if err != nil {
+				return xerrors.Errorf("failed to look up claim: %w", err)
+			}
 			if !found {
 				rt.Log(rtt.WARN, "skipping batch verifies for unknown miner %s", a)
 				return nil
@@ -381,23 +395,34 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 				infos = append(infos, svi)
 				return nil
 			})
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate over proof verify array for miner %s", a)
+			if err != nil {
+				return xerrors.Errorf("failed to iterate over proof verify array for miner %s: %w", a, err)
+			}
 
 			verifies[a] = infos
 			return nil
 		})
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to iterate proof batch")
-
+		// Do not return immediately, all runs that get this far should wipe the ProofValidationBatchQueue.
+		// If we leave the validation batch then in the case of a repeating state error the queue
+		// will quickly fill up and repeated traversls will start ballooning cron execution time.
+		if err != nil {
+			stErr = xerrors.Errorf("failed to iterate proof batch: %w", err)
+		}
 		st.ProofValidationBatch = nil
 	})
+	if stErr != nil {
+		return stErr
+	}
 
 	res, err := rt.BatchVerifySeals(verifies)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
+	if err != nil {
+		return xerrors.Errorf("failed to batch verify: %w", err)
+	}
 
 	for _, m := range miners {
 		vres, ok := res[m]
 		if !ok {
-			rt.Abortf(exitcode.ErrNotFound, "batch verify seals syscall implemented incorrectly")
+			return xerrors.Errorf("batch verify seals syscall implemented incorrectly, result not found for miner: %s", m)
 		}
 
 		verifs := verifies[m]
@@ -440,6 +465,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 			}
 		}
 	}
+	return nil
 }
 
 func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewardReturn) {

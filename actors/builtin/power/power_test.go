@@ -1093,7 +1093,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		ac.checkState(rt)
 	})
 
-	t.Run("fails if batch verify seals fails", func(t *testing.T) {
+	t.Run("cron tick does not fail if batch verify seals fails", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.createMinerBasic(rt, owner, owner, miner1)
 
@@ -1106,15 +1106,17 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), fmt.Errorf("fail"))
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 
+		power := big.Zero()
+		//expect power sends to reward actor
+		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &power, abi.NewTokenAmount(0), nil, 0)
 		rt.SetEpoch(abi.ChainEpoch(0))
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
 		expectQueryNetworkInfo(rt, ac)
 
-		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
-			rt.Call(ac.Actor.OnEpochTickEnd, nil)
-		})
+		rt.Call(ac.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
+		ac.checkState(rt)
 	})
 }
 
