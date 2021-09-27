@@ -7,6 +7,7 @@ import (
 	"io"
 
 	abi "github.com/filecoin-project/go-state-types/abi"
+	market "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
@@ -318,12 +319,12 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > 0 {
-		t.Deals = make([]ClientDealProposal, extra)
+		t.Deals = make([]market.ClientDealProposal, extra)
 	}
 
 	for i := 0; i < int(extra); i++ {
 
-		var v ClientDealProposal
+		var v market.ClientDealProposal
 		if err := v.UnmarshalCBOR(br); err != nil {
 			return err
 		}
@@ -863,68 +864,6 @@ func (t *ComputeDataCommitmentReturn) UnmarshalCBOR(r io.Reader) error {
 		t.CommDs[i] = v
 	}
 
-	return nil
-}
-
-var lengthBufClientDealProposal = []byte{130}
-
-func (t *ClientDealProposal) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write(lengthBufClientDealProposal); err != nil {
-		return err
-	}
-
-	// t.Proposal (market.DealProposal) (struct)
-	if err := t.Proposal.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.ClientSignature (crypto.Signature) (struct)
-	if err := t.ClientSignature.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *ClientDealProposal) UnmarshalCBOR(r io.Reader) error {
-	*t = ClientDealProposal{}
-
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
-
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Proposal (market.DealProposal) (struct)
-
-	{
-
-		if err := t.Proposal.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Proposal: %w", err)
-		}
-
-	}
-	// t.ClientSignature (crypto.Signature) (struct)
-
-	{
-
-		if err := t.ClientSignature.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.ClientSignature: %w", err)
-		}
-
-	}
 	return nil
 }
 

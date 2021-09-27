@@ -249,7 +249,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		resolvedAddrs[deal.Proposal.Client] = client
 		deal.Proposal.Client = client
 
-		pcid, err := deal.ProposalCid()
+		pcid, err := deal.Proposal.Cid()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to take cid of proposal %d", di)
 
 		// check proposalCids for duplication within message batch

@@ -159,7 +159,7 @@ func main() {
 		//market.OnMinerSectorsTerminateParams{}, // Aliased from v0
 		// other types
 		//market.DealProposal{}, // Aliased from v0
-		market.ClientDealProposal{},
+		//market.ClientDealProposal{},
 		market.SectorDeals{},
 		market.SectorWeights{},
 		market.DealState{},
