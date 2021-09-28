@@ -96,7 +96,7 @@ func newDealBatcher(v *vm.VM) *dealBatcher {
 }
 
 func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address, dealLabel string, pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart,
-	dealLifetime abi.ChainEpoch) {
+	dealLifetime abi.ChainEpoch, pricePerEpoch, providerCollateral, clientCollateral abi.TokenAmount) {
 	deal := market.DealProposal{
 		PieceCID:             tutil.MakeCID(dealLabel, &market.PieceCIDPrefix),
 		PieceSize:            pieceSize,
@@ -106,15 +106,15 @@ func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address
 		Label:                dealLabel,
 		StartEpoch:           dealStart,
 		EndEpoch:             dealStart + dealLifetime,
-		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
-		ProviderCollateral:   big.Mul(big.NewInt(2), vm.FIL),
-		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
+		StoragePricePerEpoch: pricePerEpoch,
+		ProviderCollateral:   providerCollateral,
+		ClientCollateral:     clientCollateral,
 	}
 
 	db.deals = append(db.deals, deal)
 }
 
-func (db *dealBatcher) publish(t *testing.T, sender addr.Address) *market.PublishStorageDealsReturn {
+func (db *dealBatcher) publishOK(t *testing.T, sender addr.Address) *market.PublishStorageDealsReturn {
 	publishDealParams := market.PublishStorageDealsParams{}
 	for _, deal := range db.deals {
 		publishDealParams.Deals = append(publishDealParams.Deals, market.ClientDealProposal{
@@ -129,6 +129,21 @@ func (db *dealBatcher) publish(t *testing.T, sender addr.Address) *market.Publis
 	require.Equal(t, exitcode.Ok, result.Code)
 
 	return result.Ret.(*market.PublishStorageDealsReturn)
+}
+
+func (db *dealBatcher) publishFail(t *testing.T, sender addr.Address) {
+	publishDealParams := market.PublishStorageDealsParams{}
+	for _, deal := range db.deals {
+		publishDealParams.Deals = append(publishDealParams.Deals, market.ClientDealProposal{
+			Proposal: deal,
+			ClientSignature: crypto.Signature{
+				Type: crypto.SigTypeBLS,
+			},
+		})
+	}
+
+	result := vm.RequireApplyMessage(t, db.v, sender, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	require.Equal(t, exitcode.ErrIllegalArgument, result.Code) // because we can't return multiple codes for batch failures we return 16 in all cases
 }
 
 func requireActor(t *testing.T, v *vm.VM, addr address.Address) *states.Actor {

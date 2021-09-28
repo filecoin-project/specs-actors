@@ -148,7 +148,6 @@ type PublishStorageDealsReturn struct {
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
-
 	// Deal message must have a From field identical to the provider of all the deals.
 	// This allows us to retain and verify only the client's signature in each deal proposal itself.
 	rt.ValidateImmediateCallerType(builtin.CallerTypesSignable...)
@@ -181,7 +180,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	if !callerOk {
 		rt.Abortf(exitcode.ErrForbidden, "caller %v is not worker or control address of provider %v", caller, provider)
 	}
-
 	resolvedAddrs := make(map[addr.Address]addr.Address, len(params.Deals))
 	baselinePower := requestCurrentBaselinePower(rt)
 	networkRawPower, networkQAPower := requestCurrentNetworkPower(rt)
@@ -199,9 +197,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(ReadOnlyPermission).
 		withEscrowTable(ReadOnlyPermission).withLockedTable(ReadOnlyPermission).build()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
-
 	for di, deal := range params.Deals {
-
 		/*
 			drop malformed deals
 		*/
@@ -229,14 +225,14 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		clientBalanceOk, err := msm.balanceCovered(client, totalClientLockup[client])
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check client balance coverage")
 		if !clientBalanceOk {
-			rt.Log(rtt.INFO, "invalid deal: %d: insufficient client funds to cover proposal cost")
+			rt.Log(rtt.INFO, "invalid deal: %d: insufficient client funds to cover proposal cost", di)
 			continue
 		}
 		totalProviderLockup = big.Sum(totalProviderLockup, deal.Proposal.ProviderCollateral)
 		providerBalanceOk, err := msm.balanceCovered(provider, totalProviderLockup)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check provider balance coverage")
 		if !providerBalanceOk {
-			rt.Log(rtt.INFO, "invalid deal: %d: insufficient provider funds to cover proposal cost")
+			rt.Log(rtt.INFO, "invalid deal: %d: insufficient provider funds to cover proposal cost", di)
 			continue
 		}
 
