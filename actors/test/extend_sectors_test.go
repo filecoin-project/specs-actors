@@ -43,7 +43,7 @@ func TestExtendSectorWithDeals(t *testing.T) {
 	require.True(t, ok)
 
 	//
-	// publish verified and unverified deals
+	// publish verified deals
 	//
 
 	// register verifier then verified client
