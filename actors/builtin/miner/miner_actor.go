@@ -1374,11 +1374,11 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 
 					// Remove "spent" deal weights
 					newDealWeight := big.Div(
-						big.Mul(sector.DealWeight, big.NewInt(int64(currEpoch-sector.Activation))),
+						big.Mul(sector.DealWeight, big.NewInt(int64(sector.Expiration-currEpoch))),
 						big.NewInt(int64(sector.Expiration-sector.Activation)),
 					)
 					newVerifiedDealWeight := big.Div(
-						big.Mul(sector.DealWeight, big.NewInt(int64(currEpoch-sector.Activation))),
+						big.Mul(sector.DealWeight, big.NewInt(int64(sector.Expiration-currEpoch))),
 						big.NewInt(int64(sector.Expiration-sector.Activation)),
 					)
 
