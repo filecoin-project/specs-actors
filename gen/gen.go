@@ -148,7 +148,7 @@ func main() {
 		market.State{},
 		// method params and returns
 		//market.WithdrawBalanceParams{}, // Aliased from v0
-		market.PublishStorageDealsParams{},
+		// market.PublishStorageDealsParams{}, // Aliased from v0
 		market.PublishStorageDealsReturn{},
 		//market.ActivateDealsParams{}, // Aliased from v0
 		market.VerifyDealsForActivationParams{},

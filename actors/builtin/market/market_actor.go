@@ -137,9 +137,10 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 	return nil
 }
 
-type PublishStorageDealsParams struct {
-	Deals []ClientDealProposal
-}
+// type PublishStorageDealsParams struct {
+// 	Deals []ClientDealProposal
+// }
+type PublishStorageDealsParams = market0.PublishStorageDealsParams
 
 type PublishStorageDealsReturn struct {
 	IDs        []abi.DealID
@@ -274,8 +275,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				&builtin.Discard{},
 			)
 			if code.IsError() {
-				rt.Log(rtt.INFO, "invalid deal %d: failed to acquire datacap exitcode: %d", code)
-				validInputBf.Unset(uint64(di))
+				rt.Log(rtt.INFO, "invalid deal %d: failed to acquire datacap exitcode: %d", di, code)
 				continue
 			}
 		}
@@ -287,11 +287,12 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		validInputBf.Set(uint64(di))
 	}
 
-	builtin.RequirePredicate(rt, len(validDeals) == len(validProposalCids), exitcode.ErrIllegalState,
-		"%d valid deals but %d valid proposal cids", len(validDeals), len(validProposalCids))
-
 	validDealCount, err := validInputBf.Count()
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count valid deals in bitfield")
+	builtin.RequirePredicate(rt, len(validDeals) == len(validProposalCids), exitcode.ErrIllegalState,
+		"%d valid deals but %d valid proposal cids", len(validDeals), len(validProposalCids))
+	builtin.RequirePredicate(rt, uint64(len(validDeals)) == validDealCount, exitcode.ErrIllegalState,
+		"%d valid deals but validDealCount=%d", len(validDeals), validDealCount)
 	builtin.RequireParam(rt, validDealCount > 0, "All deal proposals invalid")
 
 	var newDealIds []abi.DealID
