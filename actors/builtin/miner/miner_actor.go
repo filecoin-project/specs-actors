@@ -1378,7 +1378,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 						big.NewInt(int64(sector.Expiration-sector.Activation)),
 					)
 					newVerifiedDealWeight := big.Div(
-						big.Mul(sector.DealWeight, big.NewInt(int64(sector.Expiration-currEpoch))),
+						big.Mul(sector.VerifiedDealWeight, big.NewInt(int64(sector.Expiration-currEpoch))),
 						big.NewInt(int64(sector.Expiration-sector.Activation)),
 					)
 
