@@ -53,8 +53,13 @@ func RequireState(rt runtime.Runtime, predicate bool, msg string, args ...interf
 
 // Aborts with an ErrIllegalArgument if predicate is not true.
 func RequireParam(rt runtime.Runtime, predicate bool, msg string, args ...interface{}) {
+	RequirePredicate(rt, predicate, exitcode.ErrIllegalArgument, msg, args...)
+}
+
+// Aborts with `code` if predicate is not true.
+func RequirePredicate(rt runtime.Runtime, predicate bool, code exitcode.ExitCode, msg string, args ...interface{}) {
 	if !predicate {
-		rt.Abortf(exitcode.ErrIllegalArgument, msg, args...)
+		rt.Abortf(code, msg, args...)
 	}
 }
 

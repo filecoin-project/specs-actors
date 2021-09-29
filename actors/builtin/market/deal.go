@@ -45,8 +45,8 @@ var PieceCIDPrefix = market0.PieceCIDPrefix
 type DealProposal = market0.DealProposal
 
 // ClientDealProposal is a DealProposal signed by a client
-//type ClientDealProposal struct {
-//	Proposal        DealProposal
-//	ClientSignature crypto.Signature
-//}
+// type ClientDealProposal struct {
+// 	Proposal        DealProposal
+// 	ClientSignature crypto.Signature
+// }
 type ClientDealProposal = market0.ClientDealProposal

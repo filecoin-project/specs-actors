@@ -83,6 +83,69 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 	return result.Ret.(*market.PublishStorageDealsReturn)
 }
 
+type dealBatcher struct {
+	deals []market.DealProposal
+	v     *vm.VM
+}
+
+func newDealBatcher(v *vm.VM) *dealBatcher {
+	return &dealBatcher{
+		deals: make([]market.DealProposal, 0),
+		v:     v,
+	}
+}
+
+func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address, dealLabel string, pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart,
+	dealLifetime abi.ChainEpoch, pricePerEpoch, providerCollateral, clientCollateral abi.TokenAmount) {
+	deal := market.DealProposal{
+		PieceCID:             tutil.MakeCID(dealLabel, &market.PieceCIDPrefix),
+		PieceSize:            pieceSize,
+		VerifiedDeal:         verifiedDeal,
+		Client:               dealClient,
+		Provider:             dealProvider,
+		Label:                dealLabel,
+		StartEpoch:           dealStart,
+		EndEpoch:             dealStart + dealLifetime,
+		StoragePricePerEpoch: pricePerEpoch,
+		ProviderCollateral:   providerCollateral,
+		ClientCollateral:     clientCollateral,
+	}
+
+	db.deals = append(db.deals, deal)
+}
+
+func (db *dealBatcher) publishOK(t *testing.T, sender addr.Address) *market.PublishStorageDealsReturn {
+	publishDealParams := market.PublishStorageDealsParams{}
+	for _, deal := range db.deals {
+		publishDealParams.Deals = append(publishDealParams.Deals, market.ClientDealProposal{
+			Proposal: deal,
+			ClientSignature: crypto.Signature{
+				Type: crypto.SigTypeBLS,
+			},
+		})
+	}
+
+	result := vm.RequireApplyMessage(t, db.v, sender, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	require.Equal(t, exitcode.Ok, result.Code)
+
+	return result.Ret.(*market.PublishStorageDealsReturn)
+}
+
+func (db *dealBatcher) publishFail(t *testing.T, sender addr.Address) {
+	publishDealParams := market.PublishStorageDealsParams{}
+	for _, deal := range db.deals {
+		publishDealParams.Deals = append(publishDealParams.Deals, market.ClientDealProposal{
+			Proposal: deal,
+			ClientSignature: crypto.Signature{
+				Type: crypto.SigTypeBLS,
+			},
+		})
+	}
+
+	result := vm.RequireApplyMessage(t, db.v, sender, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	require.Equal(t, exitcode.ErrIllegalArgument, result.Code) // because we can't return multiple codes for batch failures we return 16 in all cases
+}
+
 func requireActor(t *testing.T, v *vm.VM, addr address.Address) *states.Actor {
 	a, found, err := v.GetActor(addr)
 	require.NoError(t, err)
