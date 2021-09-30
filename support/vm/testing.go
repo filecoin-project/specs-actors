@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/specs-actors/v5/support/vm"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/cron"
@@ -29,6 +31,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v6/actors/states"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
@@ -340,6 +343,30 @@ func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Addr
 	v, err := v.WithEpoch(dlInfo.Open)
 	require.NoError(t, err)
 	return dlInfo, pIdx, v
+}
+
+func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *VM, minerIDAddress, worker address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *VM {
+	var dlInfo *dline.Info
+	var pIdx uint64
+	for v.GetEpoch() < e {
+		dlInfo, pIdx, v = AdvanceTillProvingDeadline(t, v, minerIDAddress, sectorNumber)
+		submitParams := miner.SubmitWindowedPoStParams{
+			Deadline: dlInfo.Index,
+			Partitions: []miner.PoStPartition{{
+				Index:   pIdx,
+				Skipped: bitfield.New(),
+			}},
+			Proofs: []proof.PoStProof{{
+				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			}},
+			ChainCommitEpoch: dlInfo.Challenge,
+			ChainCommitRand:  []byte(vm.RandString),
+		}
+		ApplyOk(t, v, worker, minerIDAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
+	}
+
+	return v
 }
 
 // find the proving deadline and partition index of a miner's sector
