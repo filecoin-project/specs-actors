@@ -37,7 +37,6 @@ type DealProposal struct {
 	Provider     addr.Address
 
 	// Label is an arbitrary client chosen label to apply to the deal
-	// TODO: Limit the size of this: https://github.com/filecoin-project/specs-actors/issues/897
 	Label []byte
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,
