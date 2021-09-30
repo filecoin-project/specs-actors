@@ -486,7 +486,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 
 	for _, event := range cronEvents {
 
-		input := builtin.DeferredCronEventParams{
+		params := builtin.DeferredCronEventParams{
 			EventPayload:            event.CallbackPayload,
 			RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
@@ -495,7 +495,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 		code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			&input,
+			&params,
 			abi.NewTokenAmount(0),
 			&builtin.Discard{},
 		)

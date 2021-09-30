@@ -609,7 +609,7 @@ func TestCron(t *testing.T) {
 
 		rt.SetEpoch(1)
 		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
-		actor.enrollCronEvent(rt, miner2, 4, []byte{0x1, 0x3})
+		actor.enrollCronEvent(rt, miner2, 4, []byte{0x2, 0x3})
 
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
@@ -617,15 +617,19 @@ func TestCron(t *testing.T) {
 		expectQueryNetworkInfo(rt, actor)
 		st := getState(rt)
 
-		input := builtin.DeferredCronEventParams{
+		params1 := builtin.DeferredCronEventParams{
 			EventPayload:            []byte{0x1, 0x3},
 			RewardSmoothed:          actor.thisEpochRewardSmoothed,
 			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 		}
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, &params1, big.Zero(), nil, exitcode.Ok)
 
-		input.EventPayload = []byte{0x1, 0x3}
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.Ok)
+		params2 := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{0x2, 0x3},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, &params2, big.Zero(), nil, exitcode.Ok)
 
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)

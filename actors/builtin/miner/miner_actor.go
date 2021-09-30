@@ -1065,8 +1065,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
-	confirmSectorProofsValid(rt, precommittedSectors, params.RewardBaselinePower,
-		params.RewardSmoothed, params.QualityAdjPowerSmoothed)
+	confirmSectorProofsValid(rt, precommittedSectors, params.RewardBaselinePower, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 
 	return nil
 }
