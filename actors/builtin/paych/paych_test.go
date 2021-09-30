@@ -174,7 +174,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 
 		paymentChannel addr.Address
 
-		SecretHash  []byte
+		secretHash  []byte
 		sig         *crypto.Signature
 		verifySig   bool
 		expExitCode exitcode.ExitCode
@@ -222,7 +222,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 		{desc: "fails if SigningBytes fails", targetCode: builtin.AccountActorCodeID,
 			amt: 1, paymentChannel: paychAddr, epoch: 1, tlmin: 1, tlmax: 0,
 			sig: sig, verifySig: true,
-			SecretHash:  make([]byte, 2<<21),
+			secretHash:  make([]byte, 2<<21),
 			expExitCode: exitcode.ErrIllegalArgument},
 	}
 
@@ -250,13 +250,13 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				Nonce:       tc.nonce,
 				Amount:      big.NewInt(tc.amt),
 				Signature:   tc.sig,
-				SecretHash:  tc.SecretHash,
+				SecretHash:  tc.secretHash,
 			}
 			ucp := &UpdateChannelStateParams{Sv: sv}
 
 			rt.SetCaller(payeeAddr, tc.targetCode)
 			rt.ExpectValidateCallerAddr(payerAddr, payeeAddr)
-			if tc.sig != nil && tc.SecretHash == nil {
+			if tc.sig != nil && tc.secretHash == nil {
 				var result error
 				if !tc.verifySig {
 					result = fmt.Errorf("bad signature")
