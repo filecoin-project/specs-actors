@@ -899,7 +899,7 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 		// Finalize invocation expectation list
 		if len(params.Sectors) > 1 {
 			aggFee := miner.AggregatePreCommitNetworkFee(len(params.Sectors), big.Zero())
-			invocs = append(invocs, vm.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Params: vm.ExpectObject(&aggFee)})
+			invocs = append(invocs, vm.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: &aggFee})
 		}
 		if expectCronEnrollment && msgSectorIndexStart == 0 {
 			invocs = append(invocs, invocFirst)

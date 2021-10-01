@@ -217,7 +217,7 @@ var BatchDiscount = builtin.BigFrac{ // PARAM_SPEC
 	Numerator:   big.NewInt(1),
 	Denominator: big.NewInt(20),
 }
-var BatchBalancer = big.Mul(big.NewInt(2), builtin.OneNanoFIL) // PARAM_SPEC
+var BatchBalancer = big.Mul(big.NewInt(5), builtin.OneNanoFIL) // PARAM_SPEC
 
 func AggregateProveCommitNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
 	return AggregateNetworkFee(aggregateSize, EstimatedSingleProveCommitGasUsage, baseFee)

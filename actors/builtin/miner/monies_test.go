@@ -217,7 +217,7 @@ func TestPrecommitDepositAndInitialPledgePostiive(t *testing.T) {
 
 func TestAggregateNetworkFee(t *testing.T) {
 
-	t.Run("Constant fee per sector when base fee is below 2 nFIL", func(t *testing.T) {
+	t.Run("Constant fee per sector when base fee is below 5 nFIL", func(t *testing.T) {
 		feeFuncs := []func(int, abi.TokenAmount) abi.TokenAmount{miner.AggregateProveCommitNetworkFee, miner.AggregatePreCommitNetworkFee}
 		for _, feeFunc := range feeFuncs {
 
@@ -226,6 +226,8 @@ func TestAggregateNetworkFee(t *testing.T) {
 			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
 			fortySectorFee := feeFunc(40, builtin.OneNanoFIL)
 			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+			twoHundredSectorFee := feeFunc(200, big.Mul(big.NewInt(3), builtin.OneNanoFIL))
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(200)), twoHundredSectorFee)
 		}
 	})
 
@@ -250,11 +252,33 @@ func TestAggregateNetworkFee(t *testing.T) {
 
 	t.Run("Regression tests", func(t *testing.T) {
 		tenAtNoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, big.Zero()), miner.AggregatePreCommitNetworkFee(10, big.Zero()))
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtNoBaseFee)
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(5), big.NewInt(65733297)), big.NewInt(2)), tenAtNoBaseFee) // (5/20) * x * 10 = (5/2) * x
+
 		tenAtOneNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, builtin.OneNanoFIL), miner.AggregatePreCommitNetworkFee(10, builtin.OneNanoFIL))
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtOneNanoBaseFee)
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(5), big.NewInt(65733297)), big.NewInt(2)), tenAtOneNanoBaseFee) // (5/20) * x * 10 = (5/2) * x
+
 		hundredAtThreeNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)),
 			miner.AggregatePreCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)))
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(985999455)), hundredAtThreeNanoBaseFee)
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(50), big.NewInt(65733297)), big.NewInt(2)), hundredAtThreeNanoBaseFee)
+
+		hundredAtSixNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(100, big.Mul(big.NewInt(6), builtin.OneNanoFIL)),
+			miner.AggregatePreCommitNetworkFee(100, big.Mul(big.NewInt(6), builtin.OneNanoFIL)))
+		assert.Equal(t, big.Product(builtin.OneNanoFIL, big.NewInt(30), big.NewInt(65733297)), hundredAtSixNanoBaseFee)
+	})
+
+	t.Run("25/75 split", func(t *testing.T) {
+		// check 25/75% split up to uFIL precision
+		oneMicroFIL := big.Mul(builtin.OneNanoFIL, big.NewInt(1000))
+		atNoBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(13, big.Zero()), oneMicroFIL)
+		atNoBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(13, big.Zero()), oneMicroFIL)
+		assert.Equal(t, atNoBaseFeeProve, big.Mul(big.NewInt(3), atNoBaseFeePre))
+
+		atFiveBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(303, big.Mul(big.NewInt(5), builtin.OneNanoFIL)), oneMicroFIL)
+		atFiveBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(303, big.Mul(big.NewInt(5), builtin.OneNanoFIL)), oneMicroFIL)
+		assert.Equal(t, atFiveBaseFeeProve, big.Mul(big.NewInt(3), atFiveBaseFeePre))
+
+		atTwentyBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(13, big.Mul(big.NewInt(20), builtin.OneNanoFIL)), oneMicroFIL)
+		atTwentyBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(13, big.Mul(big.NewInt(20), builtin.OneNanoFIL)), oneMicroFIL)
+		assert.Equal(t, atTwentyBaseFeeProve, big.Mul(big.NewInt(3), atTwentyBaseFeePre))
 	})
 }
