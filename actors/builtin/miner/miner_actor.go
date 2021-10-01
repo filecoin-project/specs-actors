@@ -2211,7 +2211,7 @@ func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimat
 	}
 
 	// Burn penalty.
-	rt.Log(rtt.DEBUG, "storage provider %s penalized %d for sector termination", rt.Receiver(), penalty)
+	rt.Log(rtt.DEBUG, "storage provider %s penalized %s for sector termination", rt.Receiver(), penalty)
 	burnFunds(rt, penalty)
 
 	// Return pledge.
@@ -2263,7 +2263,7 @@ func handleProvingDeadline(rt Runtime,
 
 			err = st.ApplyPenalty(depositToBurn)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.DEBUG, "storage provider %s penalized %d for expired pre commits", rt.Receiver(), depositToBurn)
+			rt.Log(rtt.DEBUG, "storage provider %s penalized %s for expired pre commits", rt.Receiver(), depositToBurn)
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -2287,7 +2287,7 @@ func handleProvingDeadline(rt Runtime,
 
 			err = st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.DEBUG, "storage provider %s penalized %d for continued fault", rt.Receiver(), penaltyTarget)
+			rt.Log(rtt.DEBUG, "storage provider %s penalized %s for continued fault", rt.Receiver(), penaltyTarget)
 
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
@@ -2663,7 +2663,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFunds(rt Runtime, amt abi.TokenAmount) {
 	if amt.GreaterThan(big.Zero()) {
-		rt.Log(rtt.DEBUG, "storage provder %s called burnFunds with amt=%d attoFIL", rt.Receiver(), amt)
+		rt.Log(rtt.DEBUG, "storage provder %s burning %s", rt.Receiver(), amt)
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}
