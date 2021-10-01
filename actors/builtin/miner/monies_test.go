@@ -217,35 +217,68 @@ func TestPrecommitDepositAndInitialPledgePostiive(t *testing.T) {
 
 func TestAggregateNetworkFee(t *testing.T) {
 
-	t.Run("Constant fee per sector when base fee is below 2 nFIL", func(t *testing.T) {
-		oneSectorFee := miner.AggregateNetworkFee(1, big.Zero())
-		tenSectorFee := miner.AggregateNetworkFee(10, big.Zero())
-		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
-		fortySectorFee := miner.AggregateNetworkFee(40, builtin.OneNanoFIL)
-		assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+	t.Run("Constant fee per sector when base fee is below 5 nFIL", func(t *testing.T) {
+		feeFuncs := []func(int, abi.TokenAmount) abi.TokenAmount{miner.AggregateProveCommitNetworkFee, miner.AggregatePreCommitNetworkFee}
+		for _, feeFunc := range feeFuncs {
+
+			oneSectorFee := feeFunc(1, big.Zero())
+			tenSectorFee := feeFunc(10, big.Zero())
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(10)), tenSectorFee)
+			fortySectorFee := feeFunc(40, builtin.OneNanoFIL)
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(40)), fortySectorFee)
+			twoHundredSectorFee := feeFunc(200, big.Mul(big.NewInt(3), builtin.OneNanoFIL))
+			assert.Equal(t, big.Mul(oneSectorFee, big.NewInt(200)), twoHundredSectorFee)
+		}
 	})
 
 	t.Run("Fee increases iff basefee crosses threshold", func(t *testing.T) {
-		atNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
-		atBalanceMinusOneBaseFee := miner.AggregateNetworkFee(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
-		atBalanceBaseFee := miner.AggregateNetworkFee(10, miner.BatchBalancer)
-		atBalancePlusOneBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
-		atBalancePlusTwoBaseFee := miner.AggregateNetworkFee(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
-		atBalanceTimesTwoBaseFee := miner.AggregateNetworkFee(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+		feeFuncs := []func(int, abi.TokenAmount) abi.TokenAmount{miner.AggregateProveCommitNetworkFee, miner.AggregatePreCommitNetworkFee}
+		for _, feeFunc := range feeFuncs {
 
-		assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
-		assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))
-		assert.True(t, atBalanceBaseFee.LessThan(atBalancePlusOneBaseFee))
-		assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
-		assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
+			atNoBaseFee := feeFunc(10, big.Zero())
+			atBalanceMinusOneBaseFee := feeFunc(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
+			atBalanceBaseFee := feeFunc(10, miner.BatchBalancer)
+			atBalancePlusOneBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
+			atBalancePlusTwoBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
+			atBalanceTimesTwoBaseFee := feeFunc(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+
+			assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
+			assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))
+			assert.True(t, atBalanceBaseFee.LessThan(atBalancePlusOneBaseFee))
+			assert.True(t, atBalancePlusOneBaseFee.LessThan(atBalancePlusTwoBaseFee))
+			assert.True(t, atBalanceTimesTwoBaseFee.Equals(big.Mul(big.NewInt(2), atBalanceBaseFee)))
+		}
 	})
 
 	t.Run("Regression tests", func(t *testing.T) {
-		tenAtNoBaseFee := miner.AggregateNetworkFee(10, big.Zero())
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtNoBaseFee)
-		tenAtOneNanoBaseFee := miner.AggregateNetworkFee(10, builtin.OneNanoFIL)
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(65733297)), tenAtOneNanoBaseFee)
-		hundredAtThreeNanoBaseFee := miner.AggregateNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL))
-		assert.Equal(t, big.Mul(builtin.OneNanoFIL, big.NewInt(985999455)), hundredAtThreeNanoBaseFee)
+		tenAtNoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, big.Zero()), miner.AggregatePreCommitNetworkFee(10, big.Zero()))
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(5), big.NewInt(65733297)), big.NewInt(2)), tenAtNoBaseFee) // (5/20) * x * 10 = (5/2) * x
+
+		tenAtOneNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(10, builtin.OneNanoFIL), miner.AggregatePreCommitNetworkFee(10, builtin.OneNanoFIL))
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(5), big.NewInt(65733297)), big.NewInt(2)), tenAtOneNanoBaseFee) // (5/20) * x * 10 = (5/2) * x
+
+		hundredAtThreeNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)),
+			miner.AggregatePreCommitNetworkFee(100, big.Mul(big.NewInt(3), builtin.OneNanoFIL)))
+		assert.Equal(t, big.Div(big.Product(builtin.OneNanoFIL, big.NewInt(50), big.NewInt(65733297)), big.NewInt(2)), hundredAtThreeNanoBaseFee)
+
+		hundredAtSixNanoBaseFee := big.Sum(miner.AggregateProveCommitNetworkFee(100, big.Mul(big.NewInt(6), builtin.OneNanoFIL)),
+			miner.AggregatePreCommitNetworkFee(100, big.Mul(big.NewInt(6), builtin.OneNanoFIL)))
+		assert.Equal(t, big.Product(builtin.OneNanoFIL, big.NewInt(30), big.NewInt(65733297)), hundredAtSixNanoBaseFee)
+	})
+
+	t.Run("25/75 split", func(t *testing.T) {
+		// check 25/75% split up to uFIL precision
+		oneMicroFIL := big.Mul(builtin.OneNanoFIL, big.NewInt(1000))
+		atNoBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(13, big.Zero()), oneMicroFIL)
+		atNoBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(13, big.Zero()), oneMicroFIL)
+		assert.Equal(t, atNoBaseFeeProve, big.Mul(big.NewInt(3), atNoBaseFeePre))
+
+		atFiveBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(303, big.Mul(big.NewInt(5), builtin.OneNanoFIL)), oneMicroFIL)
+		atFiveBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(303, big.Mul(big.NewInt(5), builtin.OneNanoFIL)), oneMicroFIL)
+		assert.Equal(t, atFiveBaseFeeProve, big.Mul(big.NewInt(3), atFiveBaseFeePre))
+
+		atTwentyBaseFeePre := big.Div(miner.AggregatePreCommitNetworkFee(13, big.Mul(big.NewInt(20), builtin.OneNanoFIL)), oneMicroFIL)
+		atTwentyBaseFeeProve := big.Div(miner.AggregateProveCommitNetworkFee(13, big.Mul(big.NewInt(20), builtin.OneNanoFIL)), oneMicroFIL)
+		assert.Equal(t, atTwentyBaseFeeProve, big.Mul(big.NewInt(3), atTwentyBaseFeePre))
 	})
 }

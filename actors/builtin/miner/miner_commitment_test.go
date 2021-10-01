@@ -440,6 +440,7 @@ func TestPreCommitBatch(t *testing.T) {
 		name           string
 		batchSize      int
 		balanceSurplus abi.TokenAmount
+		baseFee        abi.TokenAmount
 		deals          []dealSpec
 		exit           exitcode.ExitCode
 		error          string
@@ -447,14 +448,17 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "one sector",
 		batchSize:      1,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 	}, {
 		name:           "max sectors",
 		batchSize:      32,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 	}, {
 		name:           "one deal",
 		batchSize:      3,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		deals: []dealSpec{{
 			size:         32 << 30,
 			verifiedSize: 0,
@@ -464,6 +468,7 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "many deals",
 		batchSize:      3,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		deals: []dealSpec{{
 			size:         32 << 30,
 			verifiedSize: 0,
@@ -481,17 +486,20 @@ func TestPreCommitBatch(t *testing.T) {
 		name:           "empty batch",
 		batchSize:      0,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		exit:           exitcode.ErrIllegalArgument,
 		error:          "batch empty",
 	}, {
 		name:           "too many sectors",
 		batchSize:      257,
 		balanceSurplus: big.Zero(),
+		baseFee:        big.Zero(),
 		exit:           exitcode.ErrIllegalArgument,
 		error:          "batch of 257 too large",
 	}, {
 		name:           "insufficient balance",
 		batchSize:      10,
+		baseFee:        big.Zero(),
 		balanceSurplus: abi.NewTokenAmount(1).Neg(),
 		exit:           exitcode.ErrInsufficientFunds,
 		error:          "insufficient funds",
@@ -522,6 +530,7 @@ func TestPreCommitBatch(t *testing.T) {
 				firstForMiner: true,
 			}
 			deposits := make([]big.Int, batchSize)
+
 			for i := 0; i < batchSize; i++ {
 				deals := dealSpec{}
 				if len(test.deals) > i {
@@ -539,13 +548,16 @@ func TestPreCommitBatch(t *testing.T) {
 				}
 				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, sectors[i].Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
 				deposits[i] = miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+
 			}
+			netFee := miner.AggregatePreCommitNetworkFee(batchSize, test.baseFee)
 			totalDeposit := big.Sum(deposits...)
-			rt.SetBalance(big.Add(totalDeposit, test.balanceSurplus))
+			totalBalance := big.Add(netFee, totalDeposit)
+			rt.SetBalance(big.Add(totalBalance, test.balanceSurplus))
 
 			if test.exit != exitcode.Ok {
 				rt.ExpectAbortContainsMessage(test.exit, test.error, func() {
-					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+					actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, test.baseFee)
 
 					// State untouched.
 					st := getState(rt)
@@ -555,7 +567,7 @@ func TestPreCommitBatch(t *testing.T) {
 				})
 				return
 			}
-			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+			precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, test.baseFee)
 
 			// Check precommits
 			st := getState(rt)
@@ -607,7 +619,7 @@ func TestPreCommitBatch(t *testing.T) {
 		}
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "sector expiration", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true}, big.Zero())
 		})
 	})
 
@@ -628,7 +640,7 @@ func TestPreCommitBatch(t *testing.T) {
 			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 		}
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "duplicate sector number 100", func() {
-			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true})
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, preCommitBatchConf{firstForMiner: true}, big.Zero())
 		})
 	})
 }
@@ -789,7 +801,7 @@ func TestProveCommit(t *testing.T) {
 			firstForMiner: true,
 		}
 
-		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf)
+		precommits := actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: sectors}, conf, big.Zero())
 
 		rt.SetEpoch(proveCommitEpoch)
 		noDealPower := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-proveCommitEpoch, big.Zero(), big.Zero())
@@ -1210,10 +1222,10 @@ func TestAggregateProveCommit(t *testing.T) {
 	})
 }
 
-func TestProveCommitAggregateFailures(t *testing.T) {
+func TestBatchMethodNetworkFees(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
-	t.Run("insufficient funds for network fee", func(t *testing.T) {
+	t.Run("insufficient funds for aggregated prove commit network fee", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero()).
@@ -1224,7 +1236,6 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		// Make a good commitment for the proof to target.
-
 		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
 		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 
@@ -1240,16 +1251,191 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 		sectorNosBf, err := sectorNosBf.Copy() //flush map to run to match partition state
 		require.NoError(t, err)
 
-		// set base fee extremely high so AggregateNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
+		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
 		rt.SetEpoch(proveCommitEpoch)
 		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
 		rt.SetBalance(balance)
 		baseFee := big.NewInt(1e16)
 		rt.SetBaseFee(baseFee)
-		require.True(t, miner.AggregateNetworkFee(len(precommits), baseFee).GreaterThan(balance))
+		require.True(t, miner.AggregateProveCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), baseFee)
 		})
 	})
+
+	t.Run("insufficient funds for batch precommit network fee", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover PCD but not network fee
+		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
+		rt.SetBalance(balance)
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		require.True(t, miner.AggregatePreCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+		})
+	})
+
+	t.Run("insufficient funds for batch precommit in combination of fee debt and network fee", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high enough so that either could be repaid on its own, but together repayment fails
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+
+		// Give miner almost enough balance to pay both
+		balance := big.Mul(big.NewInt(2), netFee)
+		balance = big.Sub(balance, big.NewInt(1))
+		rt.SetBalance(balance)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+		})
+	})
+
+	t.Run("enough funds for fee debt and network fee but not for PCD", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+
+		// Give miner enough balance to pay both but not any extra for pcd
+		balance := big.Mul(big.NewInt(2), netFee)
+		rt.SetBalance(balance)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds 0 for pre-commit deposit:", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+		})
+	})
+
+	t.Run("enough funds for everything", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+
+		// Give miner enough balance to pay both and pcd
+		balance := big.Mul(big.NewInt(2), netFee)
+		oneSectorPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, expiration-precommitEpoch, big.Zero(), big.Zero())
+		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, big.Mul(big.NewInt(4), oneSectorPowerEstimate))
+		balance = big.Add(balance, expectedDeposit)
+		rt.SetBalance(balance)
+
+		actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+		// State updated
+		st = getState(rt)
+		assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+		expirations := actor.collectPrecommitExpirations(rt, st)
+		assert.Equal(t, 1, len(expirations)) // one expiration epoch
+		for _, exp := range expirations {
+			assert.Equal(t, 4, len(exp)) // 4 precommits expiring
+		}
+	})
+
 }
