@@ -1103,6 +1103,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 		infos := map[addr.Address][]proof.SealVerifyInfo{miner1: {*info1, *info2, *info3}}
 
+		expectQueryNetworkInfo(rt, ac)
 		rt.ExpectBatchVerifySeals(infos, batchVerifyDefaultOutput(infos), fmt.Errorf("fail"))
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 
@@ -1111,8 +1112,6 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &power, abi.NewTokenAmount(0), nil, 0)
 		rt.SetEpoch(abi.ChainEpoch(0))
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-
-		expectQueryNetworkInfo(rt, ac)
 
 		rt.Call(ac.Actor.OnEpochTickEnd, nil)
 		rt.Verify()
