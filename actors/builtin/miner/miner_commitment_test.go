@@ -1330,7 +1330,6 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		st := getState(rt)
 		st.FeeDebt = netFee
 		rt.ReplaceState(st)
-		st = getState(rt)
 
 		// Give miner almost enough balance to pay both
 		balance := big.Mul(big.NewInt(2), netFee)
@@ -1368,7 +1367,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 			precommits = append(precommits, *precommit)
 		}
 
-		// set base fee and fee debt high enough so that either could be repaid on its own, but together repayment fails
+		// set base fee and fee debt high
 		baseFee := big.NewInt(1e16)
 		rt.SetBaseFee(baseFee)
 		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
@@ -1376,7 +1375,6 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		st := getState(rt)
 		st.FeeDebt = netFee
 		rt.ReplaceState(st)
-		st = getState(rt)
 
 		// Give miner enough balance to pay both but not any extra for pcd
 		balance := big.Mul(big.NewInt(2), netFee)
@@ -1392,4 +1390,52 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
 		})
 	})
+
+	t.Run("enough funds for everything", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+
+		// Give miner enough balance to pay both and pcd
+		balance := big.Mul(big.NewInt(2), netFee)
+		oneSectorPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, expiration-precommitEpoch, big.Zero(), big.Zero())
+		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, big.Mul(big.NewInt(4), oneSectorPowerEstimate))
+		balance = big.Add(balance, expectedDeposit)
+		rt.SetBalance(balance)
+
+		actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+		// State updated
+		st = getState(rt)
+		assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
+		expirations := actor.collectPrecommitExpirations(rt, st)
+		assert.Equal(t, 1, len(expirations)) // one expiration epoch
+		for _, exp := range expirations {
+			assert.Equal(t, 4, len(exp)) // 4 precommits expiring
+		}
+	})
+
 }
