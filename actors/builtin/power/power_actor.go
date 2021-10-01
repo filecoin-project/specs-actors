@@ -404,7 +404,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 		})
 		// Do not return immediately, all runs that get this far should wipe the ProofValidationBatchQueue.
 		// If we leave the validation batch then in the case of a repeating state error the queue
-		// will quickly fill up and repeated traversls will start ballooning cron execution time.
+		// will quickly fill up and repeated traversals will start ballooning cron execution time.
 		if err != nil {
 			stErr = xerrors.Errorf("failed to iterate proof batch: %w", err)
 		}
