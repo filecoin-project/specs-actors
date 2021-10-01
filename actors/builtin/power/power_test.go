@@ -615,9 +615,22 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		expectQueryNetworkInfo(rt, actor)
+		st := getState(rt)
 
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
+		params1 := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{0x1, 0x3},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, &params1, big.Zero(), nil, exitcode.Ok)
+
+		params2 := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{0x2, 0x3},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, &params2, big.Zero(), nil, exitcode.Ok)
+
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -652,7 +665,16 @@ func TestCron(t *testing.T) {
 		rt.SetEpoch(6)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		expectQueryNetworkInfo(rt, actor)
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+
+		st := getState(rt)
+
+		input := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{0x1, 0x3},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -661,7 +683,7 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 
 		// assert used cron events are cleaned up
-		st := getState(rt)
+		st = getState(rt)
 
 		mmap, err := adt.AsMultimap(rt.AdtStore(), st.CronEventQueue, power.CronQueueHamtBitwidth, power.CronQueueAmtBitwidth)
 		require.NoError(t, err)
@@ -707,8 +729,16 @@ func TestCron(t *testing.T) {
 
 		expectQueryNetworkInfo(rt, actor)
 
+		st := getState(rt)
+
+		input := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+
 		// only expect second deferred cron event call
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.Ok)
 
 		// Reward actor still invoked
 		expectedPower := big.NewInt(0)
@@ -750,11 +780,19 @@ func TestCron(t *testing.T) {
 
 		expectQueryNetworkInfo(rt, actor)
 
+		st := getState(rt)
+
+		input := builtin.DeferredCronEventParams{
+			EventPayload:            []byte{},
+			RewardSmoothed:          actor.thisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+
 		// First send fails
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.ErrIllegalState)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.ErrIllegalState)
 
 		// Subsequent one still invoked
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes(nil), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, &input, big.Zero(), nil, exitcode.Ok)
 
 		// Reward actor still invoked
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
@@ -770,7 +808,7 @@ func TestCron(t *testing.T) {
 		actor.expectMinersAboveMinPower(rt, 0)
 
 		// miner's claim is removed
-		st := getState(rt)
+		st = getState(rt)
 		_, found, err := st.GetClaim(rt.AdtStore(), miner1)
 		require.NoError(t, err)
 		assert.False(t, found)
@@ -1033,10 +1071,10 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		// expect sends for confirmed sectors
 		for _, cs := range cs {
 			param := &builtin.ConfirmSectorProofsParams{
-				Sectors:                            cs.sectorNums,
-				RewardStatsThisEpochRewardSmoothed: ac.thisEpochRewardSmoothed,
-				RewardStatsThisEpochBaselinePower:  ac.thisEpochBaselinePower,
-				PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,
+				Sectors:                 cs.sectorNums,
+				RewardSmoothed:          ac.thisEpochRewardSmoothed,
+				RewardBaselinePower:     ac.thisEpochBaselinePower,
+				QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 			}
 			rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
 		}
@@ -1070,6 +1108,8 @@ func TestCronBatchProofVerifies(t *testing.T) {
 
 		rt.SetEpoch(abi.ChainEpoch(0))
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
+
+		expectQueryNetworkInfo(rt, ac)
 
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			rt.Call(ac.Actor.OnEpochTickEnd, nil)
@@ -1159,10 +1199,10 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 	// expect sends for confirmed sectors
 	for _, cs := range confirmedSectors {
 		param := &builtin.ConfirmSectorProofsParams{
-			Sectors:                            cs.sectorNums,
-			RewardStatsThisEpochRewardSmoothed: h.thisEpochRewardSmoothed,
-			RewardStatsThisEpochBaselinePower:  h.thisEpochBaselinePower,
-			PwrTotalQualityAdjPowerSmoothed:    st.ThisEpochQAPowerSmoothed,
+			Sectors:                 cs.sectorNums,
+			RewardSmoothed:          h.thisEpochRewardSmoothed,
+			RewardBaselinePower:     h.thisEpochBaselinePower,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
 		}
 		rt.ExpectSend(cs.miner, builtin.MethodsMiner.ConfirmSectorProofsValid, param, abi.NewTokenAmount(0), nil, 0)
 	}
@@ -1365,12 +1405,6 @@ func (h *spActorHarness) expectTotalPowerEager(rt *mock.Runtime, expectedRaw, ex
 /// at the start of every onEpochTickEnd, cron should get these values- they're necessary for ConfirmSectorProofsValid but don't change, so they only need to be looked up once.
 /// should expect these two sends in the tests and mock up the values as needed...
 func expectQueryNetworkInfo(rt *mock.Runtime, h *spActorHarness) {
-	st := getState(rt)
-
-	currentPower := power.CurrentTotalPowerReturn{
-		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
-	}
-
 	currentReward := reward.ThisEpochRewardReturn{
 		ThisEpochBaselinePower:  h.thisEpochBaselinePower,
 		ThisEpochRewardSmoothed: h.thisEpochRewardSmoothed,
@@ -1381,15 +1415,6 @@ func expectQueryNetworkInfo(rt *mock.Runtime, h *spActorHarness) {
 		nil,
 		big.Zero(),
 		&currentReward,
-		exitcode.Ok,
-	)
-
-	rt.ExpectSend(
-		builtin.StoragePowerActorAddr,
-		builtin.MethodsPower.CurrentTotalPower,
-		nil,
-		big.Zero(),
-		&currentPower,
 		exitcode.Ok,
 	)
 }

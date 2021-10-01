@@ -111,9 +111,8 @@ func TestOnEpochTickEnd(t *testing.T) {
 		To:     builtin.StoragePowerActorAddr,
 		Method: builtin.MethodsPower.OnEpochTickEnd,
 		SubInvocations: []vm.ExpectInvocation{
-			// get data from reward and power actors for any eventual calls to confirmsectorproofvalid
+			// get data from reward actor for any eventual calls to confirmsectorproofsparams
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{
 				// expect call to reward to update kpi
 				To:     builtin.RewardActorAddr,
@@ -138,14 +137,12 @@ func TestOnEpochTickEnd(t *testing.T) {
 		SubInvocations: []vm.ExpectInvocation{
 			// get data from reward and power actors for any eventual calls to confirmsectorproofsvalid
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 			{
 				// expect call back to miner that was set up in create miner
 				To:     minerAddrs.IDAddress,
 				Method: builtin.MethodsMiner.OnDeferredCronEvent,
 				From:   builtin.StoragePowerActorAddr,
 				Value:  vm.ExpectAttoFil(big.Zero()),
-				Params: vm.ExpectBytes(cronConfig.Payload),
 			},
 			{
 				// expect call to reward to update kpi

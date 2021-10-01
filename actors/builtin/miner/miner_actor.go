@@ -956,10 +956,10 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		})
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "aggregate seal verify failed")
 
-	rewret := requestCurrentEpochBlockReward(rt)
+	rew := requestCurrentEpochBlockReward(rt)
 	pwr := requestCurrentTotalPower(rt)
 
-	confirmSectorProofsValid(rt, precommitsToConfirm, rewret.ThisEpochBaselinePower, rewret.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
+	confirmSectorProofsValid(rt, precommitsToConfirm, rew.ThisEpochBaselinePower, rew.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
 
 	// Compute and burn the aggregate network fee. We need to re-load the state as
 	// confirmSectorProofsValid can change it.
@@ -1065,8 +1065,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
-	confirmSectorProofsValid(rt, precommittedSectors, params.RewardStatsThisEpochBaselinePower,
-		params.RewardStatsThisEpochRewardSmoothed, params.PwrTotalQualityAdjPowerSmoothed)
+	confirmSectorProofsValid(rt, precommittedSectors, params.RewardBaselinePower, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 
 	return nil
 }
@@ -1550,8 +1549,11 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 
+	epochReward := requestCurrentEpochBlockReward(rt)
+	pwrTotal := requestCurrentTotalPower(rt)
+
 	// Now, try to process these sectors.
-	more := processEarlyTerminations(rt)
+	more := processEarlyTerminations(rt, epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed)
 	if more && !hadEarlyTerminations {
 		// We have remaining terminations, and we didn't _previously_
 		// have early terminations to process, schedule a cron job.
@@ -2096,23 +2098,27 @@ const (
 	CronEventProcessEarlyTerminations = miner0.CronEventProcessEarlyTerminations
 )
 
-func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.EmptyValue {
+func (a Actor) OnDeferredCronEvent(rt Runtime, params *builtin.DeferredCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	var payload miner0.CronEventPayload
+	err := payload.UnmarshalCBOR(bytes.NewBuffer(params.EventPayload))
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unmarshal miner cron payload into expected structure")
 
 	switch payload.EventType {
 	case CronEventProvingDeadline:
-		handleProvingDeadline(rt)
+		handleProvingDeadline(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 	case CronEventProcessEarlyTerminations:
-		if processEarlyTerminations(rt) {
+		if processEarlyTerminations(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed) {
 			scheduleEarlyTerminationWork(rt)
 		}
 	default:
-		rt.Log(rtt.ERROR, "unhandled payload EventType in OnDeferredCronEvent")
+		rt.Log(rtt.ERROR, "onDeferredCronEvent invalid event type: %v", payload.EventType)
 	}
 
 	var st State
 	rt.StateReadonly(&st)
-	err := st.CheckBalanceInvariants(rt.CurrentBalance())
+	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	return nil
 }
@@ -2121,14 +2127,11 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.E
 // Utility functions & helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-func processEarlyTerminations(rt Runtime) (more bool) {
+// TODO: We're using the current power+epoch reward. Technically, we
+// should use the power/reward at the time of termination.
+// https://github.com/filecoin-project/specs-actors/v6/pull/648
+func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimate, qualityAdjPowerSmoothed smoothing.FilterEstimate) (more bool) {
 	store := adt.AsStore(rt)
-
-	// TODO: We're using the current power+epoch reward. Technically, we
-	// should use the power/reward at the time of termination.
-	// https://github.com/filecoin-project/specs-actors/v6/pull/648
-	rewardStats := requestCurrentEpochBlockReward(rt)
-	pwrTotal := requestCurrentTotalPower(rt)
 
 	var (
 		result           TerminationResult
@@ -2170,7 +2173,7 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 				totalInitialPledge = big.Add(totalInitialPledge, sector.InitialPledge)
 			}
 			penalty = big.Add(penalty, terminationPenalty(info.SectorSize, epoch,
-				rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectors))
+				rewardSmoothed, qualityAdjPowerSmoothed, sectors))
 			dealsToTerminate = append(dealsToTerminate, params)
 
 			return nil
@@ -2215,12 +2218,11 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 }
 
 // Invoked at the end of the last epoch for each proving deadline.
-func handleProvingDeadline(rt Runtime) {
+func handleProvingDeadline(rt Runtime,
+	rewardSmoothed smoothing.FilterEstimate,
+	qualityAdjPowerSmoothed smoothing.FilterEstimate) {
 	currEpoch := rt.CurrEpoch()
 	store := adt.AsStore(rt)
-
-	epochReward := requestCurrentEpochBlockReward(rt)
-	pwrTotal := requestCurrentTotalPower(rt)
 
 	hadEarlyTerminations := false
 
@@ -2265,8 +2267,8 @@ func handleProvingDeadline(rt Runtime) {
 			// Faults detected by this missed PoSt pay no penalty, but sectors that were already faulty
 			// and remain faulty through this deadline pay the fault fee.
 			penaltyTarget := PledgePenaltyForContinuedFault(
-				epochReward.ThisEpochRewardSmoothed,
-				pwrTotal.QualityAdjPowerSmoothed,
+				rewardSmoothed,
+				qualityAdjPowerSmoothed,
 				result.PreviouslyFaultyPower.QA,
 			)
 
@@ -2287,7 +2289,6 @@ func handleProvingDeadline(rt Runtime) {
 			st.DeadlineCronActive = false
 		}
 	})
-
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDeltaTotal)
 	burnFunds(rt, penaltyTotal)
@@ -2310,7 +2311,7 @@ func handleProvingDeadline(rt Runtime) {
 	// handle them at the next epoch.
 	if !hadEarlyTerminations && hasEarlyTerminations {
 		// First, try to process some of these terminations.
-		if processEarlyTerminations(rt) {
+		if processEarlyTerminations(rt, rewardSmoothed, qualityAdjPowerSmoothed) {
 			// If that doesn't work, just defer till the next epoch.
 			scheduleEarlyTerminationWork(rt)
 		}
