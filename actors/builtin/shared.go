@@ -91,13 +91,19 @@ type MinerAddrs struct {
 	ControlAddrs []addr.Address
 }
 
+type DeferredCronEventParams struct {
+	EventPayload            []byte
+	RewardSmoothed          smoothing.FilterEstimate
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
+}
+
 // Note: we could move this alias back to the mutually-importing packages that use it, now that they
 // can instead both alias the v2 version.
 type ConfirmSectorProofsParams struct {
-	Sectors                            []abi.SectorNumber
-	RewardStatsThisEpochRewardSmoothed smoothing.FilterEstimate
-	RewardStatsThisEpochBaselinePower  abi.StoragePower
-	PwrTotalQualityAdjPowerSmoothed    smoothing.FilterEstimate
+	Sectors                 []abi.SectorNumber
+	RewardSmoothed          smoothing.FilterEstimate
+	RewardBaselinePower     abi.StoragePower
+	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
 
 // ResolveToIDAddr resolves the given address to it's ID address form.

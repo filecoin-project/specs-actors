@@ -186,10 +186,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// pre-commit deposit is burnt
 						{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
@@ -238,7 +235,6 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		SubInvocations: []vm.ExpectInvocation{
 			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
 					// deals are now activated
 					{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ActivateDeals},
@@ -281,10 +277,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-						{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 						// power is removed for old sector and pledge is burnt
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
 						{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},

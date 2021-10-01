@@ -214,8 +214,12 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.E
 func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
-	a.processBatchProofVerifies(rt)
-	a.processDeferredCronEvents(rt)
+	var rewret reward.ThisEpochRewardReturn
+	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
+	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
+
+	a.processBatchProofVerifies(rt, rewret)
+	a.processDeferredCronEvents(rt, rewret)
 
 	var st State
 	rt.StateTransaction(&st, func() {
@@ -338,7 +342,7 @@ func validateMinerHasClaim(rt Runtime, st State, minerAddr addr.Address) {
 	}
 }
 
-func (a Actor) processBatchProofVerifies(rt Runtime) {
+func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewardReturn) {
 	var st State
 
 	var miners []addr.Address
@@ -388,14 +392,6 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	res, err := rt.BatchVerifySeals(verifies)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to batch verify")
 
-	var rewret reward.ThisEpochRewardReturn
-	rewretcode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewret)
-	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
-
-	var pwr CurrentTotalPowerReturn
-	powretcode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
-	builtin.RequireSuccess(rt, powretcode, "failed to check current power")
-
 	for _, m := range miners {
 		vres, ok := res[m]
 		if !ok {
@@ -426,10 +422,10 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
 				&builtin.ConfirmSectorProofsParams{
-					Sectors:                            successful,
-					RewardStatsThisEpochRewardSmoothed: rewret.ThisEpochRewardSmoothed,
-					RewardStatsThisEpochBaselinePower:  rewret.ThisEpochBaselinePower,
-					PwrTotalQualityAdjPowerSmoothed:    pwr.QualityAdjPowerSmoothed},
+					Sectors:                 successful,
+					RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
+					RewardBaselinePower:     rewret.ThisEpochBaselinePower,
+					QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed},
 				abi.NewTokenAmount(0),
 				&builtin.Discard{},
 			)
@@ -437,7 +433,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime) {
 	}
 }
 
-func (a Actor) processDeferredCronEvents(rt Runtime) {
+func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewardReturn) {
 	rtEpoch := rt.CurrEpoch()
 
 	var cronEvents []CronEvent
@@ -476,11 +472,19 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush events")
 	})
 	failedMinerCrons := make([]addr.Address, 0)
+
 	for _, event := range cronEvents {
+
+		params := builtin.DeferredCronEventParams{
+			EventPayload:            event.CallbackPayload,
+			RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
+			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		}
+
 		code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			builtin.CBORBytes(event.CallbackPayload),
+			&params,
 			abi.NewTokenAmount(0),
 			&builtin.Discard{},
 		)
