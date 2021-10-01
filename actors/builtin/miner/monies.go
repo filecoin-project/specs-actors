@@ -210,24 +210,23 @@ func LockedRewardFromReward(reward abi.TokenAmount) (abi.TokenAmount, *VestSpec)
 	return lockAmount, &RewardVestingSpec
 }
 
-var EstimatedSingleProofGasUsage = big.NewInt(65733297) // PARAM_SPEC
-var EstimatedSingleProveCommitGasUsage = big.NewInt(49299973)
-var EstimatedSinglePreCommitGasUsage = big.NewInt(16433324)
-var BatchDiscount = builtin.BigFrac{ // PARAM_SPEC
+var EstimatedSingleProveCommitGasUsage = big.NewInt(49299973) // PARAM_SPEC
+var EstimatedSinglePreCommitGasUsage = big.NewInt(16433324)   // PARAM_SPEC
+var BatchDiscount = builtin.BigFrac{                          // PARAM_SPEC
 	Numerator:   big.NewInt(1),
 	Denominator: big.NewInt(20),
 }
 var BatchBalancer = big.Mul(big.NewInt(5), builtin.OneNanoFIL) // PARAM_SPEC
 
 func AggregateProveCommitNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
-	return AggregateNetworkFee(aggregateSize, EstimatedSingleProveCommitGasUsage, baseFee)
+	return aggregateNetworkFee(aggregateSize, EstimatedSingleProveCommitGasUsage, baseFee)
 }
 
 func AggregatePreCommitNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
-	return AggregateNetworkFee(aggregateSize, EstimatedSinglePreCommitGasUsage, baseFee)
+	return aggregateNetworkFee(aggregateSize, EstimatedSinglePreCommitGasUsage, baseFee)
 }
 
-func AggregateNetworkFee(aggregateSize int, gasUsage big.Int, baseFee abi.TokenAmount) abi.TokenAmount {
+func aggregateNetworkFee(aggregateSize int, gasUsage big.Int, baseFee abi.TokenAmount) abi.TokenAmount {
 	effectiveGasFee := big.Max(baseFee, BatchBalancer)
 	networkFeeNum := big.Product(effectiveGasFee, gasUsage, big.NewInt(int64(aggregateSize)), BatchDiscount.Numerator)
 	networkFee := big.Div(networkFeeNum, BatchDiscount.Denominator)
