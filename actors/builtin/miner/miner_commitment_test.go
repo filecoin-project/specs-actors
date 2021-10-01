@@ -1222,10 +1222,10 @@ func TestAggregateProveCommit(t *testing.T) {
 	})
 }
 
-func TestProveCommitAggregateFailures(t *testing.T) {
+func TestBatchMethodNetworkFees(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
-	t.Run("insufficient funds for network fee", func(t *testing.T) {
+	t.Run("insufficient funds for aggregated prove commit network fee", func(t *testing.T) {
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero()).
@@ -1236,7 +1236,6 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		// Make a good commitment for the proof to target.
-
 		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
 		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
 
@@ -1252,7 +1251,7 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 		sectorNosBf, err := sectorNosBf.Copy() //flush map to run to match partition state
 		require.NoError(t, err)
 
-		// set base fee extremely high so AggregateNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
+		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
 		rt.SetEpoch(proveCommitEpoch)
 		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
 		rt.SetBalance(balance)
@@ -1262,6 +1261,135 @@ func TestProveCommitAggregateFailures(t *testing.T) {
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), baseFee)
+		})
+	})
+
+	t.Run("insufficient funds for batch precommit network fee", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover PCD but not network fee
+		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
+		rt.SetBalance(balance)
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		require.True(t, miner.AggregatePreCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+		})
+	})
+
+	t.Run("insufficient funds for batch precommit in combination of fee debt and network fee", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high enough so that either could be repaid on its own, but together repayment fails
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+		st = getState(rt)
+
+		// Give miner almost enough balance to pay both
+		balance := big.Mul(big.NewInt(2), netFee)
+		balance = big.Sub(balance, big.NewInt(1))
+		rt.SetBalance(balance)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
+		})
+	})
+
+	t.Run("enough funds for fee debt and network fee but not for PCD", func(t *testing.T) {
+		actor := newHarness(t, periodOffset)
+		rt := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero()).
+			Build(t)
+		precommitEpoch := periodOffset + 1
+		rt.SetEpoch(precommitEpoch)
+		actor.constructAndVerify(rt)
+		dlInfo := actor.deadline(rt)
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+
+		var precommits []miner0.SectorPreCommitInfo
+		sectorNosBf := bitfield.New()
+		for i := 0; i < 4; i++ {
+			sectorNo := abi.SectorNumber(i)
+			sectorNosBf.Set(uint64(i))
+			precommit := actor.makePreCommit(sectorNo, precommitEpoch-1, expiration, nil)
+			precommits = append(precommits, *precommit)
+		}
+
+		// set base fee and fee debt high enough so that either could be repaid on its own, but together repayment fails
+		baseFee := big.NewInt(1e16)
+		rt.SetBaseFee(baseFee)
+		netFee := miner.AggregatePreCommitNetworkFee(len(precommits), baseFee)
+		// setup miner to have fee debt equal to net fee
+		st := getState(rt)
+		st.FeeDebt = netFee
+		rt.ReplaceState(st)
+		st = getState(rt)
+
+		// Give miner enough balance to pay both but not any extra for pcd
+		balance := big.Mul(big.NewInt(2), netFee)
+		rt.SetBalance(balance)
+
+		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds 0 for pre-commit deposit:", func() {
+			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
+
+			// State untouched.
+			st := getState(rt)
+			assert.True(t, st.PreCommitDeposits.IsZero())
+			expirations := actor.collectPrecommitExpirations(rt, st)
+			assert.Equal(t, map[abi.ChainEpoch][]uint64{}, expirations)
 		})
 	})
 }
