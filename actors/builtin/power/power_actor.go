@@ -356,7 +356,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 	rt.StateTransaction(&st, func() {
 		store := adt.AsStore(rt)
 		if st.ProofValidationBatch == nil {
-			rt.Log(rtt.WARN, "ProofValidationBatch was nil, quitting verification")
+			rt.Log(rtt.DEBUG, "ProofValidationBatch was nil, quitting verification")
 			return
 		}
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
@@ -499,7 +499,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 				err = events.RemoveAll(epochKey(epoch))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear cron events at %v", epoch)
 			} else {
-				rt.Log(rtt.INFO, "no epoch events were loaded")
+				rt.Log(rtt.DEBUG, "no epoch events were loaded")
 			}
 		}
 
@@ -527,10 +527,9 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 		)
 		// If a callback fails, this actor continues to invoke other callbacks
 		// and persists state removing the failed event from the event queue. It won't be tried again.
-		// Failures are unexpected here but will result in removal of miner power
-		// A log message would really help here.
+		// Failures are unexpected here but will result in removal of miner power as a defensive measure.
 		if code != exitcode.Ok {
-			rt.Log(rtt.WARN, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
+			rt.Log(rtt.ERROR, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
