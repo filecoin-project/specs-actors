@@ -2,7 +2,6 @@ package nv14
 
 import (
 	"context"
-	"fmt"
 
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -32,8 +31,6 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 		return nil, err
 	}
 
-	fmt.Println("made it to end of first one")
-
 	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, store, inState.Proposals, inState.States)
 	if err != nil {
 		return nil, err
@@ -61,18 +58,15 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 }
 
 func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid) (cid.Cid, error) {
-	fmt.Println("in mapproposals")
 	oldProposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
-	fmt.Println("made it to end of oldproposals")
 
 	newProposals, err := adt.MakeEmptyArray(adt.WrapStore(ctx, store), market.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
-	fmt.Println("end of newproposals")
 
 	var dealprop5 market5.DealProposal
 
