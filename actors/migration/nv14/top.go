@@ -72,7 +72,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin5.MultisigActorCodeID:         nilMigrator{builtin6.MultisigActorCodeID},
 		builtin5.PaymentChannelActorCodeID:   nilMigrator{builtin6.PaymentChannelActorCodeID},
 		builtin5.RewardActorCodeID:           nilMigrator{builtin6.RewardActorCodeID},
-		builtin5.StorageMarketActorCodeID:    nilMigrator{builtin6.StorageMarketActorCodeID},
+		builtin5.StorageMarketActorCodeID:    cachedMigration(cache, marketMigrator{}),
 		builtin5.StorageMinerActorCodeID:     nilMigrator{builtin6.StorageMinerActorCodeID},
 		builtin5.StoragePowerActorCodeID:     nilMigrator{builtin6.StoragePowerActorCodeID},
 		builtin5.SystemActorCodeID:           nilMigrator{builtin6.SystemActorCodeID},
@@ -295,4 +295,16 @@ func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorM
 
 func (n nilMigrator) migratedCodeCID() cid.Cid {
 	return n.OutCodeCID
+}
+
+type cachedMigrator struct {
+	cache MigrationCache
+	actorMigration
+}
+
+func cachedMigration(cache MigrationCache, m actorMigration) actorMigration {
+	return cachedMigrator{
+		actorMigration: m,
+		cache:          cache,
+	}
 }
