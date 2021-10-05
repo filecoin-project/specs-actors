@@ -2,6 +2,7 @@ package nv14
 
 import (
 	"context"
+	"fmt"
 
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -31,6 +32,8 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 		return nil, err
 	}
 
+	fmt.Println("made it to end of first one")
+
 	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, store, inState.Proposals, inState.States)
 	if err != nil {
 		return nil, err
@@ -58,19 +61,22 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 }
 
 func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid) (cid.Cid, error) {
-	oldProposals, err := adt.AsMap(adt.WrapStore(ctx, store), proposalsRoot, builtin.DefaultHamtBitwidth)
+	fmt.Println("in mapproposals")
+	oldProposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
+	fmt.Println("made it to end of oldproposals")
 
-	newProposals, err := adt.MakeEmptyMap(adt.WrapStore(ctx, store), builtin.DefaultHamtBitwidth)
+	newProposals, err := adt.MakeEmptyArray(adt.WrapStore(ctx, store), market.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
+	fmt.Println("end of newproposals")
 
-	err = oldProposals.ForEach(nil, func(key string) error {
-		var dealprop5 market5.DealProposal
-		oldProposals.Get(StringKey(key), &dealprop5)
+	var dealprop5 market5.DealProposal
+
+	err = oldProposals.ForEach(&dealprop5, func(key int64) error {
 		dealprop6 := market.DealProposal{
 			PieceCID:             dealprop5.PieceCID,
 			PieceSize:            dealprop5.PieceSize,
@@ -84,7 +90,7 @@ func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.C
 			ProviderCollateral:   dealprop5.ProviderCollateral,
 			ClientCollateral:     dealprop5.ClientCollateral,
 		}
-		return newProposals.Put(StringKey(key), &dealprop6)
+		return newProposals.Set(uint64(key), &dealprop6)
 	})
 	if err != nil {
 		return cid.Undef, err
@@ -101,12 +107,12 @@ func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.C
 // This functions with the assumption that PendingProposals and States (aka active deals) form a disjoint union of Proposals
 // Iterates over Proposals, checks for membership in States, and then if it doesn't find it, adds the hash to PendingProposals
 func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
-	proposals, err := adt.AsMap(adt.WrapStore(ctx, store), proposalsRoot, builtin.DefaultHamtBitwidth)
+	proposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	states, err := adt.AsMap(adt.WrapStore(ctx, store), statesRoot, builtin.DefaultHamtBitwidth)
+	states, err := adt.AsArray(adt.WrapStore(ctx, store), statesRoot, market5.StatesAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -116,14 +122,13 @@ func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, propos
 		return cid.Undef, err
 	}
 
-	err = proposals.ForEach(nil, func(key string) error {
-		has, err := states.Has(StringKey(key))
+	var dealprop market5.DealProposal
+	err = proposals.ForEach(&dealprop, func(key int64) error {
+		has, err := states.Get(uint64(key), nil)
 		if err != nil {
 			return err
 		}
 		if !has {
-			var dealprop market5.DealProposal
-			proposals.Get(StringKey(key), &dealprop)
 			dealpropCid, err := dealprop.Cid()
 			if err != nil {
 				return err
