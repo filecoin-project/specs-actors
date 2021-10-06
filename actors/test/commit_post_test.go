@@ -39,14 +39,14 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(200)
 	require.NoError(t, err)
 
 	sectorNumber := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, 1, 1, worker, minerAddrs.IDAddress, sealProof, sectorNumber, true)
+	precommits := PreCommitSectors(t, v, 1, 1, worker, minerAddrs.IDAddress, sealProof, sectorNumber, true)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -175,7 +175,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			Skipped: bitfield.New(),
 		}}
 		sectorPower := miner.PowerForSector(sectorSize, sector)
-		submitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
+		SubmitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
 
 		// miner still has initial pledge
 		balances = vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
@@ -284,7 +284,7 @@ func TestMeasurePreCommitGas(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// Advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -302,7 +302,7 @@ func TestMeasurePreCommitGas(t *testing.T) {
 		tv, err := v.WithEpoch(v.GetEpoch())
 		require.NoError(t, err)
 		firstSectorNo := abi.SectorNumber(sectorCount * batchSize)
-		preCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+		PreCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 		stats := tv.GetCallStats()
 		precommitStats := stats[statsKey]
@@ -331,7 +331,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -341,7 +341,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := PreCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -435,7 +435,7 @@ func TestBatchOnboarding(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
 	require.NoError(t, err)
@@ -495,7 +495,7 @@ func TestBatchOnboarding(t *testing.T) {
 		require.NoError(t, err)
 
 		if spec.preCommitSectorCount > 0 {
-			newPrecommits := preCommitSectors(t, v, spec.preCommitSectorCount, spec.preCommitBatchSize, worker, minerAddrs.IDAddress,
+			newPrecommits := PreCommitSectors(t, v, spec.preCommitSectorCount, spec.preCommitBatchSize, worker, minerAddrs.IDAddress,
 				sealProof, nextSectorNo, nextSectorNo == 0)
 			precommits = append(precommits, newPrecommits...)
 			nextSectorNo += abi.SectorNumber(spec.preCommitSectorCount)
@@ -529,7 +529,7 @@ func TestBatchOnboarding(t *testing.T) {
 		Skipped: bitfield.New(),
 	}}
 	newPower := miner.PowerForSector(sectorSize, sector).Mul(big.NewInt(int64(provenCount)))
-	submitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
+	SubmitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
 
 	// Miner has initial pledge
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
@@ -561,7 +561,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -573,13 +573,13 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	earlyPreCommitTime := v.GetEpoch()
-	earlyPrecommits := preCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	earlyPrecommits := PreCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	earlyPreCommitInvalid := earlyPreCommitTime + miner.MaxProveCommitDuration[sealProof] + abi.ChainEpoch(1)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
-	laterPrecommits := preCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
+	laterPrecommits := PreCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
 	allPrecommits := append(earlyPrecommits, laterPrecommits...)
 	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
@@ -630,7 +630,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -640,7 +640,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := PreCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -691,7 +691,7 @@ func TestAggregateBadSender(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -703,7 +703,7 @@ func TestAggregateBadSender(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	preCommitTime := v.GetEpoch()
-	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := PreCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	//
 	// attempt proving with invalid args
@@ -735,7 +735,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -747,7 +747,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	preCommitTime := v.GetEpoch()
-	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := PreCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
 	//
 	// attempt proving with invalid args
@@ -785,7 +785,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := CreateMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -795,7 +795,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := PreCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -863,7 +863,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 }
 
-func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof,
+func PreCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof,
 	sectorNumberBase abi.SectorNumber, expectCronEnrollment bool) []*miner.SectorPreCommitOnChainInfo {
 	invocsCommon := []vm.ExpectInvocation{
 		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
@@ -956,7 +956,7 @@ func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, p
 }
 
 // Submits a Window PoSt for partitions in a deadline.
-func submitWindowPoSt(t *testing.T, v *vm.VM, worker, actor address.Address, dlInfo *dline.Info, partitions []miner.PoStPartition,
+func SubmitWindowPoSt(t *testing.T, v *vm.VM, worker, actor address.Address, dlInfo *dline.Info, partitions []miner.PoStPartition,
 	newPower miner.PowerPair) {
 	submitParams := miner.SubmitWindowedPoStParams{
 		Deadline:   dlInfo.Index,

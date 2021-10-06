@@ -19,7 +19,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/support/vm"
 )
 
-func createMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof abi.RegisteredPoStProof, balance abi.TokenAmount) *power.CreateMinerReturn {
+func CreateMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof abi.RegisteredPoStProof, balance abi.TokenAmount) *power.CreateMinerReturn {
 	params := power.CreateMinerParams{
 		Owner:               owner,
 		Worker:              worker,

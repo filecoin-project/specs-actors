@@ -473,9 +473,9 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 	}
 
 	// Finally, remove faulty sectors (on time and not). These sectors can
-	// only appear within the first 14 days (fault max age). Given that this
+	// only appear within the first FaultMaxAge days (fault max age). Given that this
 	// queue is quantized, we should be able to stop traversing the queue
-	// after 14 entries.
+	// after FaultMaxAge entries.
 	if err = q.traverseMutate(func(epoch abi.ChainEpoch, es *ExpirationSet) (changed, keepGoing bool, err error) {
 		onTimeSectors, err := es.OnTimeSectors.AllMap(entrySectorsMax)
 		if err != nil {
@@ -835,9 +835,11 @@ func (q *ExpirationQueue) findSectorsByExpiration(sectorSize abi.SectorSize, sec
 	return expirationGroups, nil
 }
 
-// Takes a slice of sector infos a bitfield of sector numbers and returns a single group for all bitfield sectors
-// Also returns a bitfield containing sectors not found in expiration set.
-// This method mutates includeSet by removing sector numbers of sectors found in expiration set.
+// Takes an`includeSet` of sector numbers searched for, and an expiration set being searched through.
+// Takes info of sectors at the given sector number (sector info and sector size) for computing power.
+// Traverses on time sectors of expiration set to search for sectors in `includeSet`
+// Returns a grouping of sectors found in the search, their combined power and pledge.
+// Mutates and returns an updated `includeSet` with found sector numbers removed
 func groupExpirationSet(sectorSize abi.SectorSize, sectors map[uint64]*SectorOnChainInfo,
 	includeSet map[uint64]struct{}, es *ExpirationSet, expiration abi.ChainEpoch,
 ) (sectorExpirationSet, map[uint64]struct{}, error) {
