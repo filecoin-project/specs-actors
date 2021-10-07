@@ -104,6 +104,7 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 
 	// PoSt
 	sectorSize, err := sealProof.SectorSize()
+	require.NoError(t, err)
 	dlInfo, pIdx, v := vm5.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
 	var minerState miner.State
 	err = v.GetState(minerAddrs.IDAddress, &minerState)
@@ -114,7 +115,7 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 	sector2, found, err := minerState.GetSector(v.Store(), sectorNumber+1)
 	require.NoError(t, err)
 	require.True(t, found)
-	tv, err := v.WithEpoch(v.GetEpoch())
+	v, err = v.WithEpoch(v.GetEpoch())
 	require.NoError(t, err)
 	partitions := []miner.PoStPartition{{
 		Index:   pIdx,
@@ -122,15 +123,22 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 	}}
 	sectorPower := miner.PowerForSector(sectorSize, sector1)
 	sectorPower = sectorPower.Add(miner.PowerForSector(sectorSize, sector2))
-	SubmitWindowPoStV5(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
+	SubmitWindowPoStV5(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
+	v, err = v.WithEpoch(dlInfo.Last()) // run cron on deadline end to process post
+	require.NoError(t, err)
+	vm5.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
-	// Fault sector 100 by skipping in post
+	// Fault sector 100 by skipping in post in the next proving period
 	dlInfo, pIdx, v = vm5.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+	//	fmt.Printf("after dlInfo.Index: %d, dlInfo.Open: %d, dlInfo.Close: %d, pIdx: %d, curr epoch: %d\n", dlInfo.Index, dlInfo.Open, dlInfo.Close, pIdx, v.GetEpoch())
 	partitions = []miner.PoStPartition{{
 		Index:   pIdx,
 		Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
 	}}
-	SubmitWindowPoStV5(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, miner.PowerForSector(sectorSize, sector1).Neg())
+	v, err = v.WithEpoch(dlInfo.Last()) // run cron on deadline end to fault
+	require.NoError(t, err)
+	SubmitWindowPoStV5(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, miner.PowerForSector(sectorSize, sector1).Neg())
+	vm5.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// Migrate
 	log := nv14.TestLogger{TB: t}
