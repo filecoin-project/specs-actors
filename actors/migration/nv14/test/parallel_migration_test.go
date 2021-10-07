@@ -10,12 +10,15 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/dline"
+	"github.com/filecoin-project/go-state-types/rt"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
+	builtin5 "github.com/filecoin-project/specs-actors/v5/actors/builtin"
 	miner5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
 	power5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
 	vm5 "github.com/filecoin-project/specs-actors/v5/support/vm"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v6/actors/migration/nv14"
@@ -121,17 +124,42 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 	sectorPower = sectorPower.Add(miner.PowerForSector(sectorSize, sector2))
 	SubmitWindowPoStV5(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
 
-	// Fault sector 100
+	// Fault sector 100 by skipping in post
+	dlInfo, pIdx, v = vm5.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+	partitions = []miner.PoStPartition{{
+		Index:   pIdx,
+		Skipped: bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+	}}
+	SubmitWindowPoStV5(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, miner.PowerForSector(sectorSize, sector1).Neg())
 
 	// Migrate
 	log := nv14.TestLogger{TB: t}
 	adtStore := adt5.WrapStore(ctx, cbor.NewCborStore(bs))
 	startRoot := v.StateRoot()
-	endRootSerial, err := nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 1}, log, nv14.NewMemMigrationCache())
+	nextRoot, err := nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 1}, log, nv14.NewMemMigrationCache())
 	require.NoError(t, err)
-	_ = endRootSerial
+
+	lookup := map[cid.Cid]rt.VMActor{}
+	for _, ba := range exported.BuiltinActors() {
+		lookup[ba.Code()] = ba
+	}
+
+	v6, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
+	require.NoError(t, err)
 
 	// Fault sector 101
+	d, p := vm.SectorDeadline(t, v6, minerAddrs.IDAddress, sectorNumber+1)
+	v6, _ = vm.AdvanceByDeadlineTillIndex(t, v6, minerAddrs.IDAddress, d+2) // move out of deadline so fault can go through
+	dfParams := &miner5.DeclareFaultsParams{
+		Faults: []miner0.FaultDeclaration{
+			{
+				Deadline:  d,
+				Partition: p,
+				Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber + 1)}),
+			},
+		},
+	}
+	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin5.MethodsMiner.DeclareFaults, dfParams)
 
 }
 
