@@ -339,20 +339,24 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 	// Verify that the miner has passed exactly 1 proof.
 	if len(params.Proofs) != 1 {
+		fmt.Printf("expected exactly one proof\n")
 		rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
 	}
 
 	if !CanWindowPoStProof(params.Proofs[0].PoStProof) {
+		fmt.Printf("Proof type not allowed\n")
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed", params.Proofs[0].PoStProof)
 	}
 
 	if params.Deadline >= WPoStPeriodDeadlines {
+		fmt.Printf("invalid deadline %d\n", params.Deadline)
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d of %d", params.Deadline, WPoStPeriodDeadlines)
 	}
 	// Technically, ChainCommitRand should be _exactly_ 32 bytes. However:
 	// 1. It's convenient to allow smaller slices when testing.
 	// 2. Nothing bad will happen if the caller provides too little randomness.
 	if len(params.ChainCommitRand) > abi.RandomnessLength {
+		fmt.Printf("too much commit rand\n")
 		rt.Abortf(exitcode.ErrIllegalArgument, "expected at most %d bytes of randomness, got %d", abi.RandomnessLength, len(params.ChainCommitRand))
 	}
 
@@ -367,17 +371,20 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// Make sure the miner is using the correct proof type.
 		if params.Proofs[0].PoStProof != info.WindowPoStProofType {
+			fmt.Printf("proof of bad type\n")
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof of type %d, got proof of type %d", info.WindowPoStProofType, params.Proofs[0])
 		}
 
 		// Make sure the proof size doesn't exceed the max. We could probably check for an exact match, but this is safer.
 		if maxSize := maxProofSize * uint64(len(params.Partitions)); uint64(len(params.Proofs[0].ProofBytes)) > maxSize {
+			fmt.Printf("proof too big\n")
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected proof to be smaller than %d bytes", maxSize)
 		}
 
 		// Validate that the miner didn't try to prove too many partitions at once.
 		submissionPartitionLimit := loadPartitionsSectorsMax(info.WindowPoStPartitionSectors)
 		if uint64(len(params.Partitions)) > submissionPartitionLimit {
+			fmt.Printf("too many partitions\n")
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
 
@@ -392,20 +399,24 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		// The miner may only submit a proof for the current deadline.
 		if params.Deadline != currDeadline.Index {
+			fmt.Printf("invalid deadline %d expected %d\n", params.Deadline, currDeadline.Index)
 			rt.Abortf(exitcode.ErrIllegalArgument, "invalid deadline %d at epoch %d, expected %d",
 				params.Deadline, currEpoch, currDeadline.Index)
 		}
 
 		// Verify that the PoSt was committed to the chain at most WPoStChallengeLookback+WPoStChallengeWindow in the past.
 		if params.ChainCommitEpoch < currDeadline.Challenge {
+			fmt.Printf("chain commit epoch %d should be after %d\n", params.ChainCommitEpoch, currDeadline.Challenge)
 			rt.Abortf(exitcode.ErrIllegalArgument, "expected chain commit epoch %d to be after %d", params.ChainCommitEpoch, currDeadline.Challenge)
 		}
 		if params.ChainCommitEpoch >= currEpoch {
+			fmt.Printf("chain commit epoch must be less than current\n")
 			rt.Abortf(exitcode.ErrIllegalArgument, "chain commit epoch %d must be less than the current epoch %d", params.ChainCommitEpoch, currEpoch)
 		}
 		// Verify the chain commit randomness.
 		commRand := rt.GetRandomnessFromTickets(crypto.DomainSeparationTag_PoStChainCommit, params.ChainCommitEpoch, nil)
 		if !bytes.Equal(commRand, params.ChainCommitRand) {
+			fmt.Printf("mismatched post rand\n")
 			rt.Abortf(exitcode.ErrIllegalArgument, "post commit randomness mismatched")
 		}
 
@@ -456,6 +467,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors for post verification")
 
 			err = verifyWindowedPost(rt, currDeadline.Challenge, sectorInfos, params.Proofs)
+			if err != nil {
+				fmt.Printf("post verify failed\n")
+			}
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "window post failed")
 		}
 
