@@ -31,7 +31,7 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 		return nil, err
 	}
 
-	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, store, inState.Proposals, inState.States)
+	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, store, proposalsCidOut, inState.States)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +100,7 @@ func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.C
 
 // This functions with the assumption that PendingProposals and States (aka active deals) form a disjoint union of Proposals
 // Iterates over Proposals, checks for membership in States, and then if it doesn't find it, adds the hash to PendingProposals
+// Precondition proposalsRoot is new proposals as computed in MapProposals
 func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
 	proposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
@@ -116,7 +117,7 @@ func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, propos
 		return cid.Undef, err
 	}
 
-	var dealprop market5.DealProposal
+	var dealprop market.DealProposal
 	err = proposals.ForEach(&dealprop, func(key int64) error {
 		has, err := states.Get(uint64(key), nil)
 		if err != nil {

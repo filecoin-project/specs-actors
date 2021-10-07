@@ -19,8 +19,6 @@ import (
 //}
 var PieceCIDPrefix = market0.PieceCIDPrefix
 
-type DealProposal0 = market0.DealProposal
-
 // Note: Deal Collateral is only released and returned to clients and miners
 // when the storage deal stops counting towards power. In the current iteration,
 // it will be released when the sector containing the storage deals expires,
