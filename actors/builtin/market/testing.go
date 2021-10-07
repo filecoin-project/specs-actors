@@ -115,19 +115,19 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount, c
 				"deal %d state start epoch undefined: %v", dealID, dealState)
 
 			acc.Require(
-				dealState.LastUpdatedEpoch == epochUndefined || dealState.LastUpdatedEpoch >= dealState.SectorStartEpoch,
+				dealState.LastUpdatedEpoch == EpochUndefined || dealState.LastUpdatedEpoch >= dealState.SectorStartEpoch,
 				"deal %d state last updated before sector start: %v", dealID, dealState)
 
 			acc.Require(
-				dealState.LastUpdatedEpoch == epochUndefined || dealState.LastUpdatedEpoch <= currEpoch,
+				dealState.LastUpdatedEpoch == EpochUndefined || dealState.LastUpdatedEpoch <= currEpoch,
 				"deal %d last updated epoch %d after current %d", dealID, dealState.LastUpdatedEpoch, currEpoch)
 
 			acc.Require(
-				dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch >= dealState.SectorStartEpoch,
+				dealState.SlashEpoch == EpochUndefined || dealState.SlashEpoch >= dealState.SectorStartEpoch,
 				"deal %d state slashed before sector start: %v", dealID, dealState)
 
 			acc.Require(
-				dealState.SlashEpoch == epochUndefined || dealState.SlashEpoch <= currEpoch,
+				dealState.SlashEpoch == EpochUndefined || dealState.SlashEpoch <= currEpoch,
 				"deal %d state slashed after current epoch %d: %v", dealID, currEpoch, dealState)
 
 			stats, found := proposalStats[abi.DealID(dealID)]

@@ -98,8 +98,8 @@ func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.C
 	return newProposalsCid, nil
 }
 
-// This functions with the assumption that PendingProposals and States (aka active deals) form a disjoint union of Proposals
-// Iterates over Proposals, checks for membership in States, and then if it doesn't find it, adds the hash to PendingProposals
+// This rebuilds pendingproposals after all the CIDs have changed because the labels are of a different type in dealProposal
+// a proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
 // Precondition proposalsRoot is new proposals as computed in MapProposals
 func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
 	proposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
@@ -119,11 +119,12 @@ func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, propos
 
 	var dealprop market.DealProposal
 	err = proposals.ForEach(&dealprop, func(key int64) error {
-		has, err := states.Get(uint64(key), nil)
+		var dealstate market.DealState
+		has, err := states.Get(uint64(key), &dealstate)
 		if err != nil {
 			return err
 		}
-		if !has {
+		if (has && dealstate.LastUpdatedEpoch == market.EpochUndefined) || !has {
 			dealpropCid, err := dealprop.Cid()
 			if err != nil {
 				return err
