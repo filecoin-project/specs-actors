@@ -302,6 +302,23 @@ type cachedMigrator struct {
 	actorMigration
 }
 
+func (c cachedMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+	newHead, err := c.cache.Load(ActorHeadKey(in.address, in.head), func() (cid.Cid, error) {
+		result, err := c.actorMigration.migrateState(ctx, store, in)
+		if err != nil {
+			return cid.Undef, err
+		}
+		return result.newHead, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &actorMigrationResult{
+		newCodeCID: c.migratedCodeCID(),
+		newHead:    newHead,
+	}, nil
+}
+
 func cachedMigration(cache MigrationCache, m actorMigration) actorMigration {
 	return cachedMigrator{
 		actorMigration: m,
