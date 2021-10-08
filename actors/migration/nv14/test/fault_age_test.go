@@ -53,6 +53,7 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 	sector1Num := sectorNumbers[0]
 	sector2Num := sectorNumbers[1]
 	sector1 := sectors[0]
+	sector2 := sectors[1]
 
 	// Gather initial IP. This will only change when sectors are terminated
 	var minerState miner.State
@@ -102,15 +103,47 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 		},
 	}
 	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin5.MethodsMiner.DeclareFaults, dfParams)
-	// in miner5.FaultMaxAge epochs sector1 is terminated
-	// since both sectors are faulty no posts need to be submitted
+
+	// Assemble different cron call signatures
 	rewardEst, qaPowerEst := getThisEpochStats(t, v6)
 	twoFaultedInvocs := []vm.ExpectInvocation{
-		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend,
-			Value: feeForFaultedSectors(rewardEst, qaPowerEst, sectorSize, sector1, sector2),
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: feeForFaultedSectors(rewardEst, qaPowerEst, sectorSize, sector1, sector2)},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
 	}
+	oneFaultedInvocs := []vm.ExpectInvocation{
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: feeForFaultedSectors(rewardEst, qaPowerEst, sectorSize, sector2)},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+	}
+	firstInvocs := []vm.ExpectInvocation{
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+		twoFaultedInvocs[0],
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+	}
+	sectorOneTermInvocs := []vm.ExpectInvocation{
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+		twoFaultedInvocs[0],
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+	}
+	sectorTwoTermInvocs := []vm.ExpectInvocation{
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+		oneFaultedInvocs[0],
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+	}
+
+	// in miner5.FaultMaxAge epochs sector1 is terminated
+	// since both sectors are faulty no posts need to be submitted
 	for i := 0; i < int(miner5.FaultMaxAge/miner5.WPoStProvingPeriod); i++ {
-		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector1Num, ip)
+		invocs := twoFaultedInvocs
+		if i == 0 {
+			invocs = firstInvocs
+		} else if i == int(miner5.FaultMaxAge/miner5.WPoStProvingPeriod)-1 {
+			invocs = sectorOneTermInvocs
+		}
+		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector1Num, ip, invocs)
 	}
 	err = v6.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
@@ -120,7 +153,11 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 
 	secondSectorTerminationPP := int(miner.FaultMaxAge/miner.WPoStProvingPeriod) + 1 // +1 because second sector faults 1 PP after first
 	for i := int(miner5.FaultMaxAge / miner5.WPoStProvingPeriod); i < secondSectorTerminationPP; i++ {
-		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector2Num, oneSectorIP)
+		invocs := oneFaultedInvocs
+		if i == secondSectorTerminationPP-1 {
+			invocs = sectorTwoTermInvocs
+		}
+		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector2Num, oneSectorIP, invocs)
 	}
 	err = v6.GetState(minerAddrs.IDAddress, &minerState)
 	require.NoError(t, err)
@@ -129,20 +166,25 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 
 }
 
-func feeForFaultedSectors(rewardEst *smoothing.FilterEstimate, qaPowerEst *smoothing.FilterEstimate, sectorSize abi.SectorSize, sectors *miner.OnChainSectorInfo...) *big.Int {
-	powerForSectors := abi.NewStoragePower()
+func feeForFaultedSectors(rewardEst *smoothing.FilterEstimate, qaPowerEst *smoothing.FilterEstimate, sectorSize abi.SectorSize, sectors ...*miner.SectorOnChainInfo) *big.Int {
+	powerForSectors := miner.NewPowerPairZero()
+	for _, sector := range sectors {
+		powerForSectors.Add(miner.PowerForSector(sectorSize, sector))
+	}
+	fee := miner.PledgePenaltyForContinuedFault(*rewardEst, *qaPowerEst, powerForSectors.QA)
+	return &fee
 }
 
-func getThisEpochStats(t *testing.T, v *vm.VM) (rewardEst smoothing.FilterEstimate, qaPowerEst smoothing.FilterEstimate) {
+func getThisEpochStats(t *testing.T, v *vm.VM) (rewardEst *smoothing.FilterEstimate, qaPowerEst *smoothing.FilterEstimate) {
 	ret := vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.ThisEpochReward, nil)
 	rewardRaw, ok := ret.(*reward.ThisEpochRewardReturn)
 	require.True(t, ok)
-	rewardEst = rewardRaw.ThisEpochRewardSmoothed
+	rewardEst = &rewardRaw.ThisEpochRewardSmoothed
 
 	ret = vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CurrentTotalPower, nil)
 	powerRaw, ok := ret.(*power.CurrentTotalPowerReturn)
 	require.True(t, ok)
-	qaPowerEst = powerRaw.QualityAdjPowerSmoothed
+	qaPowerEst = &powerRaw.QualityAdjPowerSmoothed
 	return
 }
 
