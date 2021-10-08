@@ -1635,9 +1635,6 @@ func (a Actor) DeclareFaults(rt Runtime, params *DeclareFaultsParams) *abi.Empty
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "invalid fault declaration deadline %d", dlIdx)
 
 			err = validateFRDeclarationDeadline(targetDeadline)
-			if err != nil {
-				fmt.Printf("strawberry: %s\n", err)
-			}
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed fault declaration at deadline %d", dlIdx)
 
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
