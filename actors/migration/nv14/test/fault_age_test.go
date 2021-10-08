@@ -21,9 +21,11 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v6/actors/migration/nv14"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
 	adt5 "github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
 	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
 	"github.com/filecoin-project/specs-actors/v6/support/vm"
 	"github.com/ipfs/go-cid"
@@ -102,6 +104,11 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin5.MethodsMiner.DeclareFaults, dfParams)
 	// in miner5.FaultMaxAge epochs sector1 is terminated
 	// since both sectors are faulty no posts need to be submitted
+	rewardEst, qaPowerEst := getThisEpochStats(t, v6)
+	twoFaultedInvocs := []vm.ExpectInvocation{
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend,
+			Value: feeForFaultedSectors(rewardEst, qaPowerEst, sectorSize, sector1, sector2),
+	}
 	for i := 0; i < int(miner5.FaultMaxAge/miner5.WPoStProvingPeriod); i++ {
 		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector1Num, ip)
 	}
@@ -122,7 +129,24 @@ func TestEarlyTerminationInCronBeforeAndAfterMigration(t *testing.T) {
 
 }
 
-func checkAndAdvanceDeadline(t *testing.T, v *vm.VM, mAddr address.Address, sectorNum abi.SectorNumber, ipExpected abi.TokenAmount) *vm.VM {
+func feeForFaultedSectors(rewardEst *smoothing.FilterEstimate, qaPowerEst *smoothing.FilterEstimate, sectorSize abi.SectorSize, sectors *miner.OnChainSectorInfo...) *big.Int {
+	powerForSectors := abi.NewStoragePower()
+}
+
+func getThisEpochStats(t *testing.T, v *vm.VM) (rewardEst smoothing.FilterEstimate, qaPowerEst smoothing.FilterEstimate) {
+	ret := vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.RewardActorAddr, big.Zero(), builtin.MethodsReward.ThisEpochReward, nil)
+	rewardRaw, ok := ret.(*reward.ThisEpochRewardReturn)
+	require.True(t, ok)
+	rewardEst = rewardRaw.ThisEpochRewardSmoothed
+
+	ret = vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CurrentTotalPower, nil)
+	powerRaw, ok := ret.(*power.CurrentTotalPowerReturn)
+	require.True(t, ok)
+	qaPowerEst = powerRaw.QualityAdjPowerSmoothed
+	return
+}
+
+func checkAndAdvanceDeadline(t *testing.T, v *vm.VM, mAddr address.Address, sectorNum abi.SectorNumber, ipExpected abi.TokenAmount, cronSubInvocs []vm.ExpectInvocation) *vm.VM {
 	var minerState miner.State
 	err := v.GetState(mAddr, &minerState)
 	require.NoError(t, err)
@@ -131,6 +155,20 @@ func checkAndAdvanceDeadline(t *testing.T, v *vm.VM, mAddr address.Address, sect
 	v, err = v.WithEpoch(dlInfo.Last())
 	require.NoError(t, err)
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	vm.ExpectInvocation{
+		To:     builtin.CronActorAddr,
+		Method: builtin.MethodsCron.EpochTick,
+		SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
+				{To: mAddr, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: cronSubInvocs},
+			}},
+			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
+		},
+	}.Matches(t, v.Invocations()[1])
+
 	// get out of this deadline to advance to the next one in the next iteration
 	v, err = v.WithEpoch(dlInfo.Close)
 	require.NoError(t, err)
