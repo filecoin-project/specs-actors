@@ -380,6 +380,43 @@ func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorN
 	return dlIdx, pIdx
 }
 
+//
+// network functionality helpers
+//
+
+// Submits a Window PoSt for partitions in a deadline.
+func SubmitWindowPoSt(t *testing.T, v *VM, worker, actor address.Address, dlInfo *dline.Info, partitions []miner.PoStPartition,
+	newPower miner.PowerPair) {
+	submitParams := miner.SubmitWindowedPoStParams{
+		Deadline:   dlInfo.Index,
+		Partitions: partitions,
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		}},
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte(vm.RandString),
+	}
+	ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+
+	updatePowerParams := &power.UpdateClaimedPowerParams{
+		RawByteDelta:         newPower.Raw,
+		QualityAdjustedDelta: newPower.QA,
+	}
+
+	ExpectInvocation{
+		To:     actor,
+		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
+		Params: ExpectObject(&submitParams),
+		SubInvocations: []ExpectInvocation{
+			{
+				To:     builtin.StoragePowerActorAddr,
+				Method: builtin.MethodsPower.UpdateClaimedPower,
+				Params: ExpectObject(updatePowerParams),
+			},
+		},
+	}.Matches(t, v.LastInvocation())
+}
+
 ///
 // state abstraction
 //

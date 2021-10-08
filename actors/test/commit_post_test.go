@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/stretchr/testify/assert"
@@ -175,7 +174,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			Skipped: bitfield.New(),
 		}}
 		sectorPower := miner.PowerForSector(sectorSize, sector)
-		SubmitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
+		vm.SubmitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
 
 		// miner still has initial pledge
 		balances = vm.GetMinerBalances(t, tv, minerAddrs.IDAddress)
@@ -529,7 +528,7 @@ func TestBatchOnboarding(t *testing.T) {
 		Skipped: bitfield.New(),
 	}}
 	newPower := miner.PowerForSector(sectorSize, sector).Mul(big.NewInt(int64(provenCount)))
-	SubmitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
+	vm.SubmitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
 
 	// Miner has initial pledge
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
@@ -953,39 +952,6 @@ func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, p
 			},
 		}.Matches(t, v.LastInvocation())
 	}
-}
-
-// Submits a Window PoSt for partitions in a deadline.
-func SubmitWindowPoSt(t *testing.T, v *vm.VM, worker, actor address.Address, dlInfo *dline.Info, partitions []miner.PoStPartition,
-	newPower miner.PowerPair) {
-	submitParams := miner.SubmitWindowedPoStParams{
-		Deadline:   dlInfo.Index,
-		Partitions: partitions,
-		Proofs: []proof.PoStProof{{
-			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-		}},
-		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte(vm.RandString),
-	}
-	vm.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-
-	updatePowerParams := &power.UpdateClaimedPowerParams{
-		RawByteDelta:         newPower.Raw,
-		QualityAdjustedDelta: newPower.QA,
-	}
-
-	vm.ExpectInvocation{
-		To:     actor,
-		Method: builtin.MethodsMiner.SubmitWindowedPoSt,
-		Params: vm.ExpectObject(&submitParams),
-		SubInvocations: []vm.ExpectInvocation{
-			{
-				To:     builtin.StoragePowerActorAddr,
-				Method: builtin.MethodsPower.UpdateClaimedPower,
-				Params: vm.ExpectObject(updatePowerParams),
-			},
-		},
-	}.Matches(t, v.LastInvocation())
 }
 
 // Returns a bitfield of the sector numbers from a collection pre-committed sectors.
