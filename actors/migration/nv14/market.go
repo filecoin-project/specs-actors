@@ -25,13 +25,14 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
 	}
+	wrappedStore := adt.WrapStore(ctx, store)
 
-	proposalsCidOut, err := MapProposals(ctx, store, inState.Proposals)
+	proposalsCidOut, err := MapProposals(ctx, wrappedStore, inState.Proposals)
 	if err != nil {
 		return nil, err
 	}
 
-	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, store, proposalsCidOut, inState.States)
+	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, wrappedStore, proposalsCidOut, inState.States)
 	if err != nil {
 		return nil, err
 	}
@@ -57,13 +58,13 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 	}, err
 }
 
-func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid) (cid.Cid, error) {
-	oldProposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
+func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (cid.Cid, error) {
+	oldProposals, err := adt.AsArray(store, proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	newProposals, err := adt.MakeEmptyArray(adt.WrapStore(ctx, store), market.ProposalsAmtBitwidth)
+	newProposals, err := adt.MakeEmptyArray(store, market.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -101,18 +102,18 @@ func MapProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.C
 // This rebuilds pendingproposals after all the CIDs have changed because the labels are of a different type in dealProposal
 // a proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
 // Precondition proposalsRoot is new proposals as computed in MapProposals
-func CreateNewPendingProposals(ctx context.Context, store cbor.IpldStore, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
-	proposals, err := adt.AsArray(adt.WrapStore(ctx, store), proposalsRoot, market5.ProposalsAmtBitwidth)
+func CreateNewPendingProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
+	proposals, err := adt.AsArray(store, proposalsRoot, market5.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	states, err := adt.AsArray(adt.WrapStore(ctx, store), statesRoot, market5.StatesAmtBitwidth)
+	states, err := adt.AsArray(store, statesRoot, market5.StatesAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	pendingProposals, err := adt.MakeEmptySet(adt.WrapStore(ctx, store), builtin.DefaultHamtBitwidth)
+	pendingProposals, err := adt.MakeEmptySet(store, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
