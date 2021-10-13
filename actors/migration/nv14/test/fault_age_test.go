@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFaultManyMigrateRecoverOneFaultAgainTerminate(t *testing.T) {
+func TestFaultManyMigrateRecoverOneFaultAgain(t *testing.T) {
 
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
@@ -39,6 +39,8 @@ func TestFaultManyMigrateRecoverOneFaultAgainTerminate(t *testing.T) {
 
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	sectorSize, err := sealProof.SectorSize()
 	require.NoError(t, err)
 
 	require.NoError(t, err)
@@ -57,10 +59,14 @@ func TestFaultManyMigrateRecoverOneFaultAgainTerminate(t *testing.T) {
 	ip := minerState.InitialPledge
 
 	// Fault all sectors by missing a post
+	v, err = v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
 	dlInfo, _, v := vm5.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sector1Num)
 	v, err = v.WithEpoch(dlInfo.Last()) // run cron on deadline end to fault
+	require.NoError(t, err)
 	vm5.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	vm.Expe
+	v, err = v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
 
 	// Migrate
 	log := nv14.TestLogger{TB: t}
@@ -77,71 +83,68 @@ func TestFaultManyMigrateRecoverOneFaultAgainTerminate(t *testing.T) {
 	v6, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
 
-	// Fault sector 101
-	d, p := vm.SectorDeadline(t, v6, minerAddrs.IDAddress, sector2Num)
-	v6, _ = vm.AdvanceByDeadlineTillIndex(t, v6, minerAddrs.IDAddress, d+2) // move out of deadline so fault can go through
-	dfParams := &miner.DeclareFaultsParams{
-		Faults: []miner0.FaultDeclaration{
-			{
-				Deadline:  d,
-				Partition: p,
-				Sectors:   bitfield.NewFromSet([]uint64{uint64(sector2Num)}),
-			},
-		},
-	}
-	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DeclareFaults, dfParams)
-
-	twoFaultedInvocs := []vm.ExpectInvocation{
-		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
-	}
-
-	// continue faulty for 5 proving periods (less than miner5.FaultMaxAge and miner.FaultMaxAge+1)
-	faultyPPs := 5
-	require.True(t, faultyPPs < int(miner5.FaultMaxAge/miner.WPoStProvingPeriod))
-	require.True(t, faultyPPs < int(miner.FaultMaxAge/miner.WPoStProvingPeriod)+1)
-	for i := 0; i < faultyPPs; i++ {
-		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector1Num, ip, twoFaultedInvocs)
-	}
-
-	// Recover both sectors
+	// Recover one sector
+	d, p := vm.SectorDeadline(t, v6, minerAddrs.IDAddress, sector1Num)
 	recoverParams := miner.DeclareFaultsRecoveredParams{
 		Recoveries: []miner0.RecoveryDeclaration{
 			{
 				Deadline:  d,
 				Partition: p,
-				Sectors:   bitfield.NewFromSet([]uint64{uint64(sector1Num), uint64(sector2Num)}),
+				Sectors:   bitfield.NewFromSet([]uint64{uint64(sector1Num), uint64(sector1Num)}),
 			},
 		},
 	}
-	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DeclareFaultsRecovered, &recoverParams)
-
-	// On next post sectors should come back to life
-	v6, dlInfo = vm.AdvanceByDeadlineTillIndex(t, v6, minerAddrs.IDAddress, d)
-	v6, err = v6.WithEpoch(dlInfo.Last())
-	require.NoError(t, err)
-	partitions = []miner.PoStPartition{{
+	faultedSectorNumbers := make([]uint64, 9)
+	for i, num := range sectorNumbers {
+		if i > 0 {
+			faultedSectorNumbers[i-1] = uint64(num)
+		}
+	}
+	partitions := []miner.PoStPartition{{
 		Index:   p,
-		Skipped: bitfield.New(),
+		Skipped: bitfield.NewFromSet(faultedSectorNumbers),
 	}}
-	vm.SubmitWindowPoSt(t, v6, worker, minerAddrs.IDAddress, dlInfo, partitions, miner.PowerForSectors(sectorSize, sectors))
-	// cron shows no faults
-	vm.ApplyOk(t, v6, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-	vm.ExpectInvocation{
-		To:     builtin.CronActorAddr,
-		Method: builtin.MethodsCron.EpochTick,
-		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
-					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
-				}},
-				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.UpdateNetworkKPI},
-			}},
-			{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.CronTick},
-		},
-	}.Matches(t, v6.Invocations()[1])
+	vm.ApplyOk(t, v6, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DeclareFaultsRecovered, &recoverParams)
+	dlInfo, _, v6 = vm.AdvanceTillProvingDeadline(t, v6, minerAddrs.IDAddress, sector1Num)
+	vm.SubmitWindowPoSt(t, v6, worker, minerAddrs.IDAddress, dlInfo, partitions, miner.PowerForSectors(sectorSize, []*miner.SectorOnChainInfo{sector1}))
 
+	faultedInvocs := []vm.ExpectInvocation{
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+	}
+	newFaultInvocs := []vm.ExpectInvocation{
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdateClaimedPower},
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+	}
+	terminatedInvocs := []vm.ExpectInvocation{
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent},
+		{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+	}
+	// continue faulty for > miner5.FaultMaxAge and watch only faults before migration expire
+	faultyPPs := 2 * int(miner5.FaultMaxAge/miner.WPoStProvingPeriod)
+	preMigrationFaultPeriod := int(miner5.FaultMaxAge / miner.WPoStProvingPeriod)
+	// once the first FaultMaxAge epochs have passed only 1 of 10 sectors is left
+	oneSectorIP := big.Div(ip, big.NewInt(10))
+	assert.True(t, faultyPPs > preMigrationFaultPeriod-1)
+	for i := 0; i < faultyPPs; i++ {
+		invocs := faultedInvocs
+		if i == preMigrationFaultPeriod-1 {
+			invocs = terminatedInvocs
+		} else if i == 1 { // no wposts so recovered sector faults after one period
+			invocs = newFaultInvocs
+		}
+		if i > preMigrationFaultPeriod-1 {
+			ip = oneSectorIP
+		}
+		v6 = checkAndAdvanceDeadline(t, v6, minerAddrs.IDAddress, sector1Num, ip, invocs)
+	}
+	err = v6.GetState(minerAddrs.IDAddress, &minerState)
+	require.NoError(t, err)
+	// Nine out of ten sectors has been terminated.  Over miner5.FaultMaxAge epochs have passed
+	assert.Equal(t, oneSectorIP, minerState.InitialPledge)
 }
 
 func TestRecoverFaultsFromBeforeAfterMigration(t *testing.T) {
