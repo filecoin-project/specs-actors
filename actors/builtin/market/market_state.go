@@ -13,7 +13,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 )
 
-const epochUndefined = abi.ChainEpoch(-1)
+const EpochUndefined = abi.ChainEpoch(-1)
 
 // BalanceLockingReason is the reason behind locking an amount.
 type BalanceLockingReason int
@@ -108,15 +108,15 @@ func ConstructState(store adt.Store) (*State, error) {
 func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealState, deal *DealProposal, epoch abi.ChainEpoch) (amountSlashed abi.TokenAmount, nextEpoch abi.ChainEpoch, removeDeal bool) {
 	amountSlashed = abi.NewTokenAmount(0)
 
-	everUpdated := state.LastUpdatedEpoch != epochUndefined
-	everSlashed := state.SlashEpoch != epochUndefined
+	everUpdated := state.LastUpdatedEpoch != EpochUndefined
+	everSlashed := state.SlashEpoch != EpochUndefined
 
 	builtin.RequireState(rt, !everUpdated || (state.LastUpdatedEpoch <= epoch), "deal updated at future epoch %d", state.LastUpdatedEpoch)
 
 	// This would be the case that the first callback somehow triggers before it is scheduled to
 	// This is expected not to be able to happen
 	if deal.StartEpoch > epoch {
-		return amountSlashed, epochUndefined, false
+		return amountSlashed, EpochUndefined, false
 	}
 
 	paymentEndEpoch := deal.EndEpoch
@@ -164,12 +164,12 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 		amountSlashed = deal.ProviderCollateral
 		err = m.slashBalance(deal.Provider, amountSlashed, ProviderCollateral)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "slashing balance")
-		return amountSlashed, epochUndefined, true
+		return amountSlashed, EpochUndefined, true
 	}
 
 	if epoch >= deal.EndEpoch {
 		m.processDealExpired(rt, deal, state)
-		return amountSlashed, epochUndefined, true
+		return amountSlashed, EpochUndefined, true
 	}
 
 	// We're explicitly not inspecting the end epoch and may process a deal's expiration late, in order to prevent an outsider
@@ -206,7 +206,7 @@ func (m *marketStateMutation) processDealInitTimedOut(rt Runtime, deal *DealProp
 
 // Normal expiration. Unlock collaterals for both provider and client.
 func (m *marketStateMutation) processDealExpired(rt Runtime, deal *DealProposal, state *DealState) {
-	builtin.RequireState(rt, state.SectorStartEpoch != epochUndefined, "sector start epoch undefined")
+	builtin.RequireState(rt, state.SectorStartEpoch != EpochUndefined, "sector start epoch undefined")
 
 	// Note: payment has already been completed at this point (_rtProcessDealPaymentEpochsElapsed)
 	err := m.unlockBalance(deal.Provider, deal.ProviderCollateral, ProviderCollateral)

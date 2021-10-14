@@ -8,7 +8,7 @@ import (
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	vm5 "github.com/filecoin-project/specs-actors/v5/support/vm"
 	"github.com/filecoin-project/specs-actors/v6/actors/migration/nv14"
-	adt5 "github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/ipfs/go-cid"
@@ -25,7 +25,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 	vm := vm5.NewVMWithSingletons(ctx, t, bs)
 
 	// Run migration
-	adtStore := adt5.WrapStore(ctx, cbor.NewCborStore(bs))
+	adtStore := adt.WrapStore(ctx, cbor.NewCborStore(bs))
 	startRoot := vm.StateRoot()
 	endRootSerial, err := nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 1}, log, nv14.NewMemMigrationCache())
 	require.NoError(t, err)
