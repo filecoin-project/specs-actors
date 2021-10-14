@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/abi"
@@ -13,6 +12,7 @@ import (
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
@@ -43,7 +43,6 @@ func TestDealLabelMigration(t *testing.T) {
 	worker, client := addrs[0], addrs[1]
 
 	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
-	//sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
@@ -87,12 +86,6 @@ func TestDealLabelMigration(t *testing.T) {
 	require.True(t, deal1CronTime < deal2CronTime && deal2CronTime < deal3CronTime)
 	require.True(t, v.GetEpoch() < dealStart && dealStart < deal1CronTime)
 
-	fmt.Printf("deal1 epoch: %v\n", deal1CronTime)
-	fmt.Printf("deal2 epoch: %v\n", deal2CronTime)
-	fmt.Printf("deal3 epoch: %v\n", deal3CronTime)
-	fmt.Printf("dealstart: %v\n", dealStart)
-	fmt.Printf("now: %v\n", v.GetEpoch())
-
 	// precommit sector with deals
 	sectorNumber := abi.SectorNumber(100)
 	sealedCid := tutil.MakeCID("100", &miner.SealedCIDPrefix)
@@ -132,18 +125,18 @@ func TestDealLabelMigration(t *testing.T) {
 	adtStore := adt.WrapStore(ctx, cbor.NewCborStore(bs))
 	var market5State market5.State
 	require.NoError(t, v.GetState(builtin.StorageMarketActorAddr, &market5State))
-	proposals, err := adt.AsArray(adtStore, market5State.Proposals, market5.ProposalsAmtBitwidth)
+	oldProposals, err := adt.AsArray(adtStore, market5State.Proposals, market5.ProposalsAmtBitwidth)
 	require.NoError(t, err)
-	states, err := adt.AsArray(adtStore, market5State.States, market5.StatesAmtBitwidth)
+	oldStates, err := adt.AsArray(adtStore, market5State.States, market5.StatesAmtBitwidth)
 	require.NoError(t, err)
-	pendingProposals, err := adt.AsSet(adtStore, market5State.PendingProposals, builtin.DefaultHamtBitwidth)
+	oldPendingProposals, err := adt.AsSet(adtStore, market5State.PendingProposals, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 	// deal1 will just be in states and proposals and not pendingproposals
-	checkMarket5ProposalsEtcState(t, proposals, states, pendingProposals, deal1ID, true, true, false)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal1ID, true, true, false, false)
 	// deal2 will be in proposals pendingproposals and in states
-	checkMarket5ProposalsEtcState(t, proposals, states, pendingProposals, deal2ID, true, true, true)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal2ID, true, true, true, false)
 	// deal3 will be in proposals and pendingproposals but not in states
-	checkMarket5ProposalsEtcState(t, proposals, states, pendingProposals, deal3ID, true, false, true)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal3ID, true, false, true, false)
 
 	oldMarketActor, found, err := v.GetActor(builtin.StorageMarketActorAddr)
 	require.NoError(t, err)
@@ -161,27 +154,28 @@ func TestDealLabelMigration(t *testing.T) {
 	v6, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
 
-	/// XXX: load a proposal out the VM? check that things are in the right places in the market statE??? check that strings became bytes????
-	/// just check proposals and pendingproposals
-
 	// now do the assertions again about what's in pendingproposals/proposals
 	// getting various AMTs out of things
 	var marketState market.State
 	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &marketState))
-	proposals, err = adt.AsArray(adtStore, marketState.Proposals, market.ProposalsAmtBitwidth)
+	proposals, err := adt.AsArray(adtStore, marketState.Proposals, market.ProposalsAmtBitwidth)
 	require.NoError(t, err)
-	states, err = adt.AsArray(adtStore, marketState.States, market.StatesAmtBitwidth)
+	states, err := adt.AsArray(adtStore, marketState.States, market.StatesAmtBitwidth)
 	require.NoError(t, err)
-	pendingProposals, err = adt.AsSet(adtStore, market5State.PendingProposals, builtin.DefaultHamtBitwidth)
+	pendingProposals, err := adt.AsSet(adtStore, marketState.PendingProposals, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 	// deal1 will just be in states and proposals and not pendingproposals
-	checkMarket6ProposalsEtcState(t, proposals, states, pendingProposals, deal1ID, true, true, false)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal1ID, true, true, false, true)
 	// deal2 will be in proposals pendingproposals and in states
-	checkMarket6ProposalsEtcState(t, proposals, states, pendingProposals, deal2ID, true, true, true)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal2ID, true, true, true, true)
 	// deal3 will be in proposals and pendingproposals but not in states
-	checkMarket6ProposalsEtcState(t, proposals, states, pendingProposals, deal3ID, true, false, true)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal3ID, true, false, true, true)
 
-	/// market.checkstateinvariants???
+	// check that all three's labels are the same, just with changed types, before and after.
+	require.NoError(t, checkSameLabel(oldProposals, proposals, deal1ID))
+	require.NoError(t, checkSameLabel(oldProposals, proposals, deal2ID))
+	require.NoError(t, checkSameLabel(oldProposals, proposals, deal3ID))
+
 	var market6State market.State
 	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &market6State))
 	market.CheckStateInvariants(&market6State, v6.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
@@ -239,35 +233,47 @@ func publishDealv5(t *testing.T, v *vm5.VM, provider, dealClient, minerID addr.A
 	return result.Ret.(*market.PublishStorageDealsReturn)
 }
 
-func checkMarket5ProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
-	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool) {
+func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
+	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool, isv6 bool) {
+	var dealprop6 market.DealProposal
 	var dealprop5 market5.DealProposal
-	found, err := proposals.Get(uint64(dealID), &dealprop5)
+	var found bool
+	var err error
+	if isv6 {
+		found, err = proposals.Get(uint64(dealID), &dealprop6)
+	} else {
+		found, err = proposals.Get(uint64(dealID), &dealprop5)
+	}
 	require.NoError(t, err)
 	require.Equal(t, found, inProposals)
 	found, err = states.Get(uint64(dealID), nil)
 	require.NoError(t, err)
 	require.Equal(t, found, inStates)
-	dealpropcid, err := dealprop5.Cid()
+	var dealpropcid cid.Cid
+	if isv6 {
+		dealpropcid, err = dealprop6.Cid()
+	} else {
+		dealpropcid, err = dealprop5.Cid()
+	}
 	require.NoError(t, err)
 	found, err = pendingProposals.Has(abi.CidKey(dealpropcid))
 	require.NoError(t, err)
 	require.Equal(t, found, inPendingProposals)
 }
 
-// there MUST be a way to consolidate these...
-func checkMarket6ProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
-	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool) {
+func checkSameLabel(v5Proposals *adt.Array, v6Proposals *adt.Array, dealID abi.DealID) error {
+	var dealprop5 market5.DealProposal
 	var dealprop6 market.DealProposal
-	found, err := proposals.Get(uint64(dealID), &dealprop6)
-	require.NoError(t, err)
-	require.Equal(t, found, inProposals)
-	found, err = states.Get(uint64(dealID), nil)
-	require.NoError(t, err)
-	require.Equal(t, found, inStates)
-	dealpropcid, err := dealprop6.Cid()
-	require.NoError(t, err)
-	found, err = pendingProposals.Has(abi.CidKey(dealpropcid))
-	require.NoError(t, err)
-	require.Equal(t, found, inPendingProposals)
+	found, err := v5Proposals.Get(uint64(dealID), &dealprop5)
+	if !found || err != nil {
+		return xerrors.Errorf("failed to look up dealID %v in validating deal label", dealID)
+	}
+	found, err = v6Proposals.Get(uint64(dealID), &dealprop6)
+	if !found || err != nil {
+		return xerrors.Errorf("failed to look up dealID %v in validating deal label", dealID)
+	}
+	if dealprop5.Label != string(dealprop6.Label) {
+		return xerrors.Errorf("deal labels were not the same, modulo types, after migration.")
+	}
+	return nil
 }
