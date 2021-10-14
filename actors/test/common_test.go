@@ -113,7 +113,7 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 		VerifiedDeal:         verifiedDeal,
 		Client:               dealClient,
 		Provider:             minerID,
-		Label:                dealLabel,
+		Label:                []byte(dealLabel),
 		StartEpoch:           dealStart,
 		EndEpoch:             dealStart + dealLifetime,
 		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
