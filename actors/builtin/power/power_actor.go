@@ -14,13 +14,13 @@ import (
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	initact "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	initact "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime

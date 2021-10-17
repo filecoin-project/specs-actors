@@ -11,8 +11,8 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 ///// Code shared by multiple built-in actors. /////

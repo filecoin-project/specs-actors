@@ -22,14 +22,14 @@ import (
 	mh "github.com/multiformats/go-multihash"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v6/actors/states"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v6/support/ipld"
-	"github.com/filecoin-project/specs-actors/v6/support/testing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v7/actors/states"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/support/ipld"
+	"github.com/filecoin-project/specs-actors/v7/support/testing"
 )
 
 var EmptyObjectCid cid.Cid

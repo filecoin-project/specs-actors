@@ -9,7 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
 func LoadSectors(store adt.Store, root cid.Cid) (Sectors, error) {

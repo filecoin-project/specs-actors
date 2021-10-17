@@ -7,8 +7,8 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.
