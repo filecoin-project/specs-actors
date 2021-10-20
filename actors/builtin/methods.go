@@ -68,7 +68,7 @@ var MethodsPower = struct {
 	CreateMiner              abi.MethodNum
 	UpdateClaimedPower       abi.MethodNum
 	EnrollCronEvent          abi.MethodNum
-	OnEpochTickEnd           abi.MethodNum
+	CronTick                 abi.MethodNum
 	UpdatePledgeTotal        abi.MethodNum
 	Deprecated1              abi.MethodNum
 	SubmitPoRepForBulkVerify abi.MethodNum

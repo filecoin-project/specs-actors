@@ -184,7 +184,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			To:     builtin.CronActorAddr,
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CronTick, SubInvocations: []vm.ExpectInvocation{
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
@@ -236,7 +236,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 		To:     builtin.CronActorAddr,
 		Method: builtin.MethodsCron.EpochTick,
 		SubInvocations: []vm.ExpectInvocation{
-			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+			{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CronTick, SubInvocations: []vm.ExpectInvocation{
 				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 				{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.ConfirmSectorProofsValid, SubInvocations: []vm.ExpectInvocation{
@@ -279,7 +279,7 @@ func TestReplaceCommittedCapacitySectorWithDealLadenSector(t *testing.T) {
 			To:     builtin.CronActorAddr,
 			Method: builtin.MethodsCron.EpochTick,
 			SubInvocations: []vm.ExpectInvocation{
-				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.OnEpochTickEnd, SubInvocations: []vm.ExpectInvocation{
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CronTick, SubInvocations: []vm.ExpectInvocation{
 					{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
 					{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
 					{To: minerAddrs.IDAddress, Method: builtin.MethodsMiner.OnDeferredCronEvent, SubInvocations: []vm.ExpectInvocation{
