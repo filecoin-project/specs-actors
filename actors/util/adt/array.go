@@ -134,6 +134,17 @@ func (a *Array) Get(k uint64, out cbor.Unmarshaler) (bool, error) {
 	}
 }
 
+// MustGet retrieves array element into the 'out' unmarshaler, returning an error if it 
+//  failed to get the element or if it did not find the element in the array.
+func (a *Array) MustGet(k uint64, out cbor.Unmarshaler) error {
+	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
+		return xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
+	} else if !found{
+		return xerrors.Errorf("did not find index %v in root %v.", k, a.root)
+	}
+	return nil
+}
+
 // Retrieves an array value into the 'out' unmarshaler (if non-nil), and removes the entry.
 // Returns a boolean indicating whether the element was previously in the array.
 func (a *Array) Pop(k uint64, out cbor.Unmarshaler) (bool, error) {
