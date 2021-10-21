@@ -558,7 +558,7 @@ func TestCron(t *testing.T) {
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 		actor.checkState(rt)
 	})
@@ -635,7 +635,7 @@ func TestCron(t *testing.T) {
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 		actor.checkState(rt)
 	})
@@ -655,7 +655,7 @@ func TestCron(t *testing.T) {
 
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 
 		// enroll a cron task at epoch 2 (which is in the past)
@@ -679,7 +679,7 @@ func TestCron(t *testing.T) {
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 
 		// assert used cron events are cleaned up
@@ -744,7 +744,7 @@ func TestCron(t *testing.T) {
 		expectedPower := big.NewInt(0)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 
 		// expect cron skip was logged
@@ -797,7 +797,7 @@ func TestCron(t *testing.T) {
 		// Reward actor still invoked
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedPower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 
 		// expect cron failure was logged
@@ -826,7 +826,7 @@ func TestCron(t *testing.T) {
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
 
-		rt.Call(actor.Actor.OnEpochTickEnd, nil)
+		rt.Call(actor.Actor.CronTick, nil)
 		rt.Verify()
 		actor.checkState(rt)
 	})
@@ -1088,7 +1088,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt.SetEpoch(0)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
-		rt.Call(ac.OnEpochTickEnd, nil)
+		rt.Call(ac.CronTick, nil)
 		rt.Verify()
 		ac.checkState(rt)
 	})
@@ -1113,7 +1113,7 @@ func TestCronBatchProofVerifies(t *testing.T) {
 		rt.SetEpoch(abi.ChainEpoch(0))
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
-		rt.Call(ac.Actor.OnEpochTickEnd, nil)
+		rt.Call(ac.Actor.CronTick, nil)
 		rt.Verify()
 		ac.checkState(rt)
 	})
@@ -1216,7 +1216,7 @@ func (h *spActorHarness) onEpochTickEnd(rt *mock.Runtime, currEpoch abi.ChainEpo
 	rt.SetEpoch(currEpoch)
 	rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 
-	rt.Call(h.Actor.OnEpochTickEnd, nil)
+	rt.Call(h.Actor.CronTick, nil)
 	rt.Verify()
 
 	st = getState(rt)
