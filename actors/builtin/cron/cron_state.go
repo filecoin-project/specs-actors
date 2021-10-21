@@ -25,7 +25,7 @@ func BuiltInEntries() []Entry {
 	return []Entry{
 		{
 			Receiver:  builtin.StoragePowerActorAddr,
-			MethodNum: builtin.MethodsPower.OnEpochTickEnd,
+			MethodNum: builtin.MethodsPower.CronTick,
 		},
 		{
 			Receiver:  builtin.StorageMarketActorAddr,

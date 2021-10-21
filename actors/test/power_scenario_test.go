@@ -61,7 +61,7 @@ func TestCreateMiner(t *testing.T) {
 	}.Matches(t, v.Invocations()[0])
 }
 
-func TestOnEpochTickEnd(t *testing.T) {
+func TestCronTick(t *testing.T) {
 	ctx := context.Background()
 	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
@@ -103,13 +103,13 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
+	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CronTick, abi.Empty)
 
 	// expect miner call to be missing
 	vm.ExpectInvocation{
 		// Original send to storage power actor
 		To:     builtin.StoragePowerActorAddr,
-		Method: builtin.MethodsPower.OnEpochTickEnd,
+		Method: builtin.MethodsPower.CronTick,
 		SubInvocations: []vm.ExpectInvocation{
 			// get data from reward and power actors for any eventual calls to confirmsectorproofvalid
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
@@ -128,13 +128,13 @@ func TestOnEpochTickEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// run cron and expect a call to miner and a call to update reward actor parameters
-	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.OnEpochTickEnd, abi.Empty)
+	vm.ApplyOk(t, v, builtin.CronActorAddr, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CronTick, abi.Empty)
 
 	// expect call to miner
 	vm.ExpectInvocation{
 		// Original send to storage power actor
 		To:     builtin.StoragePowerActorAddr,
-		Method: builtin.MethodsPower.OnEpochTickEnd,
+		Method: builtin.MethodsPower.CronTick,
 		SubInvocations: []vm.ExpectInvocation{
 			// get data from reward and power actors for any eventual calls to confirmsectorproofsvalid
 			{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
