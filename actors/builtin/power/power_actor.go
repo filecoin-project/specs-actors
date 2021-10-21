@@ -39,7 +39,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.CreateMiner,
 		3:                         a.UpdateClaimedPower,
 		4:                         a.EnrollCronEvent,
-		5:                         a.OnEpochTickEnd,
+		5:                         a.CronTick,
 		6:                         a.UpdatePledgeTotal,
 		7:                         nil, // deprecated
 		8:                         a.SubmitPoRepForBulkVerify,
@@ -212,7 +212,7 @@ func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.E
 }
 
 // Called by Cron.
-func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
+func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.CronActorAddr)
 
 	var rewret reward.ThisEpochRewardReturn
