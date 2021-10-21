@@ -89,7 +89,7 @@ func Test500Epochs(t *testing.T) {
 			PrecommitRate:    2.0,
 			FaultRate:        0.0001,
 			RecoveryRate:     0.0001,
-			UpgradeSectors:   true,
+			UpgradeSectors:   false,
 			ProofType:        abi.RegisteredSealProof_StackedDrg32GiBV1_1,
 			StartingBalance:  big.Div(initialBalance, big.NewInt(2)),
 			MinMarketBalance: big.NewInt(1e18),

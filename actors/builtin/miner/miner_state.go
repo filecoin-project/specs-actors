@@ -526,55 +526,6 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 	return FindSector(store, deadlines, sno)
 }
 
-// Schedules each sector to expire at its next deadline end. If it can't find
-// any given sector, it skips it.
-//
-// This method assumes that each sector's power has not changed, despite the rescheduling.
-//
-// Note: this method is used to "upgrade" sectors, rescheduling the now-replaced
-// sectors to expire at the end of the next deadline. Given the expense of
-// sealing a sector, this function skips missing/faulty/terminated "upgraded"
-// sectors instead of failing. That way, the new sectors can still be proved.
-func (st *State) RescheduleSectorExpirations(
-	store adt.Store, currEpoch abi.ChainEpoch, ssize abi.SectorSize,
-	deadlineSectors DeadlineSectorMap,
-) ([]*SectorOnChainInfo, error) {
-	deadlines, err := st.LoadDeadlines(store)
-	if err != nil {
-		return nil, err
-	}
-	sectors, err := LoadSectors(store, st.Sectors)
-	if err != nil {
-		return nil, err
-	}
-
-	var allReplaced []*SectorOnChainInfo
-	if err = deadlineSectors.ForEach(func(dlIdx uint64, pm PartitionSectorMap) error {
-		dlInfo := NewDeadlineInfo(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch).NextNotElapsed()
-		newExpiration := dlInfo.Last()
-
-		dl, err := deadlines.LoadDeadline(store, dlIdx)
-		if err != nil {
-			return err
-		}
-
-		replaced, err := dl.RescheduleSectorExpirations(store, sectors, newExpiration, pm, ssize, QuantSpecForDeadline(dlInfo))
-		if err != nil {
-			return err
-		}
-		allReplaced = append(allReplaced, replaced...)
-
-		if err := deadlines.UpdateDeadline(store, dlIdx, dl); err != nil {
-			return err
-		}
-
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return allReplaced, st.SaveDeadlines(store, deadlines)
-}
-
 // Assign new sectors to deadlines.
 func (st *State) AssignSectorsToDeadlines(
 	store adt.Store, currentEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, partitionSize uint64, sectorSize abi.SectorSize,
