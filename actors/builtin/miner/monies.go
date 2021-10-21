@@ -6,9 +6,9 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/math"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 // Projection period of expected sector block reward for deposit required to pre-commit a sector.

@@ -7,9 +7,9 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 // Test termination fee

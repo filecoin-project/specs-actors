@@ -5,8 +5,8 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
 )
 
 type Actor struct{}

@@ -10,9 +10,9 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/states"
-	"github.com/filecoin-project/specs-actors/v6/support/ipld"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/states"
+	"github.com/filecoin-project/specs-actors/v7/support/ipld"
 )
 
 func BenchmarkStateTreeSet(b *testing.B) {

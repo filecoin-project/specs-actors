@@ -1,18 +1,18 @@
 package exported
 
 import (
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/cron"
-	init_ "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/paych"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/system"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/cron"
+	init_ "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
 )
 
 func BuiltinActors() []runtime.VMActor {

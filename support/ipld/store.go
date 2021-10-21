@@ -9,7 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
 // Creates a new, empty, unsynchronized IPLD store in memory.
@@ -24,6 +24,7 @@ func NewADTStore(ctx context.Context) adt.Store {
 type BlockStoreInMemory struct {
 	data map[cid.Cid]block.Block
 }
+
 var _ ipldcbor.IpldBlockstore = (*BlockStoreInMemory)(nil)
 
 func NewBlockStoreInMemory() *BlockStoreInMemory {
@@ -81,6 +82,7 @@ type MetricsBlockStore struct {
 	Reads      uint64
 	ReadBytes  uint64
 }
+
 var _ ipldcbor.IpldBlockstore = (*MetricsBlockStore)(nil)
 
 func NewMetricsBlockStore(underlying ipldcbor.IpldBlockstore) *MetricsBlockStore {

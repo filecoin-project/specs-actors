@@ -9,14 +9,14 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v6/actors/states"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/states"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
-	"github.com/filecoin-project/specs-actors/v6/support/vm"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v7/support/vm"
 )
 
 func createMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof abi.RegisteredPoStProof, balance abi.TokenAmount) *power.CreateMinerReturn {

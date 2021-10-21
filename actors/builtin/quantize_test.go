@@ -3,7 +3,7 @@ package builtin_test
 import (
 	"testing"
 
-	. "github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	. "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/stretchr/testify/assert"

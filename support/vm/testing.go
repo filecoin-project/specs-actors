@@ -18,24 +18,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v5/support/vm"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/cron"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/exported"
-	initactor "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/system"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v6/actors/states"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
-	actor_testing "github.com/filecoin-project/specs-actors/v6/support/testing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/cron"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
+	initactor "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v7/actors/states"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
+	actor_testing "github.com/filecoin-project/specs-actors/v7/support/testing"
 )
 
 var FIL = big.NewInt(1e18)
@@ -360,7 +359,7 @@ func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *VM, minerIDAddress,
 				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			}},
 			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte(vm.RandString),
+			ChainCommitRand:  []byte(RandString),
 		}
 		ApplyOk(t, v, worker, minerIDAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
