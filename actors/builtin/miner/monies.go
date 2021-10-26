@@ -192,7 +192,7 @@ func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
 	currBalance := rt.CurrentBalance()
 	toBurn, err := st.repayDebts(currBalance)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "unlocked balance can not repay fee debt")
-	rt.Log(rtt.INFO, "RepayDebtsOrAbort was called and succeeded")
+	rt.Log(rtt.DEBUG, "RepayDebtsOrAbort was called and succeeded")
 	return toBurn
 }
 
