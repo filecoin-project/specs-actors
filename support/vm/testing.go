@@ -362,7 +362,7 @@ func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *VM, minerIDAddress,
 			ChainCommitRand:  []byte(RandString),
 		}
 		ApplyOk(t, v, worker, minerIDAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
-		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
+		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines())
 	}
 
 	return v

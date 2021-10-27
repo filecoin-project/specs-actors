@@ -319,7 +319,7 @@ func (pca Actor) Settle(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 			rt.Abortf(exitcode.ErrIllegalState, "channel already settling")
 		}
 
-		st.SettlingAt = rt.CurrEpoch() + SettleDelay
+		st.SettlingAt = rt.CurrEpoch() + SettleDelay()
 		if st.SettlingAt < st.MinSettleHeight {
 			st.SettlingAt = st.MinSettleHeight
 		}

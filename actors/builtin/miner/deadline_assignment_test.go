@@ -19,13 +19,13 @@ func TestDeadlineAssignment(t *testing.T) {
 
 	type testCase struct {
 		sectors   uint64
-		deadlines [WPoStPeriodDeadlines]*deadline
+		deadlines []*deadline
 	}
 
 	testCases := []testCase{{
 		// Even assignment and striping.
 		sectors: 10,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				expectSectors: []uint64{
 					0, 1, 2, 3,
@@ -41,7 +41,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// Fill non-full first
 		sectors: 5,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				expectSectors: []uint64{3, 4},
 			},
@@ -54,7 +54,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// Assign to deadline with least number of live partitions.
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				// 2 live partitions. +1 would add another.
 				liveSectors: 8,
@@ -72,7 +72,7 @@ func TestDeadlineAssignment(t *testing.T) {
 		// number of partitions post-compaction, but deadline 1 has
 		// fewer pre-compaction.
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				// one live, one dead.
 				liveSectors: 4,
@@ -87,7 +87,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// With multiple open partitions, assign to most full first.
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				liveSectors: 1,
 			},
@@ -99,7 +99,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// dead sectors also count
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				liveSectors: 1,
 			},
@@ -111,7 +111,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// dead sectors really do count.
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				deadSectors: 1,
 			},
@@ -123,7 +123,7 @@ func TestDeadlineAssignment(t *testing.T) {
 	}, {
 		// when partitions are equally full, assign based on live sectors.
 		sectors: 1,
-		deadlines: [WPoStPeriodDeadlines]*deadline{
+		deadlines: []*deadline{
 			0: {
 				liveSectors: 1,
 				deadSectors: 1,
@@ -136,8 +136,8 @@ func TestDeadlineAssignment(t *testing.T) {
 	}}
 
 	for _, tc := range testCases {
-		var deadlines [WPoStPeriodDeadlines]*Deadline
-		for i := range deadlines {
+		var deadlines = make([]*Deadline, WPoStPeriodDeadlines())
+		for i := range tc.deadlines {
 			dl := tc.deadlines[i]
 			if dl == nil {
 				// blackout
@@ -152,9 +152,12 @@ func TestDeadlineAssignment(t *testing.T) {
 		for i := range sectors {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
-		assignment, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		assignment, err := assignDeadlines(maxPartitions, partitionSize, deadlines, sectors)
 		require.NoError(t, err)
 		for i, sectors := range assignment {
+			if i >= len(tc.deadlines) {
+				break
+			}
 			dl := tc.deadlines[i]
 			// blackout?
 			if dl == nil {
@@ -179,7 +182,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 		// so 48 deadlines can take 48 * 25 = 1200 sectors.
 		// Hence, we should fail if we try to assign 1201 sectors.
 
-		var deadlines [WPoStPeriodDeadlines]*Deadline
+		var deadlines = make([]*Deadline, WPoStPeriodDeadlines())
 		for i := range deadlines {
 			deadlines[i] = &Deadline{
 				LiveSectors:  0,
@@ -192,14 +195,14 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		_, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		_, err := assignDeadlines(maxPartitions, partitionSize, deadlines, sectors)
 		require.Error(t, err)
 	})
 
 	t.Run("succeeds if all all deadlines hit their max partitions limit but assignment is complete", func(t *testing.T) {
 		// one deadline can take 5 * 5 = 25 sectors
 		// so 48 deadlines that can take 48 * 25 = 1200 sectors.
-		var deadlines [WPoStPeriodDeadlines]*Deadline
+		var deadlines = make([]*Deadline, WPoStPeriodDeadlines())
 		for i := range deadlines {
 			deadlines[i] = &Deadline{
 				LiveSectors:  0,
@@ -212,7 +215,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		deadlineToSectors, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		deadlineToSectors, err := assignDeadlines(maxPartitions, partitionSize, deadlines, sectors)
 		require.NoError(t, err)
 
 		for _, sectors := range deadlineToSectors {
@@ -221,7 +224,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 	})
 
 	t.Run("fails if some deadlines have sectors beforehand and all deadlines hit their max partition limit", func(t *testing.T) {
-		var deadlines [WPoStPeriodDeadlines]*Deadline
+		var deadlines = make([]*Deadline, WPoStPeriodDeadlines())
 		for i := range deadlines {
 			deadlines[i] = &Deadline{
 				LiveSectors:  1,
@@ -236,7 +239,7 @@ func TestMaxPartitionsPerDeadline(t *testing.T) {
 			sectors[i] = &SectorOnChainInfo{SectorNumber: abi.SectorNumber(i)}
 		}
 
-		_, err := assignDeadlines(maxPartitions, partitionSize, &deadlines, sectors)
+		_, err := assignDeadlines(maxPartitions, partitionSize, deadlines, sectors)
 		require.Error(t, err)
 	})
 }

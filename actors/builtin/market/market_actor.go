@@ -702,6 +702,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 }
 
 func GenRandNextEpoch(startEpoch abi.ChainEpoch, dealID abi.DealID) abi.ChainEpoch {
+	DealUpdatesInterval := DealUpdatesInterval()
 	offset := abi.ChainEpoch(uint64(dealID) % uint64(DealUpdatesInterval))
 	q := builtin.NewQuantSpec(DealUpdatesInterval, 0)
 	prevDay := q.QuantizeDown(startEpoch)

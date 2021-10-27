@@ -22,15 +22,15 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 	powerEstimate := smoothing.TestingConstantEstimate(networkQAPower)
 
 	undeclaredPenalty := miner.PledgePenaltyForTerminationLowerBound(rewardEstimate, powerEstimate, qaSectorPower)
-	bigInitialPledgeFactor := big.NewInt(int64(miner.InitialPledgeFactor))
-	bigLifetimeCap := big.NewInt(int64(miner.TerminationLifetimeCap))
+	bigInitialPledgeFactor := big.NewInt(miner.InitialPledgeFactor())
+	bigLifetimeCap := big.NewInt(int64(miner.TerminationLifetimeCap()))
 
 	t.Run("when undeclared fault fee exceeds expected reward, returns undeclaraed fault fee", func(t *testing.T) {
 		// small pledge and means undeclared penalty will be bigger
 		initialPledge := abi.NewTokenAmount(1 << 10)
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAge := 20 * abi.ChainEpoch(builtin.EpochsInDay)
+		sectorAge := 20 * abi.ChainEpoch(builtin.EpochsInDay())
 
 		fee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, powerEstimate, qaSectorPower, rewardEstimate, big.Zero(), 0)
 
@@ -43,16 +43,16 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
 		sectorAgeInDays := int64(20)
-		sectorAge := abi.ChainEpoch(sectorAgeInDays * builtin.EpochsInDay)
+		sectorAge := abi.ChainEpoch(sectorAgeInDays) * builtin.EpochsInDay()
 
 		fee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, powerEstimate, qaSectorPower, rewardEstimate, big.Zero(), 0)
 
-		// expect fee to be pledge + br * age * factor where br = pledge/initialPledgeFactor
+		// expect fee to be pledge + br * age * factor where br = pledge/InitialPledgeFactor()
 		expectedFee := big.Add(
 			initialPledge,
 			big.Div(
-				big.Product(initialPledge, big.NewInt(sectorAgeInDays), miner.TerminationRewardFactor.Numerator),
-				big.Product(bigInitialPledgeFactor, miner.TerminationRewardFactor.Denominator)))
+				big.Product(initialPledge, big.NewInt(sectorAgeInDays), miner.TerminationRewardFactor().Numerator),
+				big.Product(bigInitialPledgeFactor, miner.TerminationRewardFactor().Denominator)))
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -60,16 +60,16 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := undeclaredPenalty
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAge := abi.ChainEpoch(500 * builtin.EpochsInDay)
+		sectorAge := 500 * builtin.EpochsInDay()
 
 		fee := miner.PledgePenaltyForTermination(dayReward, sectorAge, twentyDayReward, powerEstimate, qaSectorPower, rewardEstimate, big.Zero(), 0)
 
-		// expect fee to be pledge * br * age-cap * factor where br = pledge/initialPledgeFactor
+		// expect fee to be pledge * br * age-cap * factor where br = pledge/InitialPledgeFactor()
 		expectedFee := big.Add(
 			initialPledge,
 			big.Div(
-				big.Product(initialPledge, bigLifetimeCap, miner.TerminationRewardFactor.Numerator),
-				big.Product(bigInitialPledgeFactor, miner.TerminationRewardFactor.Denominator)))
+				big.Product(initialPledge, bigLifetimeCap, miner.TerminationRewardFactor().Numerator),
+				big.Product(bigInitialPledgeFactor, miner.TerminationRewardFactor().Denominator)))
 		assert.Equal(t, expectedFee, fee)
 	})
 
@@ -78,8 +78,8 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := undeclaredPenalty
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAge := abi.ChainEpoch(20 * builtin.EpochsInDay)
-		replacementAge := abi.ChainEpoch(2 * builtin.EpochsInDay)
+		sectorAge := 20 * builtin.EpochsInDay()
+		replacementAge := 2 * builtin.EpochsInDay()
 
 		// use low power, so we don't test SP=SP
 		power := big.NewInt(1)
@@ -98,8 +98,8 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		initialPledge := undeclaredPenalty
 		dayReward := big.Div(initialPledge, bigInitialPledgeFactor)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
-		sectorAge := abi.ChainEpoch(20 * builtin.EpochsInDay)
-		replacementAge := abi.ChainEpoch(miner.TerminationLifetimeCap+1) * builtin.EpochsInDay
+		sectorAge := 20 * builtin.EpochsInDay()
+		replacementAge := abi.ChainEpoch(miner.TerminationLifetimeCap()+1) * builtin.EpochsInDay()
 
 		// use low power, so we don't test SP=SP
 		power := big.NewInt(1)
@@ -120,20 +120,20 @@ func TestPledgePenaltyForTermination(t *testing.T) {
 		oldDayReward := big.Mul(big.NewInt(2), dayReward)
 		twentyDayReward := big.Mul(dayReward, bigInitialPledgeFactor)
 		oldSectorAgeInDays := int64(20)
-		oldSectorAge := abi.ChainEpoch(oldSectorAgeInDays * builtin.EpochsInDay)
+		oldSectorAge := abi.ChainEpoch(oldSectorAgeInDays) * builtin.EpochsInDay()
 		replacementAgeInDays := int64(15)
-		replacementAge := abi.ChainEpoch(replacementAgeInDays * builtin.EpochsInDay)
+		replacementAge := abi.ChainEpoch(replacementAgeInDays) * builtin.EpochsInDay()
 
 		// use low power, so termination fee exceeds SP
 		power := big.NewInt(1)
 
 		oldPenalty := big.Div(
-			big.Product(oldDayReward, big.NewInt(oldSectorAgeInDays), miner.TerminationRewardFactor.Numerator),
-			miner.TerminationRewardFactor.Denominator,
+			big.Product(oldDayReward, big.NewInt(oldSectorAgeInDays), miner.TerminationRewardFactor().Numerator),
+			miner.TerminationRewardFactor().Denominator,
 		)
 		newPenalty := big.Div(
-			big.Product(dayReward, big.NewInt(replacementAgeInDays), miner.TerminationRewardFactor.Numerator),
-			miner.TerminationRewardFactor.Denominator,
+			big.Product(dayReward, big.NewInt(replacementAgeInDays), miner.TerminationRewardFactor().Numerator),
+			miner.TerminationRewardFactor().Denominator,
 		)
 		expectedFee := big.Sum(twentyDayReward, oldPenalty, newPenalty)
 
@@ -236,11 +236,11 @@ func TestAggregateNetworkFee(t *testing.T) {
 		for _, feeFunc := range feeFuncs {
 
 			atNoBaseFee := feeFunc(10, big.Zero())
-			atBalanceMinusOneBaseFee := feeFunc(10, big.Sub(miner.BatchBalancer, builtin.OneNanoFIL))
-			atBalanceBaseFee := feeFunc(10, miner.BatchBalancer)
-			atBalancePlusOneBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL))
-			atBalancePlusTwoBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer, builtin.OneNanoFIL, builtin.OneNanoFIL))
-			atBalanceTimesTwoBaseFee := feeFunc(10, big.Mul(miner.BatchBalancer, big.NewInt(2)))
+			atBalanceMinusOneBaseFee := feeFunc(10, big.Sub(miner.BatchBalancer(), builtin.OneNanoFIL))
+			atBalanceBaseFee := feeFunc(10, miner.BatchBalancer())
+			atBalancePlusOneBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer(), builtin.OneNanoFIL))
+			atBalancePlusTwoBaseFee := feeFunc(10, big.Sum(miner.BatchBalancer(), builtin.OneNanoFIL, builtin.OneNanoFIL))
+			atBalanceTimesTwoBaseFee := feeFunc(10, big.Mul(miner.BatchBalancer(), big.NewInt(2)))
 
 			assert.True(t, atNoBaseFee.Equals(atBalanceMinusOneBaseFee))
 			assert.True(t, atNoBaseFee.Equals(atBalanceBaseFee))

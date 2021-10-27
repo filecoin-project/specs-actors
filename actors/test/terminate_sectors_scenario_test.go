@@ -68,12 +68,12 @@ func TestTerminateSectors(t *testing.T) {
 
 	// create 3 deals, some verified and some not
 	dealIDs := []abi.DealID{}
-	dealStart := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
-	deals := publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal1", 1<<30, true, dealStart, 181*builtin.EpochsInDay)
+	dealStart := v.GetEpoch() + miner.PreCommitChallengeDelay() + 1
+	deals := publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal1", 1<<30, true, dealStart, 181*builtin.EpochsInDay())
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal2", 1<<32, true, dealStart, 200*builtin.EpochsInDay)
+	deals = publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal2", 1<<32, true, dealStart, 200*builtin.EpochsInDay())
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDeal(t, v, worker, unverifiedClient, minerAddrs.IDAddress, "deal3", 1<<34, false, dealStart, 210*builtin.EpochsInDay)
+	deals = publishDeal(t, v, worker, unverifiedClient, minerAddrs.IDAddress, "deal3", 1<<34, false, dealStart, 210*builtin.EpochsInDay())
 	dealIDs = append(dealIDs, deals.IDs...)
 
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
@@ -94,12 +94,12 @@ func TestTerminateSectors(t *testing.T) {
 		SealedCID:       sealedCid,
 		SealRandEpoch:   v.GetEpoch() - 1,
 		DealIDs:         dealIDs,
-		Expiration:      v.GetEpoch() + 220*builtin.EpochsInDay,
+		Expiration:      v.GetEpoch() + 220*builtin.EpochsInDay(),
 		ReplaceCapacity: false,
 	})
 
 	// advance time to min seal duration
-	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + 1
+	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay() + 1
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	// Prove commit sector after max seal duration

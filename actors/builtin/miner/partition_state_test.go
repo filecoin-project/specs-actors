@@ -854,7 +854,7 @@ func bf(secNos ...uint64) bitfield.BitField {
 }
 
 func selectSectors(t *testing.T, sectors []*miner.SectorOnChainInfo, field bitfield.BitField) []*miner.SectorOnChainInfo {
-	toInclude, err := field.AllMap(miner.AddressedSectorsMax)
+	toInclude, err := field.AllMap(miner.AddressedSectorsMax())
 	require.NoError(t, err)
 
 	included := []*miner.SectorOnChainInfo{}

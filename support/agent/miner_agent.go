@@ -61,7 +61,7 @@ type MinerAgent struct {
 	// priority queue used to trigger actions at future epochs
 	operationSchedule *opQueue
 	// which sector belongs to which deadline/partition
-	deadlines [miner.WPoStPeriodDeadlines][]partition
+	deadlines [][]partition
 	// iterator to time PreCommit events according to rate
 	preCommitEvents *RateIterator
 	// iterator to time faults events according to rate
@@ -80,6 +80,7 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 	rndSeed int64, config MinerAgentConfig,
 ) *MinerAgent {
 	rnd := rand.New(rand.NewSource(rndSeed))
+	deadlines := make([][]partition, miner.WPoStPeriodDeadlines())
 	return &MinerAgent{
 		Config:        config,
 		Owner:         owner,
@@ -90,7 +91,7 @@ func NewMinerAgent(owner address.Address, worker address.Address, idAddress addr
 		operationSchedule:     &opQueue{},
 		preCommitEvents:       NewRateIterator(config.PrecommitRate, rnd.Int63()),
 		expectedMarketBalance: big.Zero(),
-
+		deadlines: deadlines,
 		// fault rate is the configured fault rate times the number of live sectors or zero.
 		faultEvents: NewRateIterator(0.0, rnd.Int63()),
 		// recovery rate is the configured recovery rate times the number of faults or zero.
@@ -209,8 +210,8 @@ func (ma *MinerAgent) Address() address.Address {
 
 func (ma *MinerAgent) DealRange(currentEpoch abi.ChainEpoch) (abi.ChainEpoch, abi.ChainEpoch) {
 	// maximum sector start and maximum expiration
-	return currentEpoch + miner.MaxProveCommitDuration[ma.Config.ProofType] + miner.MinSectorExpiration,
-		currentEpoch + miner.MaxSectorExpirationExtension
+	return currentEpoch + miner.MaxProveCommitDuration()[ma.Config.ProofType] + miner.MinSectorExpiration(),
+		currentEpoch + miner.MaxSectorExpirationExtension()
 }
 
 func (ma *MinerAgent) CreateDeal(proposal market.ClientDealProposal) {
@@ -588,11 +589,11 @@ func (ma *MinerAgent) scheduleSyncAndNextProof(v SimState, dlIdx uint64) error {
 	if err != nil {
 		return err
 	}
-	deadlineStart := provingPeriodStart + abi.ChainEpoch(dlIdx)*miner.WPoStChallengeWindow
-	if deadlineStart-miner.WPoStChallengeWindow < v.GetEpoch() {
-		deadlineStart += miner.WPoStProvingPeriod
+	deadlineStart := provingPeriodStart + abi.ChainEpoch(dlIdx)*miner.WPoStChallengeWindow()
+	if deadlineStart-miner.WPoStChallengeWindow() < v.GetEpoch() {
+		deadlineStart += miner.WPoStProvingPeriod()
 	}
-	deadlineClose := deadlineStart + miner.WPoStChallengeWindow
+	deadlineClose := deadlineStart + miner.WPoStChallengeWindow()
 
 	ma.operationSchedule.ScheduleOp(deadlineClose, syncDeadlineStateAction{dlIdx: dlIdx})
 
@@ -773,11 +774,11 @@ func (ma *MinerAgent) dlInfoForSector(v SimState, sectorNumber uint64) (*dline.I
 func (ma *MinerAgent) sectorExpiration(currentEpoch abi.ChainEpoch) abi.ChainEpoch {
 	// Require sector lifetime meets minimum by assuming activation happens at last epoch permitted for seal proof
 	// to meet the constraints imposed in PreCommit.
-	minExp := currentEpoch + miner.MaxProveCommitDuration[ma.Config.ProofType] + miner.MinSectorExpiration
+	minExp := currentEpoch + miner.MaxProveCommitDuration()[ma.Config.ProofType] + miner.MinSectorExpiration()
 	// Require duration of sector from now does not exceed the maximum sector extension. This constraint
 	// is also imposed by PreCommit, and along with the first constraint define the bounds for a valid
 	// expiration of a new sector.
-	maxExp := currentEpoch + miner.MaxSectorExpirationExtension
+	maxExp := currentEpoch + miner.MaxSectorExpirationExtension()
 
 	// generate a uniformly distributed expiration in the valid range.
 	return minExp + abi.ChainEpoch(ma.rnd.Int63n(int64(maxExp-minExp)))
@@ -788,8 +789,8 @@ func (ma *MinerAgent) sectorExpiration(currentEpoch abi.ChainEpoch) abi.ChainEpo
 // Assume differences in hardware and contention in the miner's sealing queue create a uniform distribution
 // over the acceptable range
 func (ma *MinerAgent) sectorActivation(preCommitAt abi.ChainEpoch) abi.ChainEpoch {
-	minActivation := preCommitAt + miner.PreCommitChallengeDelay + 1
-	maxActivation := preCommitAt + miner.MaxProveCommitDuration[ma.Config.ProofType]
+	minActivation := preCommitAt + miner.PreCommitChallengeDelay() + 1
+	maxActivation := preCommitAt + miner.MaxProveCommitDuration()[ma.Config.ProofType]
 	return minActivation + abi.ChainEpoch(ma.rnd.Int63n(int64(maxActivation-minActivation)))
 }
 

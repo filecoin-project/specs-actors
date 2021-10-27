@@ -177,9 +177,10 @@ func (dah *deadlineAssignmentHeap) Pop() interface{} {
 func assignDeadlines(
 	maxPartitions uint64,
 	partitionSize uint64,
-	deadlines *[WPoStPeriodDeadlines]*Deadline,
+	deadlines []*Deadline,
 	sectors []*SectorOnChainInfo,
-) (changes [WPoStPeriodDeadlines][]*SectorOnChainInfo, err error) {
+) (changes [][]*SectorOnChainInfo, err error) {
+	changes = make([][]*SectorOnChainInfo, WPoStPeriodDeadlines())
 	// Build a heap
 	dlHeap := deadlineAssignmentHeap{
 		maxPartitions: maxPartitions,

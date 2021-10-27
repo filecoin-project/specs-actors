@@ -7,28 +7,59 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
 )
 
-// The number of epochs between payment and other state processing for deals.
-const DealUpdatesInterval = builtin.EpochsInDay // PARAM_SPEC
-
-// The percentage of normalized cirulating
-// supply that must be covered by provider collateral in a deal
-var ProviderCollateralSupplyTarget = builtin.BigFrac{
-	Numerator:   big.NewInt(1), // PARAM_SPEC
-	Denominator: big.NewInt(100),
+type Policy struct {
+	DealUpdatesInterval            abi.ChainEpoch
+	providerCollateralSupplyTarget builtin.BigFrac
+	DealMinDuration                abi.ChainEpoch
+	DealMaxDuration                abi.ChainEpoch
 }
 
-// Minimum deal duration.
-var DealMinDuration = abi.ChainEpoch(180 * builtin.EpochsInDay) // PARAM_SPEC
+func (p *Policy) SetPercentageCollateralSupply(percentageCollateralSupply int64)  {
+	p.providerCollateralSupplyTarget.Numerator = big.NewInt(percentageCollateralSupply)
+}
 
-// Maximum deal duration
-var DealMaxDuration = abi.ChainEpoch(540 * builtin.EpochsInDay) // PARAM_SPEC
+func MakeMarketPolicy(dealUpdatesInterval abi.ChainEpoch,
+	percentageCollateralSupply int64,
+	dealMinDuration abi.ChainEpoch,
+	dealMaxDuration abi.ChainEpoch) Policy {
+	return Policy{
+		DealUpdatesInterval: dealUpdatesInterval,
+		providerCollateralSupplyTarget: builtin.BigFrac{
+			Numerator:   big.NewInt(percentageCollateralSupply),
+			Denominator: big.NewInt(100),
+		},
+		DealMinDuration: dealMinDuration,
+		DealMaxDuration: dealMaxDuration,
+	}
+}
+
+var DefaultMarketPolicy = MakeMarketPolicy(builtin.DefaultNetworkPolicy.EpochsInDay(),
+	1,
+	180*builtin.DefaultNetworkPolicy.EpochsInDay(),
+	540*builtin.DefaultNetworkPolicy.EpochsInDay())
+
+var CurrentMarketPolicy = DefaultMarketPolicy
 
 // DealMaxLabelSize is the maximum size of a deal label.
 const DealMaxLabelSize = 256
 
+func DealUpdatesInterval() abi.ChainEpoch {
+	return CurrentMarketPolicy.DealUpdatesInterval
+}
+
+func ProviderCollateralSupplyTarget() builtin.BigFrac {
+	return CurrentMarketPolicy.providerCollateralSupplyTarget
+}
+func DealMinDuration() abi.ChainEpoch {
+	return CurrentMarketPolicy.DealMinDuration
+}
+func DealMaxDuration() abi.ChainEpoch {
+	return CurrentMarketPolicy.DealMaxDuration
+}
+
 // Bounds (inclusive) on deal duration
 func DealDurationBounds(_ abi.PaddedPieceSize) (min abi.ChainEpoch, max abi.ChainEpoch) {
-	return DealMinDuration, DealMaxDuration
+	return CurrentMarketPolicy.DealMinDuration, CurrentMarketPolicy.DealMaxDuration
 }
 
 func DealPricePerEpochBounds(_ abi.PaddedPieceSize, _ abi.ChainEpoch) (min abi.TokenAmount, max abi.TokenAmount) {
@@ -41,8 +72,8 @@ func DealProviderCollateralBounds(pieceSize abi.PaddedPieceSize, verified bool, 
 	// normalizedCirculatingSupply = networkCirculatingSupply * dealPowerShare
 	// dealPowerShare = dealRawPower / max(BaselinePower(t), NetworkRawPower(t), dealRawPower)
 
-	lockTargetNum := big.Mul(ProviderCollateralSupplyTarget.Numerator, networkCirculatingSupply)
-	lockTargetDenom := ProviderCollateralSupplyTarget.Denominator
+	lockTargetNum := big.Mul(CurrentMarketPolicy.providerCollateralSupplyTarget.Numerator, networkCirculatingSupply)
+	lockTargetDenom := CurrentMarketPolicy.providerCollateralSupplyTarget.Denominator
 	powerShareNum := big.NewIntUnsigned(uint64(pieceSize))
 	powerShareDenom := big.Max(big.Max(networkRawPower, baselinePower), powerShareNum)
 

@@ -90,8 +90,8 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 	}
 
 	// Check deadlines
-	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines,
-		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines, st.CurrentDeadline)
+	acc.Require(st.CurrentDeadline < WPoStPeriodDeadlines(),
+		"current deadline index is greater than deadlines per period(%d): %d", WPoStPeriodDeadlines(), st.CurrentDeadline)
 
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {

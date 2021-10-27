@@ -540,7 +540,7 @@ func (st *State) AssignSectorsToDeadlines(
 		return sectors[i].SectorNumber < sectors[j].SectorNumber
 	})
 
-	var deadlineArr [WPoStPeriodDeadlines]*Deadline
+	var deadlineArr = make([]*Deadline, WPoStPeriodDeadlines())
 	if err = deadlines.ForEach(store, func(idx uint64, dl *Deadline) error {
 		// Skip deadlines that aren't currently mutable.
 		if deadlineIsMutable(st.CurrentProvingPeriodStart(currentEpoch), idx, currentEpoch) {
@@ -551,7 +551,7 @@ func (st *State) AssignSectorsToDeadlines(
 		return err
 	}
 
-	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, &deadlineArr, sectors)
+	deadlineToSectors, err := assignDeadlines(MaxPartitionsPerDeadline, partitionSize, deadlineArr, sectors)
 	if err != nil {
 		return xerrors.Errorf("failed to assign sectors to deadlines: %w", err)
 	}
@@ -978,7 +978,7 @@ func (st *State) IsDebtFree() bool {
 
 // pre-commit clean up
 func (st *State) QuantSpecEveryDeadline() builtin.QuantSpec {
-	return builtin.NewQuantSpec(WPoStChallengeWindow, st.ProvingPeriodStart)
+	return builtin.NewQuantSpec(WPoStChallengeWindow(), st.ProvingPeriodStart)
 }
 
 func (st *State) AddPreCommitCleanUps(store adt.Store, cleanUpEvents map[abi.ChainEpoch][]uint64) error {
@@ -1120,9 +1120,9 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 
 	// Advance to the next deadline (in case we short-circuit below).
 	// Maintaining this state info is a legacy operation no longer required for code correctness
-	st.CurrentDeadline = (dlInfo.Index + 1) % WPoStPeriodDeadlines
+	st.CurrentDeadline = (dlInfo.Index + 1) % WPoStPeriodDeadlines()
 	if st.CurrentDeadline == 0 {
-		st.ProvingPeriodStart = dlInfo.PeriodStart + WPoStProvingPeriod
+		st.ProvingPeriodStart = dlInfo.PeriodStart + WPoStProvingPeriod()
 	}
 
 	deadlines, err := st.LoadDeadlines(store)
@@ -1152,7 +1152,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	quant := QuantSpecForDeadline(dlInfo)
 	{
 		// Detect and penalize missing proofs.
-		faultExpiration := dlInfo.Last() + FaultMaxAge
+		faultExpiration := dlInfo.Last() + FaultMaxAge()
 
 		// detectedFaultyPower is new faults and failed recoveries
 		powerDelta, detectedFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration)

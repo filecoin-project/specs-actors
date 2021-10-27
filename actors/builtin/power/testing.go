@@ -179,7 +179,7 @@ func CheckProofValidationInvariants(st *State, store adt.Store, claims ClaimsByA
 			if err != nil {
 				return err
 			}
-			acc.Require(len(proofs[addr]) <= MaxMinerProveCommitsPerEpoch,
+			acc.Require(len(proofs[addr]) <= int(MaxMinerProveCommitsPerEpoch()),
 				"miner %v has submitted too many proofs (%d) for batch verification", addr, len(proofs[addr]))
 			return nil
 		})

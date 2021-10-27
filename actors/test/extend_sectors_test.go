@@ -68,8 +68,8 @@ func TestExtendSectorWithDeals(t *testing.T) {
 
 	// create 1 verified deal for total sector capacity for 6 months
 	dealIDs := []abi.DealID{}
-	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
-	deals := publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal1", 32<<30, true, dealStart, 180*builtin.EpochsInDay)
+	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
+	deals := publishDeal(t, v, worker, verifiedClient, minerAddrs.IDAddress, "deal1", 32<<30, true, dealStart, 180*builtin.EpochsInDay())
 	dealIDs = append(dealIDs, deals.IDs...)
 
 	//
@@ -83,12 +83,12 @@ func TestExtendSectorWithDeals(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       dealIDs,
-		Expiration:    dealStart + 180*builtin.EpochsInDay,
+		Expiration:    dealStart + 180*builtin.EpochsInDay(),
 	}
 	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	// Prove commit sector after max seal duration
@@ -109,9 +109,9 @@ func TestExtendSectorWithDeals(t *testing.T) {
 	info, found, err := mState.GetSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, abi.ChainEpoch(180*builtin.EpochsInDay), info.Expiration-info.Activation)
-	assert.Equal(t, big.Zero(), info.DealWeight)                                           // 0 space time
-	assert.Equal(t, big.NewInt(180*builtin.EpochsInDay*(32<<30)), info.VerifiedDealWeight) // (180 days *2880 epochs per day) * 32 GiB
+	assert.Equal(t, abi.ChainEpoch(180*builtin.EpochsInDay()), info.Expiration-info.Activation)
+	assert.Equal(t, big.Zero(), info.DealWeight)                                                    // 0 space time
+	assert.Equal(t, big.NewInt(180*int64(builtin.EpochsInDay())*(32<<30)), info.VerifiedDealWeight) // (180 days *2880 epochs per day) * 32 GiB
 	initialVerifiedDealWeight := info.VerifiedDealWeight
 	initialDealWeight := info.DealWeight
 
@@ -145,15 +145,15 @@ func TestExtendSectorWithDeals(t *testing.T) {
 		},
 	}.Matches(t, v.LastInvocation())
 	// move forward one deadline so advanceWhileProving doesn't fail double submitting posts
-	v, _ = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
+	v, _ = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines())
 
 	// advance halfway through life and extend another 6 months
 	// verified deal weight /= 2
 	// power multiplier = (1/4)*10 + (3/4)*1 = 3.25
 	// power delta = (10-3.25)*32GiB = 6.75*32GiB
-	v = vm.AdvanceByDeadlineTillEpochWhileProving(t, v, minerAddrs.IDAddress, worker, sectorNumber, dealStart+90*builtin.EpochsInDay)
+	v = vm.AdvanceByDeadlineTillEpochWhileProving(t, v, minerAddrs.IDAddress, worker, sectorNumber, dealStart+90*builtin.EpochsInDay())
 	dlIdx, pIdx := vm.SectorDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
-	v, err = v.WithEpoch(dealStart + 90*builtin.EpochsInDay) // for getting epoch exactly halfway through lifetime
+	v, err = v.WithEpoch(dealStart + 90*builtin.EpochsInDay()) // for getting epoch exactly halfway through lifetime
 	require.NoError(t, err)
 
 	extensionParams := &miner.ExtendSectorExpirationParams{
@@ -161,7 +161,7 @@ func TestExtendSectorWithDeals(t *testing.T) {
 			Deadline:      dlIdx,
 			Partition:     pIdx,
 			Sectors:       bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
-			NewExpiration: abi.ChainEpoch(dealStart + 2*180*builtin.EpochsInDay),
+			NewExpiration: abi.ChainEpoch(dealStart + 2*180*builtin.EpochsInDay()),
 		}},
 	}
 	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ExtendSectorExpiration, extensionParams)
@@ -184,10 +184,10 @@ func TestExtendSectorWithDeals(t *testing.T) {
 	// power delta = (3.25 - 1.75)*32GiB = 1.5*32GiB
 
 	// move forward one deadline so advanceWhileProving doesn't fail double submitting posts
-	v, _ = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
-	v = vm.AdvanceByDeadlineTillEpochWhileProving(t, v, minerAddrs.IDAddress, worker, sectorNumber, dealStart+180*builtin.EpochsInDay)
+	v, _ = vm.AdvanceByDeadlineTillIndex(t, v, minerAddrs.IDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines())
+	v = vm.AdvanceByDeadlineTillEpochWhileProving(t, v, minerAddrs.IDAddress, worker, sectorNumber, dealStart+180*builtin.EpochsInDay())
 	dlIdx, pIdx = vm.SectorDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
-	v, err = v.WithEpoch(dealStart + 180*builtin.EpochsInDay) // for getting epoch exactly halfway through lifetime
+	v, err = v.WithEpoch(dealStart + 180*builtin.EpochsInDay()) // for getting epoch exactly halfway through lifetime
 	require.NoError(t, err)
 
 	extensionParamsTwo := &miner.ExtendSectorExpirationParams{
@@ -195,7 +195,7 @@ func TestExtendSectorWithDeals(t *testing.T) {
 			Deadline:      dlIdx,
 			Partition:     pIdx,
 			Sectors:       bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
-			NewExpiration: abi.ChainEpoch(dealStart + 3*180*builtin.EpochsInDay),
+			NewExpiration: abi.ChainEpoch(dealStart + 3*180*builtin.EpochsInDay()),
 		}},
 	}
 	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ExtendSectorExpiration, extensionParamsTwo)
@@ -217,7 +217,7 @@ func TestExtendSectorWithDeals(t *testing.T) {
 	infoFinal, found, err := mStateFinal.GetSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, abi.ChainEpoch(180*3*builtin.EpochsInDay), infoFinal.Expiration-infoFinal.Activation)
+	assert.Equal(t, abi.ChainEpoch(180*3*builtin.EpochsInDay()), infoFinal.Expiration-infoFinal.Activation)
 	assert.Equal(t, initialDealWeight, infoFinal.DealWeight)                                         // 0 space time, unchanged
 	assert.Equal(t, big.Div(initialVerifiedDealWeight, big.NewInt(4)), infoFinal.VerifiedDealWeight) // two halvings => 1/4 initial verified deal weight
 }

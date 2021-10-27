@@ -174,7 +174,7 @@ func (m *marketStateMutation) updatePendingDealState(rt Runtime, state *DealStat
 
 	// We're explicitly not inspecting the end epoch and may process a deal's expiration late, in order to prevent an outsider
 	// from loading a cron tick by activating too many deals with the same end epoch.
-	nextEpoch = epoch + DealUpdatesInterval
+	nextEpoch = epoch + DealUpdatesInterval()
 
 	return amountSlashed, nextEpoch, false
 }

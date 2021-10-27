@@ -141,8 +141,8 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 	// deal start is earliest possible epoch, deal end is uniformly distributed between start and max.
 	dealStart, maxDealEnd := provider.DealRange(s.GetEpoch())
 	dealEnd := dealStart + abi.ChainEpoch(dca.rnd.Int63n(int64(maxDealEnd-dealStart)))
-	if dealEnd-dealStart < market.DealMinDuration {
-		dealEnd = dealStart + market.DealMinDuration
+	if dealEnd-dealStart < market.DealMinDuration() {
+		dealEnd = dealStart + market.DealMinDuration()
 	}
 
 	// lower expected balance in anticipation of market actor locking storage fee

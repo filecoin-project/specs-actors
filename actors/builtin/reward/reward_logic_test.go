@@ -83,7 +83,7 @@ func TestBaselineRewardGrowth(t *testing.T) {
 
 	baselineInYears := func(start abi.StoragePower, x abi.ChainEpoch) abi.StoragePower {
 		baseline := start
-		for i := abi.ChainEpoch(0); i < x*builtin.EpochsInYear; i++ {
+		for i := abi.ChainEpoch(0); i < x*builtin.EpochsInYear(); i++ {
 			baseline = BaselinePowerFromPrev(baseline)
 		}
 		return baseline

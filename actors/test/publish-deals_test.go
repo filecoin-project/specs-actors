@@ -21,7 +21,7 @@ import (
 var defaultPricePerEpoch = abi.NewTokenAmount(1 << 20)
 var defaultProviderCollateral = big.Mul(big.NewInt(2), vm.FIL)
 var defaultClientCollateral = big.Mul(big.NewInt(1), vm.FIL)
-var dealLifeTime = abi.ChainEpoch(181 * builtin.EpochsInDay)
+var dealLifeTime = abi.ChainEpoch(181 * builtin.EpochsInDay())
 
 func TestPublishStorageDealsFailure(t *testing.T) {
 	ctx := context.Background()
@@ -53,7 +53,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	// publish one bad deal
 	//
 	t.Run("mismatched provider", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, client1, minerAddrs.IDAddress, "run0-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -72,7 +72,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	})
 
 	t.Run("invalid deal: bad piece size", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// bad deal piece size too small
 		batcher.stage(t, client1, minerAddrs.IDAddress, "run1-deal0", 0, false, dealStart, dealLifeTime,
@@ -88,7 +88,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	})
 
 	t.Run("invalid deal: start time in the past", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		badStart := v.GetEpoch() - 1
 		batcher := newDealBatcher(v)
 		// bad deal, start time in the past
@@ -106,7 +106,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 
 	t.Run("client address cannot be resolved", func(t *testing.T) {
 		badClient := tutil.NewIDAddr(t, 5_000_000)
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, client1, minerAddrs.IDAddress, "run3-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -124,7 +124,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	t.Run("no client lockup", func(t *testing.T) {
 		/* added no market collateral for cheapClient */
 
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// bad deal client can't pay
 		batcher.stage(t, cheapClient, minerAddrs.IDAddress, "run4-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -144,7 +144,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 		// add only one lifetime cost to cheapClient's collateral but attempt to make 3 deals
 		vm.ApplyOk(t, v, cheapClient, builtin.StorageMarketActorAddr, oneLifeTimeCost, builtin.MethodsMarket.AddBalance, &cheapClient)
 
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, cheapClient, minerAddrs.IDAddress, "run5-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -181,7 +181,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 		minerCollateral := defaultProviderCollateral
 		vm.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, minerCollateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 
 		vm.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, minerCollateral, builtin.MethodsMarket.AddBalance, &cheapMinerAddrs.IDAddress)
@@ -199,7 +199,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	})
 
 	t.Run("duplicate deal in batch", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, client1, minerAddrs.IDAddress, "run7-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -227,7 +227,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	})
 
 	t.Run("duplicate deal in state", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, client2, minerAddrs.IDAddress, "run8-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -270,7 +270,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 		vm.ApplyOk(t, v, verifier, builtin.VerifiedRegistryActorAddr, big.Zero(), builtin.MethodsVerifiedRegistry.AddVerifiedClient, &addClientParams)
 		vm.ApplyOk(t, v, verifiedClient, builtin.StorageMarketActorAddr, big.Mul(big.NewInt(100), vm.FIL), builtin.MethodsMarket.AddBalance, &verifiedClient)
 
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deal
 		batcher.stage(t, verifiedClient, minerAddrs.IDAddress, "run9-deal0", 1<<30, false, dealStart, dealLifeTime,
@@ -307,7 +307,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 		oneLifeTimeCost := big.Sum(defaultClientCollateral, big.Mul(big.NewInt(int64(dealLifeTime)), defaultPricePerEpoch))
 
 		vm.ApplyOk(t, v, cheapClient, builtin.StorageMarketActorAddr, oneLifeTimeCost, builtin.MethodsMarket.AddBalance, &cheapClient)
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 
 		// good deal
@@ -348,7 +348,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	t.Run("all deals are bad", func(t *testing.T) {
 
 		batcher := newDealBatcher(v)
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		badClient := tutil.NewIDAddr(t, 1_000)
 
 		// bad deal -- provider collateral too low
@@ -371,7 +371,7 @@ func TestPublishStorageDealsFailure(t *testing.T) {
 	})
 
 	t.Run("all deals are good", func(t *testing.T) {
-		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+		dealStart := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 		batcher := newDealBatcher(v)
 		// good deals
 		batcher.stage(t, client1, minerAddrs.IDAddress, "run12-deal0", 1<<30, false, dealStart, dealLifeTime,

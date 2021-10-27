@@ -141,7 +141,7 @@ func (st *State) MinerNominalPowerMeetsConsensusMinimum(s adt.Store, miner addr.
 	}
 
 	// otherwise, if ConsensusMinerMinMiners miners meet min power requirement, return false
-	if st.MinerAboveMinPowerCount >= ConsensusMinerMinMiners {
+	if st.MinerAboveMinPowerCount >= ConsensusMinerMinMiners() {
 		return false, nil
 	}
 
@@ -324,7 +324,7 @@ func setClaim(claims *adt.Map, a addr.Address, claim *Claim) error {
 // CurrentTotalPower returns current power values accounting for minimum miner
 // and minimum power
 func CurrentTotalPower(st *State) (abi.StoragePower, abi.StoragePower) {
-	if st.MinerAboveMinPowerCount < ConsensusMinerMinMiners {
+	if st.MinerAboveMinPowerCount < ConsensusMinerMinMiners() {
 		return st.TotalBytesCommitted, st.TotalQABytesCommitted
 	}
 	return st.TotalRawBytePower, st.TotalQualityAdjPower

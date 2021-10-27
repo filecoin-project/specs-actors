@@ -51,8 +51,8 @@ func TestCommitPoStFlow(t *testing.T) {
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
-	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
+	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
 	// overdue precommit
@@ -60,7 +60,7 @@ func TestCommitPoStFlow(t *testing.T) {
 
 	t.Run("missed prove commit results in precommit expiry and cleanup", func(t *testing.T) {
 		// advance time to precommit clean up epoch
-		cleanUpTime := proveTime + miner.ExpiredPreCommitCleanUpDelay
+		cleanUpTime := proveTime + miner.ExpiredPreCommitCleanUpDelay()
 		v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, cleanUpTime)
 
 		// advanced one more deadline so precommit clean up is reached
@@ -347,7 +347,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
@@ -359,7 +359,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 	crons := 0
 	// Prove sectors in batches of 200 to avoid going over the max 200 commits per miner per power cron invocation
 	for sectorsProven < sectorCount {
-		sectorsToProveThisCron := min(sectorCount-sectorsProven, power.MaxMinerProveCommitsPerEpoch)
+		sectorsToProveThisCron := min(sectorCount-sectorsProven, int(power.MaxMinerProveCommitsPerEpoch()))
 		for i := 0; i < sectorsToProveThisCron; i++ {
 			// Prove commit sector at a valid epoch
 			proveCommitParams := miner.ProveCommitSectorParams{
@@ -471,7 +471,7 @@ func TestBatchOnboarding(t *testing.T) {
 			preCommitBatchSize:   12,
 		},
 		{ // Pre: 30, Proven: 8
-			epochDelay:               miner.PreCommitChallengeDelay + 1,
+			epochDelay:               miner.PreCommitChallengeDelay() + 1,
 			proveCommitSectorCount:   8,
 			proveCommitAggregateSize: miner.MaxAggregatedSectors,
 		},
@@ -486,7 +486,7 @@ func TestBatchOnboarding(t *testing.T) {
 			preCommitBatchSize:   4,
 		},
 		{ // Pre: 40, Proven: 40
-			epochDelay:               miner.PreCommitChallengeDelay + 1,
+			epochDelay:               miner.PreCommitChallengeDelay() + 1,
 			proveCommitSectorCount:   24,
 			proveCommitAggregateSize: 10,
 		},
@@ -575,7 +575,7 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	earlyPreCommitTime := v.GetEpoch()
 	earlyPrecommits := preCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
 
-	earlyPreCommitInvalid := earlyPreCommitTime + miner.MaxProveCommitDuration[sealProof] + abi.ChainEpoch(1)
+	earlyPreCommitInvalid := earlyPreCommitTime + miner.MaxProveCommitDuration()[sealProof] + abi.ChainEpoch(1)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
@@ -584,11 +584,11 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
 	// Advance minimum epochs past later precommits for later commits to be valid
-	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay + abi.ChainEpoch(1)
+	proveTime := v.GetEpoch() + miner.PreCommitChallengeDelay() + abi.ChainEpoch(1)
 	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, dlInfo.Close)
 	// Assert that precommit should not yet be cleaned up. This makes fixing this test easier if parameters change.
-	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration[sealProof]+miner.ExpiredPreCommitCleanUpDelay)
+	require.True(t, proveTime < earlyPreCommitTime+miner.MaxProveCommitDuration()[sealProof]+miner.ExpiredPreCommitCleanUpDelay())
 	// Assert that we have a valid aggregate batch size
 	aggSectorsCount, err := sectorNosBf.Count()
 	require.NoError(t, err)
@@ -645,7 +645,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
@@ -710,7 +710,7 @@ func TestAggregateBadSender(t *testing.T) {
 	//
 
 	// advance time to max seal duration
-	proveTime := preCommitTime + miner.MaxProveCommitDuration[sealProof]
+	proveTime := preCommitTime + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 	v, err = v.WithEpoch(proveTime)
 	require.NoError(t, err)
@@ -754,7 +754,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	//
 
 	// advance time to max seal duration
-	proveTime := preCommitTime + miner.MaxProveCommitDuration[sealProof]
+	proveTime := preCommitTime + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 	v, err = v.WithEpoch(proveTime)
 
@@ -800,7 +800,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
 	// advance time to max seal duration
-	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
@@ -887,7 +887,7 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 				SealedCID:     sealedCid,
 				SealRandEpoch: v.GetEpoch() - 1,
 				DealIDs:       nil,
-				Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+				Expiration:    v.GetEpoch() + miner.MinSectorExpiration() + miner.MaxProveCommitDuration()[sealProof] + 100,
 			}
 			sectorIndex++
 		}

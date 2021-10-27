@@ -13,11 +13,11 @@ import (
 
 // Returns deadline-related calculations for a deadline in some proving period and the current epoch.
 func NewDeadlineInfo(periodStart abi.ChainEpoch, deadlineIdx uint64, currEpoch abi.ChainEpoch) *dline.Info {
-	return dline.NewInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines, WPoStProvingPeriod, WPoStChallengeWindow, WPoStChallengeLookback, FaultDeclarationCutoff)
+	return dline.NewInfo(periodStart, deadlineIdx, currEpoch, WPoStPeriodDeadlines(), WPoStProvingPeriod(), WPoStChallengeWindow(), WPoStChallengeLookback(), FaultDeclarationCutoff())
 }
 
 func QuantSpecForDeadline(di *dline.Info) builtin.QuantSpec {
-	return builtin.NewQuantSpec(WPoStProvingPeriod, di.Last())
+	return builtin.NewQuantSpec(WPoStProvingPeriod(), di.Last())
 }
 
 // FindSector returns the deadline and partition index for a sector number.
@@ -66,7 +66,7 @@ func deadlineIsMutable(provingPeriodStart abi.ChainEpoch, dlIdx uint64, currentE
 	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
 	// Ensure that the current epoch is at least one challenge window before
 	// that deadline opens.
-	return currentEpoch < dlInfo.Open-WPoStChallengeWindow
+	return currentEpoch < dlInfo.Open-WPoStChallengeWindow()
 }
 
 // Returns true if optimistically accepted posts submitted to the given deadline
@@ -81,7 +81,7 @@ func deadlineAvailableForOptimisticPoStDispute(provingPeriodStart abi.ChainEpoch
 	}
 	dlInfo := NewDeadlineInfo(provingPeriodStart, dlIdx, currentEpoch).NextNotElapsed()
 
-	return !dlInfo.IsOpen() && currentEpoch < (dlInfo.Close-WPoStProvingPeriod)+WPoStDisputeWindow
+	return !dlInfo.IsOpen() && currentEpoch < (dlInfo.Close-WPoStProvingPeriod())+WPoStDisputeWindow()
 }
 
 // Returns true if the given deadline may compacted in the current epoch.
@@ -100,8 +100,8 @@ func deadlineAvailableForCompaction(provingPeriodStart abi.ChainEpoch, dlIdx uin
 // the offset implied by the proving period. This works correctly even for the state
 // of a miner actor without an active deadline cron
 func NewDeadlineInfoFromOffsetAndEpoch(periodStartSeed abi.ChainEpoch, currEpoch abi.ChainEpoch) *dline.Info {
-	q := builtin.NewQuantSpec(WPoStProvingPeriod, periodStartSeed)
+	q := builtin.NewQuantSpec(WPoStProvingPeriod(), periodStartSeed)
 	currentPeriodStart := q.QuantizeDown(currEpoch)
-	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow) % WPoStPeriodDeadlines
+	currentDeadlineIdx := uint64((currEpoch-currentPeriodStart)/WPoStChallengeWindow()) % WPoStPeriodDeadlines()
 	return NewDeadlineInfo(currentPeriodStart, currentDeadlineIdx, currEpoch)
 }

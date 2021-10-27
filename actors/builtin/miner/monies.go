@@ -11,50 +11,114 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
-// Projection period of expected sector block reward for deposit required to pre-commit a sector.
-// This deposit is lost if the pre-commitment is not timely followed up by a commitment proof.
-var PreCommitDepositFactor = 20 // PARAM_SPEC
-var PreCommitDepositProjectionPeriod = abi.ChainEpoch(PreCommitDepositFactor) * builtin.EpochsInDay
+type MoniesPolicy struct {
+	// Projection period of expected sector block reward for deposit required to pre-commit a sector.
+	// This deposit is lost if the pre-commitment is not timely followed up by a commitment proof.
+	PreCommitDepositFactor int64
 
-// Projection period of expected sector block rewards for storage pledge required to commit a sector.
-// This pledge is lost if a sector is terminated before its full committed lifetime.
-var InitialPledgeFactor = 20 // PARAM_SPEC
-var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builtin.EpochsInDay
+	// Projection period of expected sector block rewards for storage pledge required to commit a sector.
+	// This pledge is lost if a sector is terminated before its full committed lifetime.
+	InitialPledgeFactor int64
+
+	// Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
+	// This pledge is lost if a sector is terminated before its full committed lifetime.
+	InitialPledgeLockTarget builtin.BigFrac
+
+	// Projection period of expected daily sector block reward penalised when a fault is continued after initial detection.
+	// This guarantees that a miner pays back at least the expected block reward earned since the last successful PoSt.
+	// The network conservatively assumes the sector was faulty since the last time it was proven.
+	// This penalty is currently overly punitive for continued faults.
+	// FF = BR(t, ContinuedFaultProjectionPeriod)
+	ContinuedFaultFactorNum   uint64
+	ContinuedFaultFactorDenom uint64
+
+	TerminationPenaltyLowerBoundProjectionPeriod abi.ChainEpoch
+
+	// Fraction of assumed block reward penalized when a sector is terminated.
+	TerminationRewardFactor builtin.BigFrac
+
+	// Maximum number of lifetime days penalized when a sector is terminated.
+	TerminationLifetimeCap uint64
+
+	// Base reward for successfully disputing a window posts proofs.
+	BaseRewardForDisputedWindowPoSt big.Int
+
+	// Base penalty for a successful disputed window post proof.
+	BasePenaltyForDisputedWindowPoSt big.Int
+
+	EstimatedSingleProveCommitGasUsage big.Int
+	EstimatedSinglePreCommitGasUsage   big.Int
+	BatchDiscount                      builtin.BigFrac
+
+	BatchBalancer big.Int
+}
+
+var DefaultMoniesPolicy = MoniesPolicy{
+	20,
+	20,
+	builtin.BigFrac{
+		Numerator:   big.NewInt(3),
+		Denominator: big.NewInt(10),
+	},
+	351,
+	100,
+	(builtin.DefaultNetworkPolicy.EpochsInDay() * 35) / 10,
+	builtin.BigFrac{
+		Numerator:   big.NewInt(1),
+		Denominator: big.NewInt(2),
+	},
+	140,
+	big.Mul(big.NewInt(4), builtin.TokenPrecision),
+	big.Mul(big.NewInt(20), builtin.TokenPrecision),
+	big.NewInt(49299973),
+	big.NewInt(16433324),
+	builtin.BigFrac{
+		Numerator:   big.NewInt(1),
+		Denominator: big.NewInt(20),
+	},
+	big.Mul(big.NewInt(5), builtin.OneNanoFIL)}
+
+var CurrentMoniesPolicy = DefaultMoniesPolicy
+
+func BaseRewardForDisputedWindowPoSt() big.Int {
+	return CurrentMoniesPolicy.BaseRewardForDisputedWindowPoSt
+}
+
+func BatchBalancer() big.Int {
+	return CurrentMoniesPolicy.BatchBalancer
+}
+func InitialPledgeFactor() int64 {
+	return CurrentMoniesPolicy.InitialPledgeFactor
+}
+func TerminationLifetimeCap() uint64 {
+	return CurrentMoniesPolicy.TerminationLifetimeCap
+}
+func TerminationRewardFactor() builtin.BigFrac {
+	return CurrentMoniesPolicy.TerminationRewardFactor
+}
+
+func PreCommitDepositProjectionPeriod() abi.ChainEpoch {
+	return abi.ChainEpoch(CurrentMoniesPolicy.PreCommitDepositFactor) * builtin.EpochsInDay()
+}
+
+func InitialPledgeProjectionPeriod() abi.ChainEpoch {
+	return abi.ChainEpoch(CurrentMoniesPolicy.InitialPledgeFactor) * builtin.EpochsInDay()
+}
 
 // Cap on initial pledge requirement for sectors.
 // The target is 1 FIL (10**18 attoFIL) per 32GiB.
 // This does not divide evenly, so the result is fractionally smaller.
 var InitialPledgeMaxPerByte = big.Div(big.NewInt(1e18), big.NewInt(32<<30))
 
-// Multiplier of share of circulating money supply for consensus pledge required to commit a sector.
-// This pledge is lost if a sector is terminated before its full committed lifetime.
-var InitialPledgeLockTarget = builtin.BigFrac{
-	Numerator:   big.NewInt(3), // PARAM_SPEC
-	Denominator: big.NewInt(10),
+func ContinuedFaultProjectionPeriod() abi.ChainEpoch {
+	return abi.ChainEpoch((uint64(builtin.EpochsInDay()) * CurrentMoniesPolicy.ContinuedFaultFactorNum) / CurrentMoniesPolicy.ContinuedFaultFactorDenom)
 }
-
-// Projection period of expected daily sector block reward penalised when a fault is continued after initial detection.
-// This guarantees that a miner pays back at least the expected block reward earned since the last successful PoSt.
-// The network conservatively assumes the sector was faulty since the last time it was proven.
-// This penalty is currently overly punitive for continued faults.
-// FF = BR(t, ContinuedFaultProjectionPeriod)
-var ContinuedFaultFactorNum = 351 // PARAM_SPEC
-var ContinuedFaultFactorDenom = 100
-var ContinuedFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * ContinuedFaultFactorNum) / ContinuedFaultFactorDenom)
-
-var TerminationPenaltyLowerBoundProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * 35) / 10) // PARAM_SPEC
 
 // FF + 2BR
-var InvalidWindowPoStProjectionPeriod = abi.ChainEpoch(ContinuedFaultProjectionPeriod + 2*builtin.EpochsInDay) // PARAM_SPEC
-
-// Fraction of assumed block reward penalized when a sector is terminated.
-var TerminationRewardFactor = builtin.BigFrac{ // PARAM_SPEC
-	Numerator:   big.NewInt(1),
-	Denominator: big.NewInt(2),
+// TODO: Do we need configure it?
+func InvalidWindowPoStProjectionPeriod() abi.ChainEpoch {
+	return ContinuedFaultProjectionPeriod() + 2*builtin.EpochsInDay()
 }
-
-// Maximum number of lifetime days penalized when a sector is terminated.
-const TerminationLifetimeCap = 140 // PARAM_SPEC
 
 // Multiplier of whole per-winner rewards for a consensus fault penalty.
 const ConsensusFaultFactor = 5
@@ -62,11 +126,6 @@ const ConsensusFaultFactor = 5
 // Fraction of total reward (block reward + gas reward) to be locked up as of V6
 var LockedRewardFactorNum = big.NewInt(75)
 var LockedRewardFactorDenom = big.NewInt(100)
-
-// Base reward for successfully disputing a window posts proofs.
-var BaseRewardForDisputedWindowPoSt = big.Mul(big.NewInt(4), builtin.TokenPrecision) // PARAM_SPEC
-// Base penalty for a successful disputed window post proof.
-var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), builtin.TokenPrecision) // PARAM_SPEC
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
@@ -100,14 +159,14 @@ func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstima
 // It is a projection of the expected reward earned by the sector.
 // Also known as "FF(t)"
 func PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, ContinuedFaultProjectionPeriod)
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, ContinuedFaultProjectionPeriod())
 }
 
 // Lower bound on the penalty for a terminating sector.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "SP(t)"
 func PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, TerminationPenaltyLowerBoundProjectionPeriod)
+	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, CurrentMoniesPolicy.TerminationPenaltyLowerBoundProjectionPeriod)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
@@ -120,7 +179,7 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 	replacedSectorAge abi.ChainEpoch) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d) * terminationRewardFactor * min(SectorAgeInDays, 140))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
-	lifetimeCap := abi.ChainEpoch(TerminationLifetimeCap) * builtin.EpochsInDay
+	lifetimeCap := abi.ChainEpoch(CurrentMoniesPolicy.TerminationLifetimeCap) * builtin.EpochsInDay()
 	cappedSectorAge := minEpoch(sectorAge, lifetimeCap)
 	// expected reward for lifetime of new sector (epochs*AttoFIL/day)
 	expectedReward := big.Mul(dayReward, big.NewInt(int64(cappedSectorAge)))
@@ -128,7 +187,7 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 	relevantReplacedAge := minEpoch(replacedSectorAge, lifetimeCap-cappedSectorAge)
 	expectedReward = big.Add(expectedReward, big.Mul(replacedDayReward, big.NewInt(int64(relevantReplacedAge))))
 
-	penalizedReward := big.Mul(expectedReward, TerminationRewardFactor.Numerator)
+	penalizedReward := big.Mul(expectedReward, CurrentMoniesPolicy.TerminationRewardFactor.Numerator)
 
 	return big.Max(
 		PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
@@ -136,21 +195,21 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 			twentyDayRewardAtActivation,
 			big.Div(
 				penalizedReward,
-				big.Mul(big.NewInt(builtin.EpochsInDay), TerminationRewardFactor.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
+				big.Mul(big.NewInt(int64(builtin.EpochsInDay())), CurrentMoniesPolicy.TerminationRewardFactor.Denominator)))) // (epochs*AttoFIL/day -> AttoFIL)
 }
 
 // The penalty for optimistically proving a sector with an invalid window PoSt.
 func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Add(
-		ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod),
-		BasePenaltyForDisputedWindowPoSt,
+		ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod()),
+		CurrentMoniesPolicy.BasePenaltyForDisputedWindowPoSt,
 	)
 }
 
 // Computes the PreCommit deposit given sector qa weight and current network conditions.
 // PreCommit Deposit = BR(PreCommitDepositProjectionPeriod)
 func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaSectorPower, PreCommitDepositProjectionPeriod)
+	return ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaSectorPower, PreCommitDepositProjectionPeriod())
 }
 
 // Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
@@ -165,10 +224,10 @@ func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate smoothing.F
 // LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
 // PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, circulatingSupply abi.TokenAmount) abi.TokenAmount {
-	ipBase := ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaPower, InitialPledgeProjectionPeriod)
+	ipBase := ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaPower, InitialPledgeProjectionPeriod())
 
-	lockTargetNum := big.Mul(InitialPledgeLockTarget.Numerator, circulatingSupply)
-	lockTargetDenom := InitialPledgeLockTarget.Denominator
+	lockTargetNum := big.Mul(CurrentMoniesPolicy.InitialPledgeLockTarget.Numerator, circulatingSupply)
+	lockTargetDenom := CurrentMoniesPolicy.InitialPledgeLockTarget.Denominator
 	pledgeShareNum := qaPower
 	networkQAPower := networkQAPowerEstimate.Estimate()
 	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
@@ -199,7 +258,7 @@ func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
 func ConsensusFaultPenalty(thisEpochReward abi.TokenAmount) abi.TokenAmount {
 	return big.Div(
 		big.Mul(thisEpochReward, big.NewInt(ConsensusFaultFactor)),
-		big.NewInt(builtin.ExpectedLeadersPerEpoch),
+		big.NewInt(builtin.ExpectedLeadersPerEpoch()),
 	)
 }
 
@@ -207,28 +266,20 @@ func ConsensusFaultPenalty(thisEpochReward abi.TokenAmount) abi.TokenAmount {
 func LockedRewardFromReward(reward abi.TokenAmount) (abi.TokenAmount, *VestSpec) {
 	// Locked amount is 75% of award.
 	lockAmount := big.Div(big.Mul(reward, LockedRewardFactorNum), LockedRewardFactorDenom)
-	return lockAmount, &RewardVestingSpec
+	return lockAmount, RewardVestingSpec()
 }
-
-var EstimatedSingleProveCommitGasUsage = big.NewInt(49299973) // PARAM_SPEC
-var EstimatedSinglePreCommitGasUsage = big.NewInt(16433324)   // PARAM_SPEC
-var BatchDiscount = builtin.BigFrac{                          // PARAM_SPEC
-	Numerator:   big.NewInt(1),
-	Denominator: big.NewInt(20),
-}
-var BatchBalancer = big.Mul(big.NewInt(5), builtin.OneNanoFIL) // PARAM_SPEC
 
 func AggregateProveCommitNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
-	return aggregateNetworkFee(aggregateSize, EstimatedSingleProveCommitGasUsage, baseFee)
+	return aggregateNetworkFee(aggregateSize, CurrentMoniesPolicy.EstimatedSingleProveCommitGasUsage, baseFee)
 }
 
 func AggregatePreCommitNetworkFee(aggregateSize int, baseFee abi.TokenAmount) abi.TokenAmount {
-	return aggregateNetworkFee(aggregateSize, EstimatedSinglePreCommitGasUsage, baseFee)
+	return aggregateNetworkFee(aggregateSize, CurrentMoniesPolicy.EstimatedSinglePreCommitGasUsage, baseFee)
 }
 
 func aggregateNetworkFee(aggregateSize int, gasUsage big.Int, baseFee abi.TokenAmount) abi.TokenAmount {
-	effectiveGasFee := big.Max(baseFee, BatchBalancer)
-	networkFeeNum := big.Product(effectiveGasFee, gasUsage, big.NewInt(int64(aggregateSize)), BatchDiscount.Numerator)
-	networkFee := big.Div(networkFeeNum, BatchDiscount.Denominator)
+	effectiveGasFee := big.Max(baseFee, CurrentMoniesPolicy.BatchBalancer)
+	networkFeeNum := big.Product(effectiveGasFee, gasUsage, big.NewInt(int64(aggregateSize)), CurrentMoniesPolicy.BatchDiscount.Numerator)
+	networkFee := big.Div(networkFeeNum, CurrentMoniesPolicy.BatchDiscount.Denominator)
 	return networkFee
 }

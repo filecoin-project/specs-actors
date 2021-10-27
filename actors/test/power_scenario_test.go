@@ -89,7 +89,7 @@ func TestOnEpochTickEnd(t *testing.T) {
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
 		DealIDs:       nil,
-		Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
+		Expiration:    v.GetEpoch() + miner.MinSectorExpiration() + miner.MaxProveCommitDuration()[sealProof] + 100,
 	}
 	vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 

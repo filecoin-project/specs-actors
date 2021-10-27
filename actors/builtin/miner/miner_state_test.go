@@ -667,7 +667,7 @@ func TestSectorAssignment(t *testing.T) {
 	sectorSize, err := abi.RegisteredSealProof_StackedDrg32GiBV1_1.SectorSize()
 	require.NoError(t, err)
 
-	openDeadlines := miner.WPoStPeriodDeadlines - 2
+	openDeadlines := miner.WPoStPeriodDeadlines() - 2
 
 	partitionsPerDeadline := uint64(3)
 	noSectors := int(partitionSectors * openDeadlines * partitionsPerDeadline)

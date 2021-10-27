@@ -2,41 +2,82 @@ package builtin
 
 import (
 	"fmt"
+	"github.com/filecoin-project/go-state-types/abi"
 
 	"github.com/filecoin-project/go-state-types/big"
 )
 
-// PARAM_SPEC
-// The duration of a chain epoch.
-// Motivation: It guarantees that a block is propagated and WinningPoSt can be successfully done in time all supported miners.
-// Usage: It is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
-// TODO: In lieu of a real configuration mechanism for this value, we'd like to make it a var so that implementations
-// can override it at runtime. Doing so requires changing all the static references to it in this repo to go through
-// late-binding function calls, or they'll see the "wrong" value.
-// https://github.com/filecoin-project/specs-actors/issues/353
-// If EpochDurationSeconds is changed, update `BaselineExponent`, `lambda`, and // `expLamSubOne` in ./reward/reward_logic.go
-// You can re-calculate these constants by changing the epoch duration in ./reward/reward_calc.py and running it.
-const EpochDurationSeconds = 30
 const SecondsInHour = 60 * 60
 const SecondsInDay = 24 * SecondsInHour
-const EpochsInHour = SecondsInHour / EpochDurationSeconds
-const EpochsInDay = 24 * EpochsInHour
-const EpochsInYear = 365 * EpochsInDay
 
-// PARAM_SPEC
-// Expected number of block quality in an epoch (e.g. 1 block with block quality 5, or 5 blocks with quality 1)
-// Motivation: It ensures that there is enough on-chain throughput
-// Usage: It is used to calculate the block reward.
-var ExpectedLeadersPerEpoch = int64(5)
+type NetworkPolicy struct {
+	// The duration of a chain epoch.
+	// Motivation: It guarantees that a block is propagated and WinningPoSt can be successfully done in time all supported miners.
+	// Usage: It is used for deriving epoch-denominated periods that are more naturally expressed in clock time.
+	epochDurationSeconds uint64
+	epochsInHour         abi.ChainEpoch
+	epochsInDay          abi.ChainEpoch
+	epochsInYear         abi.ChainEpoch
 
-func init() {
-	//noinspection GoBoolExpressions
-	if SecondsInHour%EpochDurationSeconds != 0 {
+	// Expected number of block quality in an epoch (e.g. 1 block with block quality 5, or 5 blocks with quality 1)
+	// Motivation: It ensures that there is enough on-chain throughput
+	// Usage: It is used to calculate the block reward.
+	ExpectedLeadersPerEpoch int64
+}
+
+func MakeNetworkPolicy(epochDurationSeconds uint64, expectedLeadersPerEpoch int64) NetworkPolicy {
+	if SecondsInHour%epochDurationSeconds != 0 {
 		// This even division is an assumption that other code might unwittingly make.
 		// Don't rely on it on purpose, though.
 		// While we're pretty sure everything will still work fine, we're safer maintaining this invariant anyway.
-		panic(fmt.Sprintf("epoch duration %d does not evenly divide one hour (%d)", EpochDurationSeconds, SecondsInHour))
+		panic(fmt.Sprintf("epoch duration %d does not evenly divide one hour (%d)", epochDurationSeconds, SecondsInHour))
 	}
+
+	n := NetworkPolicy{
+		ExpectedLeadersPerEpoch: expectedLeadersPerEpoch,
+	}
+	n.SetEpochDurationSeconds(epochDurationSeconds)
+
+	return n
+}
+func (np *NetworkPolicy) SetEpochDurationSeconds(epochDurationSeconds uint64) {
+	np.epochDurationSeconds = epochDurationSeconds
+	np.epochsInHour = SecondsInHour / abi.ChainEpoch(np.epochDurationSeconds)
+	np.epochsInDay = 24 * np.epochsInHour
+	np.epochsInYear = 365 * np.epochsInDay
+}
+func (np NetworkPolicy) EpochDurationSeconds() uint64 {
+	return np.epochDurationSeconds
+}
+func (np NetworkPolicy) EpochsInHour() abi.ChainEpoch {
+	return np.epochsInHour
+}
+func (np NetworkPolicy) EpochsInDay() abi.ChainEpoch {
+	return np.epochsInDay
+}
+func (np NetworkPolicy) EpochsInYear() abi.ChainEpoch {
+	return np.epochsInYear
+}
+
+var DefaultNetworkPolicy = MakeNetworkPolicy(30, 5)
+
+var CurrentNetworkPolicy = DefaultNetworkPolicy
+
+func EpochDurationSeconds() uint64 {
+	return CurrentNetworkPolicy.EpochDurationSeconds()
+}
+func EpochsInHour() abi.ChainEpoch {
+	return CurrentNetworkPolicy.EpochsInHour()
+}
+func EpochsInDay() abi.ChainEpoch {
+	return CurrentNetworkPolicy.EpochsInDay()
+}
+func EpochsInYear() abi.ChainEpoch {
+	return CurrentNetworkPolicy.EpochsInYear()
+}
+
+func ExpectedLeadersPerEpoch() int64 {
+	return CurrentNetworkPolicy.ExpectedLeadersPerEpoch
 }
 
 // Number of token units in an abstract "FIL" token.

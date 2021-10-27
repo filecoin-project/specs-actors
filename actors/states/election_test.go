@@ -108,17 +108,17 @@ func TestMinerEligibleAtLookback(t *testing.T) {
 			eligible:        true,
 		}, {
 			// with enough miners above minimum, power must be at or above consensus min
-			consensusMiners: power.ConsensusMinerMinMiners,
+			consensusMiners: power.ConsensusMinerMinMiners(),
 			minerProof:      windowPoStProofType,
 			power:           big.Sub(pow32GiBMin, big.NewInt(1)),
 			eligible:        false,
 		}, {
-			consensusMiners: power.ConsensusMinerMinMiners,
+			consensusMiners: power.ConsensusMinerMinMiners(),
 			minerProof:      windowPoStProofType,
 			power:           pow32GiBMin,
 			eligible:        true,
 		}, {
-			consensusMiners: power.ConsensusMinerMinMiners,
+			consensusMiners: power.ConsensusMinerMinMiners(),
 			minerProof:      abi.RegisteredPoStProof_StackedDrgWindow64GiBV1,
 			power:           pow64GiBMin,
 			eligible:        true,

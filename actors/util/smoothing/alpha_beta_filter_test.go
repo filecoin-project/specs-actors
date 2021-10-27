@@ -103,10 +103,10 @@ func TestCumSumRatioProjection(t *testing.T) {
 		thousandsOfEiBs := big.Mul(abi.NewStoragePower(1e18), big.NewInt(2e4))
 
 		oneBytePerEpochVelocity := big.NewInt(1)
-		tenPiBsPerDayVelocity := big.Div(big.NewInt(10<<50), big.NewInt(int64(builtin.EpochsInDay)))
-		oneEiBPerDayVelocity := big.Div(big.NewInt(1<<60), big.NewInt(int64(builtin.EpochsInDay)))
+		tenPiBsPerDayVelocity := big.Div(big.NewInt(10<<50), big.NewInt(int64(builtin.EpochsInDay())))
+		oneEiBPerDayVelocity := big.Div(big.NewInt(1<<60), big.NewInt(int64(builtin.EpochsInDay())))
 
-		delta := abi.ChainEpoch(builtin.EpochsInDay)
+		delta := builtin.EpochsInDay()
 		t0 := abi.ChainEpoch(0)
 		{
 			// low power low velocity

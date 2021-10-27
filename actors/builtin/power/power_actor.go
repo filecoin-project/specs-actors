@@ -288,7 +288,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 
 		arr, found, err := mmap.Get(abi.AddrKey(minerAddr))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get get seal verify infos at addr %s", minerAddr)
-		if found && arr.Length() >= MaxMinerProveCommitsPerEpoch {
+		if found && arr.Length() >= uint64(MaxMinerProveCommitsPerEpoch()) {
 			rt.Abortf(ErrTooManyProveCommits, "miner %s attempting to prove commit over %d sectors in epoch", minerAddr, MaxMinerProveCommitsPerEpoch)
 		}
 

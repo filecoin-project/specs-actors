@@ -55,7 +55,7 @@ func (dm DeadlineSectorMap) Count() (partitions, sectors uint64, err error) {
 
 // Add records the given sector bitfield at the given deadline/partition index.
 func (dm DeadlineSectorMap) Add(dlIdx, partIdx uint64, sectorNos bitfield.BitField) error {
-	if dlIdx >= WPoStPeriodDeadlines {
+	if dlIdx >= WPoStPeriodDeadlines() {
 		return xerrors.Errorf("invalid deadline %d", dlIdx)
 	}
 	dl, ok := dm[dlIdx]

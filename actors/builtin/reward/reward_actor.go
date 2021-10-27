@@ -99,7 +99,7 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	var st State
 	rt.StateTransaction(&st, func() {
 		blockReward := big.Mul(st.ThisEpochReward, big.NewInt(params.WinCount))
-		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch))
+		blockReward = big.Div(blockReward, big.NewInt(builtin.ExpectedLeadersPerEpoch()))
 		totalReward = big.Add(blockReward, params.GasReward)
 		currBalance := rt.CurrentBalance()
 		if totalReward.GreaterThan(currBalance) {

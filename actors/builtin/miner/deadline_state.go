@@ -23,7 +23,7 @@ type Deadlines struct {
 	// Note: we could inline part of the deadline struct (e.g., active/assigned sectors)
 	// to make new sector assignment cheaper. At the moment, assigning a sector requires
 	// loading all deadlines to figure out where best to assign new sectors.
-	Due [WPoStPeriodDeadlines]cid.Cid // []Deadline
+	Due []cid.Cid // []Deadline
 }
 
 // Deadline holds the state for all sectors due at a specific deadline.
@@ -103,6 +103,7 @@ const DeadlineOptimisticPoStSubmissionsAmtBitwidth = 2
 
 func ConstructDeadlines(emptyDeadlineCid cid.Cid) *Deadlines {
 	d := new(Deadlines)
+	d.Due = make([]cid.Cid, WPoStPeriodDeadlines())
 	for i := range d.Due {
 		d.Due[i] = emptyDeadlineCid
 	}

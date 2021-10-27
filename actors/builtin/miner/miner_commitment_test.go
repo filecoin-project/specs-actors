@@ -75,8 +75,8 @@ func TestCommitments(t *testing.T) {
 			actor.constructAndVerify(rt)
 			dlInfo := actor.deadline(rt)
 
-			expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // on deadline boundary but > 180 days
-			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+			expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // on deadline boundary but > 180 days
+			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
 			dealLifespan := expiration - proveCommitEpoch
 			dealSpace := test.dealSize + test.verifiedDealSize
 			dealWeight := big.Mul(big.NewIntUnsigned(test.dealSize), big.NewInt(int64(dealLifespan)))
@@ -110,7 +110,7 @@ func TestCommitments(t *testing.T) {
 			assert.Equal(t, expectedDeposit, st.PreCommitDeposits)
 
 			expirations := actor.collectPrecommitExpirations(rt, st)
-			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration()[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay())
 			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: {uint64(test.sectorNo)}}, expirations)
 		})
 	}
@@ -126,7 +126,7 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
-		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, true)
@@ -145,7 +145,7 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
-		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large to fit in sector", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
@@ -166,7 +166,7 @@ func TestCommitments(t *testing.T) {
 		actor.constructAndVerify(rt)
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
-		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 
 		st := getState(rt)
 		st.FeeDebt = abi.NewTokenAmount(9999)
@@ -193,7 +193,7 @@ func TestCommitments(t *testing.T) {
 		st := getState(rt)
 		assert.True(t, st.DeadlineCronActive)
 		// Good commitment.
-		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 		actor.preCommitSector(rt, actor.makePreCommit(101, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		// Duplicate pre-commit sector ID
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "already allocated", func() {
@@ -237,14 +237,14 @@ func TestCommitments(t *testing.T) {
 
 		// Expires too early
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			earlyExpiration := abi.ChainEpoch(miner.MinSectorExpiration - builtin.EpochsInDay)
+			earlyExpiration := abi.ChainEpoch(miner.MinSectorExpiration() - builtin.EpochsInDay())
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, earlyExpiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
 
 		// Expires before min duration + max seal duration
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "must exceed", func() {
-			expiration := rt.Epoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[actor.sealProofType] - 1
+			expiration := rt.Epoch() + miner.MinSectorExpiration() + miner.MaxProveCommitDuration()[actor.sealProofType] - 1
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
@@ -252,7 +252,7 @@ func TestCommitments(t *testing.T) {
 		// Errors when expiry too far in the future
 		rt.SetEpoch(precommitEpoch)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "invalid expiration", func() {
-			expiration := deadline.PeriodEnd() + miner.WPoStProvingPeriod*(miner.MaxSectorExpirationExtension/miner.WPoStProvingPeriod+1)
+			expiration := deadline.PeriodEnd() + miner.WPoStProvingPeriod()*(miner.MaxSectorExpirationExtension()/miner.WPoStProvingPeriod()+1)
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
 		rt.Reset()
@@ -264,7 +264,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Seal randomness challenge too far in past
-		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality - miner.MaxProveCommitDuration[actor.sealProofType] - 1
+		tooOldChallengeEpoch := precommitEpoch - miner.ChainFinality() - miner.MaxProveCommitDuration()[actor.sealProofType] - 1
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too old", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, tooOldChallengeEpoch, expiration, nil), preCommitConf{}, false)
 		})
@@ -347,7 +347,7 @@ func TestCommitments(t *testing.T) {
 		for proof, limit := range dealLimits {
 			// attempt to pre-commmit a sector with too many deals
 			rt, actor, deadline := setup(proof)
-			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+			expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 			precommit := actor.makePreCommit(sectorNo, rt.Epoch()-1, expiration, makeDealIDs(limit+1))
 			rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "too many deals for sector", func() {
 				actor.preCommitSector(rt, precommit, preCommitConf{}, true)
@@ -375,7 +375,7 @@ func TestCommitments(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		deadline := actor.deadline(rt)
 		challengeEpoch := precommitEpoch - 1
-		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		expiration := deadline.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 		{
 			// After version 7, only V1_1 accepted
 			rt.SetNetworkVersion(network.Version8)
@@ -405,7 +405,7 @@ func TestCommitments(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		// add 1000 tokens that vest immediately
 		st := getState(rt)
@@ -520,8 +520,8 @@ func TestPreCommitBatch(t *testing.T) {
 				sectorNos[i] = abi.SectorNumber(100 + i)
 				sectorNoAsUints[i] = uint64(100 + i)
 			}
-			sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // on deadline boundary but > 180 days
-			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+			sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // on deadline boundary but > 180 days
+			proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
 			dealLifespan := sectorExpiration - proveCommitEpoch
 
 			sectors := make([]miner0.SectorPreCommitInfo, batchSize)
@@ -593,7 +593,7 @@ func TestPreCommitBatch(t *testing.T) {
 			assert.Equal(t, totalDeposit, st.PreCommitDeposits)
 
 			expirations := actor.collectPrecommitExpirations(rt, st)
-			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay)
+			expectedPrecommitExpiration := st.QuantSpecEveryDeadline().QuantizeUp(precommitEpoch + miner.MaxProveCommitDuration()[actor.sealProofType] + miner.ExpiredPreCommitCleanUpDelay())
 			assert.Equal(t, map[abi.ChainEpoch][]uint64{expectedPrecommitExpiration: sectorNoAsUints}, expirations)
 		})
 	}
@@ -611,7 +611,7 @@ func TestPreCommitBatch(t *testing.T) {
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
 
-		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 		sectors := []miner0.SectorPreCommitInfo{
 			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 			*actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
@@ -633,7 +633,7 @@ func TestPreCommitBatch(t *testing.T) {
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
 
-		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 		sectors := []miner0.SectorPreCommitInfo{
 			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
 			*actor.makePreCommit(101, precommitEpoch-1, sectorExpiration, nil),
@@ -661,8 +661,8 @@ func TestProveCommit(t *testing.T) {
 		// Make a good commitment for the proof to target.
 		// Use the max sector number to make sure everything works.
 		sectorNo := abi.SectorNumber(abi.MaxSectorNumber)
-		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 		// Fill the sector with verified deals
 		sectorWeight := big.Mul(big.NewInt(int64(actor.sectorSize)), big.NewInt(int64(expiration-proveCommitEpoch)))
 		dealWeight := big.Zero()
@@ -769,7 +769,7 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
 
-		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod
+		sectorExpiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod()
 
 		sectors := []miner0.SectorPreCommitInfo{
 			*actor.makePreCommit(100, precommitEpoch-1, sectorExpiration, nil),
@@ -779,7 +779,7 @@ func TestProveCommit(t *testing.T) {
 
 		dealSpace := uint64(32 << 30)
 		dealWeight := big.Zero()
-		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
 		dealLifespan := sectorExpiration - proveCommitEpoch
 		verifiedDealWeight := big.Mul(big.NewIntUnsigned(dealSpace), big.NewInt(int64(dealLifespan)))
 
@@ -862,32 +862,32 @@ func TestProveCommit(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
+		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod(), []abi.DealID{1})
 		precommit := actor.preCommitSector(rt, params, preCommitConf{}, true)
 
 		// Sector pre-commitment missing.
-		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay() + 1)
 		rt.ExpectAbort(exitcode.ErrNotFound, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo+1), proveCommitConf{})
 		})
 		rt.Reset()
 
 		// Too late.
-		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[precommit.Info.SealProof] + 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration()[precommit.Info.SealProof] + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
 		})
 		rt.Reset()
 
 		// Too early.
-		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay - 1)
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay() - 1)
 		rt.ExpectAbort(exitcode.ErrForbidden, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
 		})
 		rt.Reset()
 
 		// Set the right epoch for all following tests
-		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay() + 1)
 
 		// Invalid deals (market ActivateDeals aborts)
 		verifyDealsExit := map[abi.SectorNumber]exitcode.ExitCode{
@@ -939,7 +939,7 @@ func TestProveCommit(t *testing.T) {
 		sectors := actor.commitAndProveSectors(rt, 1, defaultSectorExpiration, nil, true)
 
 		// preecommit another sector so we may prove it
-		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod() + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		params := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, nil)
@@ -952,7 +952,7 @@ func TestProveCommit(t *testing.T) {
 		st := getState(rt)
 		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
 
-		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration()[actor.sealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 		})
@@ -972,7 +972,7 @@ func TestProveCommit(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		// make two precommits
-		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod + periodOffset - 1
+		expiration := defaultSectorExpiration*miner.WPoStProvingPeriod() + periodOffset - 1
 		precommitEpoch := rt.Epoch() + 1
 		rt.SetEpoch(precommitEpoch)
 		paramsA := actor.makePreCommit(actor.nextSectorNo, rt.Epoch()-1, expiration, []abi.DealID{1})
@@ -984,7 +984,7 @@ func TestProveCommit(t *testing.T) {
 		sectorNoB := actor.nextSectorNo
 
 		// handle both prove commits in the same epoch
-		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration()[actor.sealProofType] - 1)
 
 		actor.proveCommitSector(rt, preCommitA, makeProveCommit(sectorNoA))
 		actor.proveCommitSector(rt, preCommitB, makeProveCommit(sectorNoB))
@@ -1029,11 +1029,11 @@ func TestProveCommit(t *testing.T) {
 		deadline := actor.deadline(rt)
 
 		sectorNo := abi.SectorNumber(100)
-		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, nil)
+		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod(), nil)
 		precommit := actor.preCommitSector(rt, params, preCommitConf{}, true)
 
 		// precommit at correct epoch
-		rt.SetEpoch(rt.Epoch() + miner.PreCommitChallengeDelay + 1)
+		rt.SetEpoch(rt.Epoch() + miner.PreCommitChallengeDelay() + 1)
 		actor.proveCommitSector(rt, precommit, makeProveCommit(sectorNo))
 
 		// confirm at sector expiration (this probably can't happen)
@@ -1050,7 +1050,7 @@ func TestProveCommit(t *testing.T) {
 
 		// it fails up to the miniumum expiration
 		rt.ClearLogs()
-		rt.SetEpoch(precommit.Info.Expiration - miner.MinSectorExpiration + 1)
+		rt.SetEpoch(precommit.Info.Expiration - miner.MinSectorExpiration() + 1)
 		actor.confirmSectorProofsValid(rt, proveCommitConf{}, precommit)
 		rt.ExpectLogsContain("less than minimum. ignoring")
 		actor.checkState(rt)
@@ -1069,7 +1069,7 @@ func TestProveCommit(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 		sectorNo := abi.SectorNumber(100)
-		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod, []abi.DealID{1})
+		params := actor.makePreCommit(sectorNo, precommitEpoch-1, deadline.PeriodEnd()+defaultSectorExpiration*miner.WPoStProvingPeriod(), []abi.DealID{1})
 		precommit := actor.preCommitSector(rt, params, preCommitConf{}, true)
 
 		// add 1000 tokens that vest immediately
@@ -1084,7 +1084,7 @@ func TestProveCommit(t *testing.T) {
 		rt.ReplaceState(st)
 
 		// Set the right epoch for all following tests
-		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
+		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay() + 1)
 		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
 		proveCommit := makeProveCommit(sectorNo)
@@ -1109,8 +1109,8 @@ func TestAggregateProveCommit(t *testing.T) {
 
 		// Make a good commitment for the proof to target.
 
-		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 		// Fill the sector with verified deals
 		sectorWeight := big.Mul(big.NewInt(int64(actor.sectorSize)), big.NewInt(int64(expiration-proveCommitEpoch)))
 		dealWeight := big.Zero()
@@ -1236,8 +1236,8 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		dlInfo := actor.deadline(rt)
 
 		// Make a good commitment for the proof to target.
-		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay + 1
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		proveCommitEpoch := precommitEpoch + miner.PreCommitChallengeDelay() + 1
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		var precommits []*miner.SectorPreCommitOnChainInfo
 		sectorNosBf := bitfield.New()
@@ -1273,7 +1273,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		var precommits []miner0.SectorPreCommitInfo
 		sectorNosBf := bitfield.New()
@@ -1311,7 +1311,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		var precommits []miner0.SectorPreCommitInfo
 		sectorNosBf := bitfield.New()
@@ -1356,7 +1356,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		var precommits []miner0.SectorPreCommitInfo
 		sectorNosBf := bitfield.New()
@@ -1400,7 +1400,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		rt.SetEpoch(precommitEpoch)
 		actor.constructAndVerify(rt)
 		dlInfo := actor.deadline(rt)
-		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod // something on deadline boundary but > 180 days
+		expiration := dlInfo.PeriodEnd() + defaultSectorExpiration*miner.WPoStProvingPeriod() // something on deadline boundary but > 180 days
 
 		var precommits []miner0.SectorPreCommitInfo
 		sectorNosBf := bitfield.New()

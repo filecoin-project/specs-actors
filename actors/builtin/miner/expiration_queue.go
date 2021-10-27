@@ -418,11 +418,11 @@ func (q ExpirationQueue) RemoveSectors(sectors []*SectorOnChainInfo, faults bitf
 	for _, s := range sectors {
 		remaining[s.SectorNumber] = struct{}{}
 	}
-	faultsMap, err := faults.AllMap(AddressedSectorsMax)
+	faultsMap, err := faults.AllMap(AddressedSectorsMax())
 	if err != nil {
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to expand faults: %w", err)
 	}
-	recoveringMap, err := recovering.AllMap(AddressedSectorsMax)
+	recoveringMap, err := recovering.AllMap(AddressedSectorsMax())
 	if err != nil {
 		return nil, NewPowerPairZero(), xerrors.Errorf("failed to expand recoveries: %w", err)
 	}

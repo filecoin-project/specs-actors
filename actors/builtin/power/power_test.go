@@ -272,7 +272,7 @@ func TestPowerAndPledgeAccounting(t *testing.T) {
 	smallPowerUnit := big.NewInt(1_000_000)
 	require.True(t, smallPowerUnit.LessThan(powerUnit), "power.ConsensusMinerMinPower has changed requiring update to this test")
 	// Subtests implicitly rely on ConsensusMinerMinMiners = 3
-	require.Equal(t, 4, power.ConsensusMinerMinMiners, "power.ConsensusMinerMinMiners has changed requiring update to this test")
+	require.Equal(t, int64(4), power.ConsensusMinerMinMiners(), "power.ConsensusMinerMinMiners has changed requiring update to this test")
 
 	builder := mock.NewBuilder(builtin.StoragePowerActorAddr).
 		WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
@@ -881,16 +881,16 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		}
 
 		// Adding MaxMinerProveCommitsPerEpoch works without error
-		for i := 0; i < power.MaxMinerProveCommitsPerEpoch; i++ {
+		for i := 0; i < int(power.MaxMinerProveCommitsPerEpoch()); i++ {
 			actor.submitPoRepForBulkVerify(rt, miner, sealInfo(i))
 		}
 
 		rt.ExpectAbort(power.ErrTooManyProveCommits, func() {
-			actor.submitPoRepForBulkVerify(rt, miner, sealInfo(power.MaxMinerProveCommitsPerEpoch))
+			actor.submitPoRepForBulkVerify(rt, miner, sealInfo(int(power.MaxMinerProveCommitsPerEpoch())))
 		})
 
 		// Gas only charged for successful submissions
-		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch)
+		rt.ExpectGasCharged(power.GasOnSubmitVerifySeal * power.MaxMinerProveCommitsPerEpoch())
 	})
 
 	t.Run("aborts when miner has no claim", func(t *testing.T) {

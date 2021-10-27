@@ -10,9 +10,9 @@ import (
 func TestCompactionWindow(t *testing.T) {
 	periodStart := abi.ChainEpoch(1024)
 	dlInfo := NewDeadlineInfo(periodStart, 0, 0)
-	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open-WPoStChallengeWindow-1),
+	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open-WPoStChallengeWindow()-1),
 		"compaction is possible up till the blackout period")
-	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open-WPoStChallengeWindow),
+	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open-WPoStChallengeWindow()),
 		"compaction is not possible during the prior window")
 
 	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+10),
@@ -21,15 +21,15 @@ func TestCompactionWindow(t *testing.T) {
 	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close),
 		"compaction is not possible immediately after the window")
 
-	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Last()+WPoStDisputeWindow),
+	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Last()+WPoStDisputeWindow()),
 		"compaction is not possible before the proof challenge period has passed")
 
-	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close+WPoStDisputeWindow),
+	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Close+WPoStDisputeWindow()),
 		"compaction is possible after the proof challenge period has passed")
 
-	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+WPoStProvingPeriod-WPoStChallengeWindow-1),
+	assert.True(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+WPoStProvingPeriod()-WPoStChallengeWindow()-1),
 		"compaction remains possible until the next blackout")
-	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+WPoStProvingPeriod-WPoStChallengeWindow),
+	assert.False(t, deadlineAvailableForCompaction(periodStart, 0, dlInfo.Open+WPoStProvingPeriod()-WPoStChallengeWindow()),
 		"compaction is not possible during the next blackout")
 }
 
@@ -40,8 +40,8 @@ func TestChallengeWindow(t *testing.T) {
 		"proof challenge is not possible while the window is open")
 	assert.True(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close),
 		"proof challenge is possible after the window is closes")
-	assert.True(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow-1),
+	assert.True(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow()-1),
 		"proof challenge is possible until the proof challenge period has passed")
-	assert.False(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow),
+	assert.False(t, deadlineAvailableForOptimisticPoStDispute(periodStart, 0, dlInfo.Close+WPoStDisputeWindow()),
 		"proof challenge is not possible after the proof challenge period has passed")
 }

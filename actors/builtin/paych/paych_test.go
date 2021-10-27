@@ -620,7 +620,7 @@ func TestActor_UpdateChannelStateSettling(t *testing.T) {
 	rt.ExpectValidateCallerAddr(st.From, st.To)
 	rt.Call(actor.Settle, nil)
 
-	expSettlingAt := ep + SettleDelay
+	expSettlingAt := ep + SettleDelay()
 	rt.GetState(&st)
 	require.Equal(t, expSettlingAt, st.SettlingAt)
 	require.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
@@ -717,7 +717,7 @@ func TestActor_Settle(t *testing.T) {
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.Call(actor.Settle, nil)
 
-		expSettlingAt := ep + SettleDelay
+		expSettlingAt := ep + SettleDelay()
 		rt.GetState(&st)
 		assert.Equal(t, expSettlingAt, st.SettlingAt)
 		assert.Equal(t, abi.ChainEpoch(0), st.MinSettleHeight)
@@ -748,7 +748,7 @@ func TestActor_Settle(t *testing.T) {
 
 		// UpdateChannelState to increase MinSettleHeight only
 		ucp := &UpdateChannelStateParams{Sv: *sv}
-		ucp.Sv.MinSettleHeight = (ep + SettleDelay) + 1
+		ucp.Sv.MinSettleHeight = (ep + SettleDelay()) + 1
 
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.ExpectVerifySignature(*ucp.Sv.Signature, st.To, voucherBytes(t, &ucp.Sv), nil)
@@ -765,7 +765,7 @@ func TestActor_Settle(t *testing.T) {
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 		rt.Call(actor.Settle, nil)
 
-		// SettlingAt should = MinSettleHeight, not epoch + SettleDelay.
+		// SettlingAt should = MinSettleHeight, not epoch + SettleDelay().
 		rt.GetState(&newSt)
 		assert.Equal(t, ucp.Sv.MinSettleHeight, newSt.SettlingAt)
 		actor.checkState(rt)
@@ -807,7 +807,7 @@ func TestActor_Collect(t *testing.T) {
 		rt.Call(actor.Settle, nil)
 
 		rt.GetState(&st)
-		require.EqualValues(t, SettleDelay+currEpoch, st.SettlingAt)
+		require.EqualValues(t, SettleDelay()+currEpoch, st.SettlingAt)
 		rt.ExpectValidateCallerAddr(st.From, st.To)
 
 		// "wait" for SettlingAt epoch
@@ -845,7 +845,7 @@ func TestActor_Collect(t *testing.T) {
 				rt.ExpectValidateCallerAddr(st.From, st.To)
 				rt.Call(actor.Settle, nil)
 				rt.GetState(&st)
-				require.Equal(t, SettleDelay+currEpoch, st.SettlingAt)
+				require.Equal(t, SettleDelay()+currEpoch, st.SettlingAt)
 			}
 
 			// "wait" for SettlingAt epoch

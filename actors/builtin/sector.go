@@ -12,44 +12,50 @@ type SealProofPolicy struct {
 
 // For V1 Stacked DRG sectors, the max is 540 days since Network Version 11
 // 	according to https://github.com/filecoin-project/FIPs/blob/master/FIPS/fip-0014.md
-const EpochsIn540Days = stabi.ChainEpoch(540 * EpochsInDay)
+func EpochsIn540Days() stabi.ChainEpoch {
+	return 540 * EpochsInDay()
+}
 
 // For V1_1 Stacked DRG sectors, the max is 5 years
-const EpochsInFiveYears = stabi.ChainEpoch(5 * EpochsInYear)
+func EpochsInFiveYears() stabi.ChainEpoch {
+	return 5 * EpochsInYear()
+}
 
 // 540-day maximum life time setting for V1 since network version 11
-var SealProofPoliciesV11 = map[stabi.RegisteredSealProof]*SealProofPolicy{
-	stabi.RegisteredSealProof_StackedDrg2KiBV1: {
-		SectorMaxLifetime: EpochsIn540Days,
-	},
-	stabi.RegisteredSealProof_StackedDrg8MiBV1: {
-		SectorMaxLifetime: EpochsIn540Days,
-	},
-	stabi.RegisteredSealProof_StackedDrg512MiBV1: {
-		SectorMaxLifetime: EpochsIn540Days,
-	},
-	stabi.RegisteredSealProof_StackedDrg32GiBV1: {
-		SectorMaxLifetime: EpochsIn540Days,
-	},
-	stabi.RegisteredSealProof_StackedDrg64GiBV1: {
-		SectorMaxLifetime: EpochsIn540Days,
-	},
+func SealProofPoliciesV11() map[stabi.RegisteredSealProof]*SealProofPolicy {
+	return map[stabi.RegisteredSealProof]*SealProofPolicy{
+		stabi.RegisteredSealProof_StackedDrg2KiBV1: {
+			SectorMaxLifetime: EpochsIn540Days(),
+		},
+		stabi.RegisteredSealProof_StackedDrg8MiBV1: {
+			SectorMaxLifetime: EpochsIn540Days(),
+		},
+		stabi.RegisteredSealProof_StackedDrg512MiBV1: {
+			SectorMaxLifetime: EpochsIn540Days(),
+		},
+		stabi.RegisteredSealProof_StackedDrg32GiBV1: {
+			SectorMaxLifetime: EpochsIn540Days(),
+		},
+		stabi.RegisteredSealProof_StackedDrg64GiBV1: {
+			SectorMaxLifetime: EpochsIn540Days(),
+		},
 
-	stabi.RegisteredSealProof_StackedDrg2KiBV1_1: {
-		SectorMaxLifetime: EpochsInFiveYears,
-	},
-	stabi.RegisteredSealProof_StackedDrg8MiBV1_1: {
-		SectorMaxLifetime: EpochsInFiveYears,
-	},
-	stabi.RegisteredSealProof_StackedDrg512MiBV1_1: {
-		SectorMaxLifetime: EpochsInFiveYears,
-	},
-	stabi.RegisteredSealProof_StackedDrg32GiBV1_1: {
-		SectorMaxLifetime: EpochsInFiveYears,
-	},
-	stabi.RegisteredSealProof_StackedDrg64GiBV1_1: {
-		SectorMaxLifetime: EpochsInFiveYears,
-	},
+		stabi.RegisteredSealProof_StackedDrg2KiBV1_1: {
+			SectorMaxLifetime: EpochsInFiveYears(),
+		},
+		stabi.RegisteredSealProof_StackedDrg8MiBV1_1: {
+			SectorMaxLifetime: EpochsInFiveYears(),
+		},
+		stabi.RegisteredSealProof_StackedDrg512MiBV1_1: {
+			SectorMaxLifetime: EpochsInFiveYears(),
+		},
+		stabi.RegisteredSealProof_StackedDrg32GiBV1_1: {
+			SectorMaxLifetime: EpochsInFiveYears(),
+		},
+		stabi.RegisteredSealProof_StackedDrg64GiBV1_1: {
+			SectorMaxLifetime: EpochsInFiveYears(),
+		},
+	}
 }
 
 // Returns the partition size, in sectors, associated with a seal proof type.
@@ -64,7 +70,7 @@ func SealProofWindowPoStPartitionSectors(p stabi.RegisteredSealProof) (uint64, e
 
 // SectorMaximumLifetime is the maximum duration a sector sealed with this proof may exist between activation and expiration
 func SealProofSectorMaximumLifetime(p stabi.RegisteredSealProof) (stabi.ChainEpoch, error) {
-	info, ok := SealProofPoliciesV11[p]
+	info, ok := SealProofPoliciesV11()[p]
 	if !ok {
 		return 0, xerrors.Errorf("unsupported proof type: %v", p)
 	}

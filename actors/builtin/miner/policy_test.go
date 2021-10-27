@@ -21,7 +21,7 @@ func TestQuality(t *testing.T) {
 
 	t.Run("quality is independent of size and duration", func(t *testing.T) {
 		for _, size := range []abi.SectorSize{1, 10, 1 << 10, 32 << 30, 1 << 40} {
-			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay} {
+			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay()} {
 				sectorWeight := weight(size, duration)
 				assertEqual(t, emptyQuality, miner.QualityForWeight(size, duration, big.Zero(), big.Zero()))
 				assertEqual(t, dealQuality, miner.QualityForWeight(size, duration, sectorWeight, big.Zero()))
@@ -52,7 +52,7 @@ func TestQuality(t *testing.T) {
 func TestPower(t *testing.T) {
 	t.Run("empty sector has power equal to size", func(t *testing.T) {
 		for _, size := range []abi.SectorSize{1, 10, 1 << 10, 32 << 30, 1 << 40} {
-			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay} {
+			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay()} {
 				expectedPower := big.NewInt(int64(size))
 				assert.Equal(t, expectedPower, miner.QAPowerForWeight(size, duration, big.Zero(), big.Zero()))
 			}
@@ -63,7 +63,7 @@ func TestPower(t *testing.T) {
 		// Assumes the multiplier is an integer.
 		verifiedMultiplier := big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier).Int64()
 		for _, size := range []abi.SectorSize{1, 10, 1 << 10, 32 << 30, 1 << 40} {
-			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay} {
+			for _, duration := range []abi.ChainEpoch{1, 10, 1000, 1000 * builtin.EpochsInDay()} {
 				verifiedWeight := weight(size, duration)
 				expectedPower := big.NewInt(int64(size) * verifiedMultiplier)
 				assert.Equal(t, expectedPower, miner.QAPowerForWeight(size, duration, big.Zero(), verifiedWeight))
@@ -98,7 +98,7 @@ func TestPower(t *testing.T) {
 	})
 
 	t.Run("demonstrate standard sectors", func(t *testing.T) {
-		sectorDuration := abi.ChainEpoch(180 * builtin.EpochsInDay)
+		sectorDuration := abi.ChainEpoch(180 * builtin.EpochsInDay())
 		vmul := big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier).Int64()
 
 		{
