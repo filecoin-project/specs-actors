@@ -52,7 +52,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
 	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration()[sealProof]
-	v, dlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	//
 	// overdue precommit
