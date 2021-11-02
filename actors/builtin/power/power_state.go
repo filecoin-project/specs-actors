@@ -244,7 +244,7 @@ func (st *State) updateStatsForNewMiner(windowPoStProof abi.RegisteredPoStProof)
 	return nil
 }
 
-func (st *State) deleteClaim(claims *adt.Map, miner addr.Address) (bool, error) {
+func (st *State) DeleteClaim(claims *adt.Map, miner addr.Address) (bool, error) {
 	// Note: this flow loads the claim multiple times, unnecessarily.
 	// We should refactor to use claims.Pop().
 	oldClaim, ok, err := getClaim(claims, miner)
