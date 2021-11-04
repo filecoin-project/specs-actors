@@ -79,6 +79,7 @@ type Runtime struct {
 	expectDeleteActor              *addr.Address
 	expectBatchVerifySeals         *expectBatchVerifySeals
 	expectAggregateVerifySeals     *expectAggregateVerifySeals
+	expectReplicaVerify            *expectReplicaVerify
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
 	expectGasCharged []int64
 
@@ -93,6 +94,12 @@ type expectBatchVerifySeals struct {
 
 type expectAggregateVerifySeals struct {
 	inSVIs  []proof.AggregateSealVerifyInfo
+	inProof []byte
+	err     error
+}
+
+type expectReplicaVerify struct {
+	inSVIs  []proof.ReplicaUpdateInfo
 	inProof []byte
 	err     error
 }
@@ -687,6 +694,11 @@ func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInf
 		return nil
 	}
 	rt.failTestNow("unexpected syscall to verify aggregate seals: %v", agg)
+	return nil
+}
+
+func (rt *Runtime) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
+	//TODO
 	return nil
 }
 

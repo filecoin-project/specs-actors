@@ -76,6 +76,7 @@ func (a Actor) Exports() []interface{} {
 		24:                        a.DisputeWindowedPoSt,
 		25:                        a.PreCommitSectorBatch,
 		26:                        a.ProveCommitAggregate,
+		27:                        a.ProveReplicaUpdates,
 	}
 }
 
@@ -2065,6 +2066,253 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
 	return nil
+}
+
+type ReplicaUpdate struct {
+	SectorID           abi.SectorNumber
+	Deadline           uint64
+	Partition          uint64
+	NewSealedSectorCID cid.Cid
+	Deals              []abi.DealID
+	// TODO: actual type for this
+	Proof []byte
+}
+
+type ProveReplicaUpdatesParams struct {
+	Updates []ReplicaUpdate
+}
+
+// TODO: Should return type be aliased
+func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams) bitfield.BitField {
+	// Validate inputs
+
+	// TODO: check how this gets rendered and fix as needed
+	builtin.RequireParam(rt, len(params.Updates) <= miner3.DeclarationsMax, "too many updates", len(params.Updates), DeclarationsMax)
+
+	// TODO: Any more quick checks before we jump into it?
+	// see extendsectorexpirations for more checks to plagiarize
+
+	// TODO: This is the first time a miner is calling the reward actor directly, but i assume that's fine?
+	// Kinda sad to be doing (and pay this before a bunch of checks, but oh well?
+	var rewRet reward.ThisEpochRewardReturn
+	rewRetCode := rt.Send(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &rewRet)
+	builtin.RequireSuccess(rt, rewRetCode, "failed to check epoch baseline power")
+
+	var powRet power.CurrentTotalPowerReturn
+	powRetCode := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &rewRet)
+	builtin.RequireSuccess(rt, powRetCode, "failed to check epoch baseline power")
+
+	store := adt.AsStore(rt)
+	var stReadOnly State
+	rt.StateReadonly(&stReadOnly)
+	info := getMinerInfo(rt, &stReadOnly)
+
+	rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
+
+	sectors, err := LoadSectors(store, stReadOnly.Sectors)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+
+	powerDelta := NewPowerPairZero()
+	pledgeDelta := big.Zero()
+
+	// TODO: Pointers? Not pointers?
+	type updateAndSectorInfo struct {
+		update     *ReplicaUpdate
+		sectorInfo *SectorOnChainInfo
+	}
+
+	// Filters out the first wave of invalid updates with quick checks about sector status
+	var prevalidatedUpdates []*updateAndSectorInfo
+
+	var sectorsDeals []market.SectorDeals
+	var sectorsDataSpec []*market.SectorDataSpec
+	for _, update := range params.Updates {
+		// TODO: do we need an assertion that the same sector isn't upgraded twice?
+		// TODO: actual length
+		if len(update.Proof) <= 10 {
+			rt.Log(rtt.INFO, "update proof is wrong length (%d), skipping sector %d", len(update.Proof), update.SectorID)
+			continue
+		}
+
+		if len(update.Deals) <= 0 {
+			rt.Log(rtt.INFO, "must have deals to update, skipping sector %d", update.SectorID)
+			continue
+		}
+
+		// TODO: is there an upper limit on number of deals in a sector (beside the practical limit imposed by sector sizes and min deal size)
+		// TODO Confirm the sector is actually in the stated deadline? This happens later when we try to update partition, but maybe do here first?
+
+		sectorInfo, err := sectors.MustGet(update.SectorID)
+		if err != nil {
+			rt.Log(rtt.INFO, "failed to get sector, skipping sector %d", update.SectorID)
+			continue
+		}
+
+		// TODO: this will change to "was originally dealless, and is currently no active deals"
+		if len(sectorInfo.DealIDs) != 0 {
+			rt.Log(rtt.INFO, "cannot update sector with deals, skipping sector %d", update.SectorID)
+			continue
+		}
+
+		// TODO: confirm sector is healthy
+
+		// TODO: What's the impact of the following flow:
+		// 	- activating the deals
+		// - failing to verify the proof (or some other failure later)
+		// - allowing the message to succeed anyway ("skipping" the sector)
+		// Does that leave the deal uncommitable (since state doesn't get reverted)? is it better to just fail the msg, revert state, and allow for a retry later?
+		code := rt.Send(
+			builtin.StorageMarketActorAddr,
+			builtin.MethodsMarket.ActivateDeals,
+			&market.ActivateDealsParams{
+				DealIDs:      update.Deals,
+				SectorExpiry: sectorInfo.Expiration,
+			},
+			abi.NewTokenAmount(0),
+			&builtin.Discard{},
+		)
+
+		if code != exitcode.Ok {
+			rt.Log(rtt.INFO, "failed to activate deals on sector %d, skipping sector %d", update.SectorID)
+			continue
+		}
+
+		prevalidatedUpdates = append(prevalidatedUpdates, &updateAndSectorInfo{
+			update:     &update,
+			sectorInfo: sectorInfo,
+		})
+
+		sectorsDeals = append(sectorsDeals, market.SectorDeals{DealIDs: update.Deals, SectorExpiry: sectorInfo.Expiration})
+		sectorsDataSpec = append(sectorsDataSpec, &market.SectorDataSpec{
+			SectorType: sectorInfo.SealProof,
+			DealIDs:    update.Deals,
+		})
+	}
+
+	//// TODO: this method has some potential aborts -- are those all programmer error or is there scope to improve UX for bad input?
+	dealWeights := requestDealWeights(rt, sectorsDeals)
+
+	builtin.RequirePredicate(rt, len(dealWeights.Sectors) == len(prevalidatedUpdates), exitcode.ErrIllegalState,
+		"deal weight request returned %d records, expected %d", len(dealWeights.Sectors), len(prevalidatedUpdates))
+
+	// TODO: this method has some potential aborts -- are those all programmer error or is there scope to improve UX for bad input?
+	unsealedSectorCIDs := requestUnsealedSectorCIDs(rt, sectorsDataSpec...)
+
+	builtin.RequirePredicate(rt, len(unsealedSectorCIDs) == len(prevalidatedUpdates), exitcode.ErrIllegalState,
+		"unsealed sector cid request returned %d records, expected %d", len(unsealedSectorCIDs), len(prevalidatedUpdates))
+
+	succeededSectors := bitfield.New()
+	var st State
+	rt.StateTransaction(&st, func() {
+		for k, updateWithSectorInfo := range prevalidatedUpdates {
+			err = rt.VerifyReplicaUpdate(
+				proof.ReplicaUpdateInfo{
+					NewSealedSectorCID:   updateWithSectorInfo.update.NewSealedSectorCID,
+					OldSealedSectorCID:   updateWithSectorInfo.sectorInfo.SealedCID,
+					NewUnsealedSectorCID: unsealedSectorCIDs[k],
+				})
+
+			if err != nil {
+				rt.Log(rtt.INFO, "failed to verify replica proof, skipping sector %d", updateWithSectorInfo.sectorInfo.SectorNumber)
+				continue
+			}
+
+			newSectorInfo := updateWithSectorInfo.sectorInfo
+
+			newSectorInfo.SealedCID = updateWithSectorInfo.update.NewSealedSectorCID
+			newSectorInfo.DealIDs = updateWithSectorInfo.update.Deals
+
+			newSectorInfo.DealWeight = dealWeights.Sectors[k].DealWeight
+			newSectorInfo.VerifiedDealWeight = dealWeights.Sectors[0].VerifiedDealWeight
+
+			// compute initial pledge
+			duration := updateWithSectorInfo.sectorInfo.Expiration - rt.CurrEpoch()
+
+			// TODO: Should we include this?
+			//if duration < MinSectorExpiration {
+			//	rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+			//	continue
+			//}
+
+			pwr := QAPowerForWeight(info.SectorSize, duration, newSectorInfo.DealWeight, newSectorInfo.VerifiedDealWeight)
+
+			newSectorInfo.ReplacedDayReward = updateWithSectorInfo.sectorInfo.ExpectedDayReward
+			newSectorInfo.ExpectedDayReward = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+			newSectorInfo.ExpectedStoragePledge = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
+			newSectorInfo.ReplacedSectorAge = maxEpoch(0, rt.CurrEpoch()-updateWithSectorInfo.sectorInfo.Activation)
+
+			initialPledgeAtUpgrade := InitialPledgeForPower(pwr, rewRet.ThisEpochBaselinePower, rewRet.ThisEpochRewardSmoothed,
+				powRet.QualityAdjPowerSmoothed, rt.TotalFilCircSupply())
+
+			if initialPledgeAtUpgrade.GreaterThan(updateWithSectorInfo.sectorInfo.InitialPledge) {
+				deficit := big.Sub(initialPledgeAtUpgrade, updateWithSectorInfo.sectorInfo.InitialPledge)
+
+				unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
+				if unlockedBalance.LessThan(deficit) {
+					rt.Log(rtt.INFO, "insufficient funds for new initial pledge requirement %s, available: %s, skipping sector %d",
+						deficit, unlockedBalance, updateWithSectorInfo.sectorInfo.SectorNumber)
+					continue
+				}
+
+				err = st.AddInitialPledge(deficit)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge")
+
+				newSectorInfo.InitialPledge = initialPledgeAtUpgrade
+			}
+
+			deadlines, err := st.LoadDeadlines(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
+
+			deadline, err := deadlines.LoadDeadline(store, updateWithSectorInfo.update.Deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", updateWithSectorInfo.update.Deadline)
+
+			partitions, err := deadline.PartitionsArray(store)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", updateWithSectorInfo.update.Deadline)
+
+			quant := st.QuantSpecForDeadline(updateWithSectorInfo.update.Deadline)
+
+			var partition Partition
+			found, err := partitions.Get(updateWithSectorInfo.update.Partition, &partition)
+
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %v partition %v",
+				updateWithSectorInfo.update.Deadline, updateWithSectorInfo.update.Partition)
+
+			if !found {
+				rt.Abortf(exitcode.ErrNotFound, "no such deadline %v partition %v", updateWithSectorInfo.update.Deadline, updateWithSectorInfo.update.Partition)
+			}
+
+			// TODO: Group by partition
+			partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store,
+				[]*SectorOnChainInfo{updateWithSectorInfo.sectorInfo},
+				[]*SectorOnChainInfo{newSectorInfo},
+				info.SectorSize,
+				quant)
+
+			// TODO: actual error / continue
+			if err != nil {
+				return
+			}
+
+			powerDelta = powerDelta.Add(partitionPowerDelta)
+			pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
+
+			err = partitions.Set(updateWithSectorInfo.update.Partition, &partition)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v",
+				updateWithSectorInfo.update.Deadline,
+				updateWithSectorInfo.update.Partition)
+
+			// TODO: sectorkey (phase 2)
+
+			succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
+		}
+	})
+
+	requestUpdatePower(rt, powerDelta)
+
+	// TODO adding a snapshot for Post disputing
+
+	return succeededSectors
 }
 
 //////////

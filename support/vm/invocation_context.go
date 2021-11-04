@@ -259,6 +259,11 @@ func (ic *invocationContext) VerifyAggregateSeals(agg proof.AggregateSealVerifyP
 	return ic.Syscalls().VerifyAggregateSeals(agg)
 }
 
+func (ic *invocationContext) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
+	ic.topLevel.fakeSyscallsAccessed = true
+	return ic.Syscalls().VerifyReplicaUpdate(replicaInfo)
+}
+
 func (ic *invocationContext) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
 	ic.topLevel.fakeSyscallsAccessed = true
 	ic.topLevel.chargeGas(ic.topLevel.gasPrices.OnVerifyPost(vi))
@@ -567,6 +572,10 @@ func (s fakeSyscalls) BatchVerifySeals(vi map[address.Address][]proof.SealVerify
 }
 
 func (s fakeSyscalls) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInfos) error {
+	return nil
+}
+
+func (s fakeSyscalls) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
 	return nil
 }
 

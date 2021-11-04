@@ -461,6 +461,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 	return nil
 }
 
+// TODO: should be aliased
 type SectorDataSpec struct {
 	DealIDs    []abi.DealID
 	SectorType abi.RegisteredSealProof

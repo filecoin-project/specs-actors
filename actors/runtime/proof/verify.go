@@ -3,6 +3,7 @@ package proof
 import (
 	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/ipfs/go-cid"
 )
 
 ///
@@ -27,6 +28,18 @@ type SealVerifyInfo = proof0.SealVerifyInfo
 type AggregateSealVerifyInfo = proof5.AggregateSealVerifyInfo
 
 type AggregateSealVerifyProofAndInfos = proof5.AggregateSealVerifyProofAndInfos
+
+///
+/// Replica
+///
+
+// Information needed to verify a replica update
+
+type ReplicaUpdateInfo struct {
+	OldSealedSectorCID   cid.Cid
+	NewSealedSectorCID   cid.Cid
+	NewUnsealedSectorCID cid.Cid
+}
 
 ///
 /// PoSting
