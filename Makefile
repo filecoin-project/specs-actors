@@ -12,6 +12,7 @@ build:
 test:
 	$(GO_BIN) test ./...
 	$(GO_BIN) test -race ./actors/migration/nv14/test
+	$(GO_BIN) test -race ./actors/migration/nv15/test
 .PHONY: test
 
 test-migration:
