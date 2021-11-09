@@ -6,10 +6,13 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/crypto"
+	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/rt"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
@@ -26,9 +29,11 @@ import (
 
 	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
 	"github.com/filecoin-project/specs-actors/v6/support/vm"
+
+	addr "github.com/filecoin-project/go-address"
 )
 
-func TestTestMinerTypeDeletion(t *testing.T) {
+func TestDealLabelMigration(t *testing.T) {
 	ctx := context.Background()
 	log := nv14.TestLogger{TB: t}
 	bs := ipld2.NewSyncBlockStoreInMemory()
@@ -175,4 +180,100 @@ func TestTestMinerTypeDeletion(t *testing.T) {
 	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &market6State))
 	market.CheckStateInvariants(&market6State, v6.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
 
+}
+
+func publishDealv5(t *testing.T, v *vm5.VM, provider, dealClient, minerID addr.Address, dealLabel string,
+	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
+) *market5.PublishStorageDealsReturn {
+	deal := market5.DealProposal{
+		PieceCID:             tutil.MakeCID(dealLabel, &market.PieceCIDPrefix),
+		PieceSize:            pieceSize,
+		VerifiedDeal:         verifiedDeal,
+		Client:               dealClient,
+		Provider:             minerID,
+		Label:                dealLabel,
+		StartEpoch:           dealStart,
+		EndEpoch:             dealStart + dealLifetime,
+		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
+		ProviderCollateral:   big.Mul(big.NewInt(2), vm.FIL),
+		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
+	}
+
+	publishDealParams := market5.PublishStorageDealsParams{
+		Deals: []market5.ClientDealProposal{{
+			Proposal: deal,
+			ClientSignature: crypto.Signature{
+				Type: crypto.SigTypeBLS,
+			},
+		}},
+	}
+	result := vm5.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	require.Equal(t, exitcode.Ok, result.Code)
+
+	expectedPublishSubinvocations := []vm5.ExpectInvocation{
+		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm5.ExpectInvocation{}},
+		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm5.ExpectInvocation{}},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm5.ExpectInvocation{}},
+	}
+
+	if verifiedDeal {
+		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm5.ExpectInvocation{
+			To:             builtin.VerifiedRegistryActorAddr,
+			Method:         builtin.MethodsVerifiedRegistry.UseBytes,
+			SubInvocations: []vm5.ExpectInvocation{},
+		})
+	}
+
+	vm5.ExpectInvocation{
+		To:             builtin.StorageMarketActorAddr,
+		Method:         builtin.MethodsMarket.PublishStorageDeals,
+		SubInvocations: expectedPublishSubinvocations,
+	}.Matches(t, v.LastInvocation())
+
+	return result.Ret.(*market.PublishStorageDealsReturn)
+}
+
+func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
+	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool, isv6 bool) {
+	var dealprop6 market.DealProposal
+	var dealprop5 market5.DealProposal
+	var found bool
+	var err error
+	if isv6 {
+		found, err = proposals.Get(uint64(dealID), &dealprop6)
+	} else {
+		found, err = proposals.Get(uint64(dealID), &dealprop5)
+	}
+	require.NoError(t, err)
+	require.Equal(t, found, inProposals)
+	found, err = states.Get(uint64(dealID), nil)
+	require.NoError(t, err)
+	require.Equal(t, found, inStates)
+	var dealpropcid cid.Cid
+	if isv6 {
+		dealpropcid, err = dealprop6.Cid()
+	} else {
+		dealpropcid, err = dealprop5.Cid()
+	}
+	require.NoError(t, err)
+	found, err = pendingProposals.Has(abi.CidKey(dealpropcid))
+	require.NoError(t, err)
+	require.Equal(t, found, inPendingProposals)
+}
+
+func checkSameLabel(v5Proposals *adt.Array, v6Proposals *adt.Array, dealID abi.DealID) error {
+	var dealprop5 market5.DealProposal
+	var dealprop6 market.DealProposal
+	found, err := v5Proposals.Get(uint64(dealID), &dealprop5)
+	if !found || err != nil {
+		return xerrors.Errorf("failed to look up dealID %v in validating deal label", dealID)
+	}
+	found, err = v6Proposals.Get(uint64(dealID), &dealprop6)
+	if !found || err != nil {
+		return xerrors.Errorf("failed to look up dealID %v in validating deal label", dealID)
+	}
+	if dealprop5.Label != string(dealprop6.Label) {
+		return xerrors.Errorf("deal labels were not the same, modulo types, after migration.")
+	}
+	return nil
 }

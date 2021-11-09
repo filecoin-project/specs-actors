@@ -538,13 +538,6 @@ func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpo
 			builtin5.ActorNameByCode(job.Actor.Code), job.Address, err)
 	}
 
-	// Set up new actor record with the migrated state.
-	// XXX: to test: add one of each type of miner, maybe add some sectors, make a complex enough state and check some invariants???
-	// XXX: give some some fees, give some no fees, etc, etc, etc
-	// XXX: what happens if someone sends these addresses some funds??? no good.
-	// XXX: give some some fees, give some no fees, etc, etc, etc
-	// XXX: https://github.com/filecoin-project/specs-actors/blob/0fa32a654d910960306a0567d69f8d2ac1e66c67/actors/migration/nv4/top.go#L228
-	// XXX: https://github.com/filecoin-project/specs-actors/issues/1474#issuecomment-948948954
 	return &migrationJobResult{
 		minerTypeMigrationShouldDelete:        result.minerTypeMigrationShouldDelete,
 		minerDeletedWasAboveMinPower:          result.minerDeletedWasAboveMinPower,
