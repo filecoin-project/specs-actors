@@ -4,7 +4,6 @@ import (
 	"context"
 
 	cid "github.com/ipfs/go-cid"
-	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
@@ -13,50 +12,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 )
-
-type marketMigrator struct{}
-
-func (m marketMigrator) migratedCodeCID() cid.Cid {
-	return builtin.StorageMarketActorCodeID
-}
-
-func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	var inState market5.State
-	if err := store.Get(ctx, in.head, &inState); err != nil {
-		return nil, err
-	}
-	wrappedStore := adt.WrapStore(ctx, store)
-
-	proposalsCidOut, err := MapProposals(ctx, wrappedStore, inState.Proposals)
-	if err != nil {
-		return nil, err
-	}
-
-	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, wrappedStore, proposalsCidOut, inState.States)
-	if err != nil {
-		return nil, err
-	}
-
-	outState := market.State{
-		Proposals:                     proposalsCidOut,
-		States:                        inState.States,
-		PendingProposals:              pendingProposalsCidOut,
-		EscrowTable:                   inState.EscrowTable,
-		LockedTable:                   inState.LockedTable,
-		NextID:                        inState.NextID,
-		DealOpsByEpoch:                inState.DealOpsByEpoch,
-		LastCron:                      inState.LastCron,
-		TotalClientLockedCollateral:   inState.TotalClientLockedCollateral,
-		TotalProviderLockedCollateral: inState.TotalProviderLockedCollateral,
-		TotalClientStorageFee:         inState.TotalClientStorageFee,
-	}
-
-	newHead, err := store.Put(ctx, &outState)
-	return &actorMigrationResult{
-		newCodeCID: m.migratedCodeCID(),
-		newHead:    newHead,
-	}, err
-}
 
 func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (cid.Cid, error) {
 	oldProposals, err := adt.AsArray(store, proposalsRoot, market5.ProposalsAmtBitwidth)
