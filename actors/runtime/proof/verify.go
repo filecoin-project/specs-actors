@@ -39,6 +39,7 @@ type ReplicaUpdateInfo struct {
 	OldSealedSectorCID   cid.Cid
 	NewSealedSectorCID   cid.Cid
 	NewUnsealedSectorCID cid.Cid
+	Proof                []byte
 }
 
 ///

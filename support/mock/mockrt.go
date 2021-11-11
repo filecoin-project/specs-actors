@@ -99,7 +99,7 @@ type expectAggregateVerifySeals struct {
 }
 
 type expectReplicaVerify struct {
-	inSVIs  []proof.ReplicaUpdateInfo
+	inRUIs  []proof.ReplicaUpdateInfo
 	inProof []byte
 	err     error
 }
@@ -698,7 +698,6 @@ func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInf
 }
 
 func (rt *Runtime) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
-	//TODO
 	return nil
 }
 
