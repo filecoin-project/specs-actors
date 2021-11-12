@@ -2114,11 +2114,10 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		sectorInfo *SectorOnChainInfo
 	}
 
-	// Filters out the first wave of invalid updates with quick checks about sector status
-	var prevalidatedUpdates []*updateAndSectorInfo
-
 	var sectorsDeals []market.SectorDeals
 	var sectorsDataSpec []*market.SectorDataSpec
+	// Filters out the first wave of invalid updates with quick checks about sector status
+	var prevalidatedUpdates []*updateAndSectorInfo
 	sectorNumbers := bitfield.New()
 	for _, update := range params.Updates {
 		// Bitfied.IsSet() is fast when there are only locally-set values.
@@ -2203,6 +2202,30 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 	builtin.RequirePredicate(rt, len(unsealedSectorCIDs) == len(prevalidatedUpdates), exitcode.ErrIllegalState,
 		"unsealed sector cid request returned %d records, expected %d", len(unsealedSectorCIDs), len(prevalidatedUpdates))
 
+	type updateWithDetails struct {
+		update            *ReplicaUpdate
+		sectorInfo        *SectorOnChainInfo
+		dealWeight        market.SectorWeights
+		unsealedSectorCID cid.Cid
+	}
+
+	// Group declarations by deadline, and remember iteration order.
+	// This should be merged with the iteration outside the state transaction.
+	declsByDeadline := map[uint64][]*updateWithDetails{}
+	var deadlinesToLoad []uint64
+	for i, updateWithSectorInfo := range prevalidatedUpdates {
+		// TODO extend sector has a blurb about pointer vs temp loop variable that i don't understand
+		if _, ok := declsByDeadline[updateWithSectorInfo.update.Deadline]; !ok {
+			deadlinesToLoad = append(deadlinesToLoad, updateWithSectorInfo.update.Deadline)
+		}
+		declsByDeadline[updateWithSectorInfo.update.Deadline] = append(declsByDeadline[updateWithSectorInfo.update.Deadline], &updateWithDetails{
+			update:            updateWithSectorInfo.update,
+			sectorInfo:        updateWithSectorInfo.sectorInfo,
+			dealWeight:        dealWeights.Sectors[i],
+			unsealedSectorCID: unsealedSectorCIDs[i],
+		})
+	}
+
 	succeededSectors := bitfield.New()
 	var st State
 	rt.StateTransaction(&st, func() {
@@ -2210,102 +2233,104 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		newSectors := make([]*SectorOnChainInfo, len(prevalidatedUpdates))
-		for k, updateWithSectorInfo := range prevalidatedUpdates {
-			err = rt.VerifyReplicaUpdate(
-				proof.ReplicaUpdateInfo{
-					NewSealedSectorCID:   updateWithSectorInfo.update.NewSealedSectorCID,
-					OldSealedSectorCID:   updateWithSectorInfo.sectorInfo.SealedCID,
-					NewUnsealedSectorCID: unsealedSectorCIDs[k],
-				})
-
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to verify replica proof for sector %d", updateWithSectorInfo.sectorInfo.SectorNumber)
-
-			newSectorInfo := updateWithSectorInfo.sectorInfo
-
-			newSectorInfo.SealedCID = updateWithSectorInfo.update.NewSealedSectorCID
-			newSectorInfo.DealIDs = updateWithSectorInfo.update.Deals
-
-			newSectorInfo.DealWeight = dealWeights.Sectors[k].DealWeight
-			newSectorInfo.VerifiedDealWeight = dealWeights.Sectors[0].VerifiedDealWeight
-
-			// compute initial pledge
-			duration := updateWithSectorInfo.sectorInfo.Expiration - rt.CurrEpoch()
-
-			// TODO: Should we include this?
-			//if duration < MinSectorExpiration {
-			//	rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
-			//	continue
-			//}
-
-			pwr := QAPowerForWeight(info.SectorSize, duration, newSectorInfo.DealWeight, newSectorInfo.VerifiedDealWeight)
-
-			newSectorInfo.ReplacedDayReward = updateWithSectorInfo.sectorInfo.ExpectedDayReward
-			newSectorInfo.ExpectedDayReward = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
-			newSectorInfo.ExpectedStoragePledge = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
-			newSectorInfo.ReplacedSectorAge = maxEpoch(0, rt.CurrEpoch()-updateWithSectorInfo.sectorInfo.Activation)
-
-			initialPledgeAtUpgrade := InitialPledgeForPower(pwr, rewRet.ThisEpochBaselinePower, rewRet.ThisEpochRewardSmoothed,
-				powRet.QualityAdjPowerSmoothed, rt.TotalFilCircSupply())
-
-			if initialPledgeAtUpgrade.GreaterThan(updateWithSectorInfo.sectorInfo.InitialPledge) {
-				deficit := big.Sub(initialPledgeAtUpgrade, updateWithSectorInfo.sectorInfo.InitialPledge)
-
-				unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
-				builtin.RequirePredicate(rt, unlockedBalance.GreaterThanEqual(deficit), exitcode.ErrInsufficientFunds, "insufficient funds for new initial pledge requirement %s, available: %s, skipping sector %d",
-					deficit, unlockedBalance, updateWithSectorInfo.sectorInfo.SectorNumber)
-
-				err = st.AddInitialPledge(deficit)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge")
-
-				newSectorInfo.InitialPledge = initialPledgeAtUpgrade
-			}
-
-			deadline, err := deadlines.LoadDeadline(store, updateWithSectorInfo.update.Deadline)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", updateWithSectorInfo.update.Deadline)
+		for _, dlIdx := range deadlinesToLoad {
+			deadline, err := deadlines.LoadDeadline(store, dlIdx)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
 
 			partitions, err := deadline.PartitionsArray(store)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", updateWithSectorInfo.update.Deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load partitions for deadline %d", dlIdx)
 
-			quant := st.QuantSpecForDeadline(updateWithSectorInfo.update.Deadline)
+			quant := st.QuantSpecForDeadline(dlIdx)
 
-			var partition Partition
-			found, err := partitions.Get(updateWithSectorInfo.update.Partition, &partition)
+			for _, updateWithDetails := range declsByDeadline[dlIdx] {
+				err = rt.VerifyReplicaUpdate(
+					proof.ReplicaUpdateInfo{
+						NewSealedSectorCID:   updateWithDetails.update.NewSealedSectorCID,
+						OldSealedSectorCID:   updateWithDetails.sectorInfo.SealedCID,
+						NewUnsealedSectorCID: updateWithDetails.unsealedSectorCID,
+					})
 
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %v partition %v",
-				updateWithSectorInfo.update.Deadline, updateWithSectorInfo.update.Partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to verify replica proof for sector %d", updateWithDetails.sectorInfo.SectorNumber)
 
-			if !found {
-				rt.Abortf(exitcode.ErrNotFound, "no such deadline %v partition %v", updateWithSectorInfo.update.Deadline, updateWithSectorInfo.update.Partition)
+				newSectorInfo := updateWithDetails.sectorInfo
+
+				newSectorInfo.SealedCID = updateWithDetails.update.NewSealedSectorCID
+				newSectorInfo.DealIDs = updateWithDetails.update.Deals
+
+				newSectorInfo.DealWeight = updateWithDetails.dealWeight.DealWeight
+				newSectorInfo.VerifiedDealWeight = updateWithDetails.dealWeight.VerifiedDealWeight
+
+				// compute initial pledge
+				duration := updateWithDetails.sectorInfo.Expiration - rt.CurrEpoch()
+
+				// TODO: Should we include this?
+				//if duration < MinSectorExpiration {
+				//	rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+				//	continue
+				//}
+
+				pwr := QAPowerForWeight(info.SectorSize, duration, newSectorInfo.DealWeight, newSectorInfo.VerifiedDealWeight)
+
+				newSectorInfo.ReplacedDayReward = updateWithDetails.sectorInfo.ExpectedDayReward
+				newSectorInfo.ExpectedDayReward = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, builtin.EpochsInDay)
+				newSectorInfo.ExpectedStoragePledge = ExpectedRewardForPower(rewRet.ThisEpochRewardSmoothed, powRet.QualityAdjPowerSmoothed, pwr, InitialPledgeProjectionPeriod)
+				newSectorInfo.ReplacedSectorAge = maxEpoch(0, rt.CurrEpoch()-updateWithDetails.sectorInfo.Activation)
+
+				initialPledgeAtUpgrade := InitialPledgeForPower(pwr, rewRet.ThisEpochBaselinePower, rewRet.ThisEpochRewardSmoothed,
+					powRet.QualityAdjPowerSmoothed, rt.TotalFilCircSupply())
+
+				if initialPledgeAtUpgrade.GreaterThan(updateWithDetails.sectorInfo.InitialPledge) {
+					deficit := big.Sub(initialPledgeAtUpgrade, updateWithDetails.sectorInfo.InitialPledge)
+
+					unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
+					builtin.RequirePredicate(rt, unlockedBalance.GreaterThanEqual(deficit), exitcode.ErrInsufficientFunds, "insufficient funds for new initial pledge requirement %s, available: %s, skipping sector %d",
+						deficit, unlockedBalance, updateWithDetails.sectorInfo.SectorNumber)
+
+					err = st.AddInitialPledge(deficit)
+					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge")
+
+					newSectorInfo.InitialPledge = initialPledgeAtUpgrade
+				}
+
+				var partition Partition
+				found, err := partitions.Get(updateWithDetails.update.Partition, &partition)
+
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %v partition %v",
+					updateWithDetails.update.Deadline, updateWithDetails.update.Partition)
+
+				if !found {
+					rt.Abortf(exitcode.ErrNotFound, "no such deadline %v partition %v", dlIdx, updateWithDetails.update.Partition)
+				}
+
+				// TODO: Group by partition
+				partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store,
+					[]*SectorOnChainInfo{updateWithDetails.sectorInfo},
+					[]*SectorOnChainInfo{newSectorInfo},
+					info.SectorSize,
+					quant)
+
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector at deadline %d partition %d", updateWithDetails.update.Deadline, updateWithDetails.update.Partition)
+
+				powerDelta = powerDelta.Add(partitionPowerDelta)
+				pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
+
+				err = partitions.Set(updateWithDetails.update.Partition, &partition)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v",
+					updateWithDetails.update.Deadline,
+					updateWithDetails.update.Partition)
+
+				deadline.Partitions, err = partitions.Root()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", updateWithDetails.update.Deadline)
+
+				err = deadlines.UpdateDeadline(store, updateWithDetails.update.Deadline, deadline)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", updateWithDetails.update.Deadline)
+
+				// TODO: sectorkey (phase 2)
+
+				newSectors = append(newSectors, newSectorInfo)
+				succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 			}
-
-			// TODO: Group by partition
-			partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store,
-				[]*SectorOnChainInfo{updateWithSectorInfo.sectorInfo},
-				[]*SectorOnChainInfo{newSectorInfo},
-				info.SectorSize,
-				quant)
-
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector at deadline %d partition %d", updateWithSectorInfo.update.Deadline, updateWithSectorInfo.update.Partition)
-
-			powerDelta = powerDelta.Add(partitionPowerDelta)
-			pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
-
-			err = partitions.Set(updateWithSectorInfo.update.Partition, &partition)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v",
-				updateWithSectorInfo.update.Deadline,
-				updateWithSectorInfo.update.Partition)
-
-			deadline.Partitions, err = partitions.Root()
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", updateWithSectorInfo.update.Deadline)
-
-			err = deadlines.UpdateDeadline(store, updateWithSectorInfo.update.Deadline, deadline)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", updateWithSectorInfo.update.Deadline)
-
-			// TODO: sectorkey (phase 2)
-
-			newSectors = append(newSectors, newSectorInfo)
-			succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 		}
 
 		// Overwrite sector infos.

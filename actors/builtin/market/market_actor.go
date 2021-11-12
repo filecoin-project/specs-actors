@@ -337,6 +337,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 }
 
+// TODO alias
 // Changed since v2:
 // - Array of sectors rather than just one
 // - Removed SectorStart (which is unknown at call time)
@@ -349,6 +350,7 @@ type SectorDeals struct {
 	DealIDs      []abi.DealID
 }
 
+// TODO alias
 // Changed since v2:
 // - Array of sectors weights
 type VerifyDealsForActivationReturn struct {
