@@ -156,6 +156,15 @@ func (m *Map) ForEach(out cbor.Unmarshaler, fn func(key string) error) error {
 	})
 }
 
+func (m *Map) NumKeys() (out int, err error) {
+	out = 0
+	err = m.ForEach(nil, func(key string) error {
+		out++
+		return nil
+	})
+	return
+}
+
 // Collects all the keys from the map into a slice of strings.
 func (m *Map) CollectKeys() (out []string, err error) {
 	err = m.ForEach(nil, func(key string) error {

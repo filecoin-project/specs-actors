@@ -42,7 +42,7 @@ import (
 
 */
 func TestTestMinerTypeDeletion(t *testing.T) {
-	// XXX: what happens if someone sends these addresses some funds??? no good.
+	// XXX: what happens if someone sends these addresses some funds???
 	ctx := context.Background()
 	log := nv14.TestLogger{TB: t}
 	bs := ipld2.NewSyncBlockStoreInMemory()
@@ -92,6 +92,16 @@ func TestTestMinerTypeDeletion(t *testing.T) {
 	collateral := big.Mul(big.NewInt(64), vm.FIL)
 	vm4.ApplyOk(t, v4, worker1, builtin4.StorageMarketActorAddr, collateral, builtin4.MethodsMarket.AddBalance, &testMinerTypeAddr.IDAddress)
 	vm4.ApplyOk(t, v4, worker2, builtin4.StorageMarketActorAddr, collateral, builtin4.MethodsMarket.AddBalance, &realMinerTypeAddr.IDAddress)
+
+	// and claim some power (zero power, but just to get into the claims thing)
+	claimParams := power4.UpdateClaimedPowerParams{
+		RawByteDelta:         big.Zero(),
+		QualityAdjustedDelta: big.Zero(),
+	}
+	vm4.ApplyOk(t, v4, testMinerTypeAddr.IDAddress, builtin4.StoragePowerActorAddr,
+		big.Zero(), builtin4.MethodsPower.UpdateClaimedPower, &claimParams)
+	vm4.ApplyOk(t, v4, realMinerTypeAddr.IDAddress, builtin4.StoragePowerActorAddr,
+		big.Zero(), builtin4.MethodsPower.UpdateClaimedPower, &claimParams)
 
 	totalPreviousRuntimeBalance, err := v4.GetTotalActorBalance()
 	require.NoError(t, err)
@@ -145,7 +155,13 @@ func TestTestMinerTypeDeletion(t *testing.T) {
 	// maybe should make one or both of these miners above
 	require.Equal(t, power6State.MinerAboveMinPowerCount, int64(0))
 
-	// XXX: check claims removal here
+	// check claims removal here- ensure the test miner is not in claims, real miner is
+	_, found, err = power6State.GetClaim(adtStore, testMinerTypeAddr.IDAddress)
+	require.NoError(t, err)
+	require.False(t, found)
+	_, found, err = power6State.GetClaim(adtStore, realMinerTypeAddr.IDAddress)
+	require.NoError(t, err)
+	require.True(t, found)
 
 	// check that the total amount of filecoin stayed constant!
 	totalCurrentRuntimeBalance, err := v6.GetTotalActorBalance()

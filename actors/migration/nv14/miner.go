@@ -2,7 +2,6 @@ package nv14
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/filecoin-project/go-state-types/big"
 	miner5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
@@ -21,7 +20,6 @@ func (m minerMigrator) migratedCodeCID() cid.Cid {
 
 func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	var inState miner5.State
-	fmt.Println("in miner.go migrateState")
 
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
@@ -51,14 +49,17 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 		if sectors.Length() != 0 {
 			return nil, xerrors.Errorf("test type miner has nonzero length of Sectors at address %v.", in.address)
 		}
-		precommittedSectors, err := adt.AsArray(wrappedStore, inState.PreCommittedSectors, builtin.DefaultHamtBitwidth)
+		precommittedSectors, err := adt.AsMap(wrappedStore, inState.PreCommittedSectors, builtin.DefaultHamtBitwidth)
 		if err != nil {
 			return nil, err
 		}
-		if precommittedSectors.Length() != 0 {
+		n, err := precommittedSectors.NumKeys()
+		if err != nil {
+			return nil, err
+		}
+		if n != 0 {
 			return nil, xerrors.Errorf("test type miner has nonzero length of PrecommittedSectors at address %v.", in.address)
 		}
-
 		minPower, err := builtin.ConsensusMinerMinPower(minerInfo.WindowPoStProofType)
 		if err != nil {
 			return nil, err

@@ -78,14 +78,13 @@ func IsTestPostProofType(proofType abi.RegisteredPoStProof) bool {
 	return false
 }
 
-// XXX balanceTransferMap should become a BalanceTable, maybe?
-func addIfPresent(balanceTransferMap *map[address.Address]big.Int, address address.Address, balance big.Int) {
+func addPositiveIfPresent(balanceTransferMap *map[address.Address]big.Int, address address.Address, balance big.Int) error {
 	if balance.Equals(big.Zero()) { // do nothing if it's equal...
-		return
+		return nil
 	}
-	if balance.LessThan(big.Zero()) {
-		return
-	} // XXX what are you doing why is it negative??? should we put an assertion here???
+	if balance.LessThan(big.Zero()) { //assert things are positive
+		return xerrors.Errorf("why is the balance negative?? should not be!")
+	}
 
 	oldVal, found := (*balanceTransferMap)[address]
 	if !found {
@@ -93,6 +92,7 @@ func addIfPresent(balanceTransferMap *map[address.Address]big.Int, address addre
 	} else {
 		(*balanceTransferMap)[address] = big.Add(balance, oldVal)
 	}
+	return nil
 }
 func MigrateMarketActor(ctx context.Context, store cbor.IpldStore, actorsIn *states5.Tree, actorsOut *states5.Tree) error {
 	marketActor, found, err := actorsIn.GetActor(builtin5.StorageMarketActorAddr)
@@ -162,9 +162,9 @@ func MigratePowerActor(ctx context.Context, store cbor.IpldStore, actorsIn *stat
 		if IsTestPostProofType(claim.WindowPoStProofType) {
 			// this just deletes any claims that ended up in the power actor's claims table which had the test miner types
 			// handling the power statistics (MinerCount, MinerAboveMinPowerCount) will be done in top.go after we've collected all that from the miners.
-			addr, err := address.NewFromString(key)
+			addr, err := address.NewFromBytes([]byte(key))
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't make an address from claims key with string value %v: %w", key, err)
 			}
 			if claim.RawBytePower.GreaterThan(big.Zero()) {
 				return xerrors.Errorf("nonzero RawBytePower on claim from miner with test proof size. This is not good.")
@@ -172,26 +172,31 @@ func MigratePowerActor(ctx context.Context, store cbor.IpldStore, actorsIn *stat
 			if claim.QualityAdjPower.GreaterThan(big.Zero()) {
 				return xerrors.Errorf("nonzero QualityAdjPower on claim from miner with test proof size. This is not good.")
 			}
-			// XXX: I think you might need to manually change claims. this might be wrong. you need to write back a CID somewhere... do you?
-			if _, err := powerState.DeleteClaim(claims, addr); err != nil {
-				return err
+			_, err = powerState.DeleteClaim(claims, addr)
+			if err != nil {
+				return xerrors.Errorf("couldn't delete a specific claim at addr %v: %w", addr, err)
 			}
 		}
 		return nil
 	})
+	// flushing claims back to the cluster
 	if err != nil {
-		return nil
+		return xerrors.Errorf("couldn't delete invalid claims: %w", err)
 	}
+	powerState.Claims, err = claims.Root()
+	if err != nil {
+		return xerrors.Errorf("couldn't save new claims: %w", err)
+	}
+
 	powerState.MinerCount -= int64(totalDeletedMiners)
 	powerState.MinerAboveMinPowerCount -= int64(totalDeletedMinersAboveMinPower)
 
 	newHead, err := store.Put(ctx, &powerState)
 	if err != nil {
-		return nil
+		return xerrors.Errorf("couldn't write back the power state: %w", err)
 	}
 
 	powerActor.Head = newHead
-
 	return actorsOut.SetActor(builtin6.StoragePowerActorAddr, powerActor)
 }
 
@@ -210,7 +215,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin5.MultisigActorCodeID:         nilMigrator{builtin6.MultisigActorCodeID},
 		builtin5.PaymentChannelActorCodeID:   nilMigrator{builtin6.PaymentChannelActorCodeID},
 		builtin5.RewardActorCodeID:           nilMigrator{builtin6.RewardActorCodeID},
-		builtin5.StorageMinerActorCodeID:     cachedMigration(cache, minerMigrator{}),
+		builtin5.StorageMinerActorCodeID:     minerMigrator{},
 		builtin5.SystemActorCodeID:           nilMigrator{builtin6.SystemActorCodeID},
 		builtin5.VerifiedRegistryActorCodeID: nilMigrator{builtin6.VerifiedRegistryActorCodeID},
 	}
@@ -350,7 +355,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	var totalDeletedMinersAboveMinPower = 0
 	var totalDeletedMiners = 0
 
-	marketActor, found, err := actorsIn.GetActor(builtin5.StorageMarketActorAddr)
+	marketActor, found, err := actorsOut.GetActor(builtin6.StorageMarketActorAddr)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -366,6 +371,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	if err != nil {
 		return cid.Undef, err
 	}
+	filToDeleteFromMarket := big.Zero()
 
 	// Insert migrated records in output state tree and accumulators.
 	// also, remove miners from tree if needed, and check if they're in the marketstate escrow table
@@ -379,11 +385,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 				balanceTransferMapGuard.Lock()
 				ownerAddressT := result.minerTypeMigrationBalanceTransferInfo.address
 				valueT := result.minerTypeMigrationBalanceTransferInfo.value
-				if !valueT.GreaterThanEqual(big.Zero()) {
-					return xerrors.Errorf("deleted test miner's balance was negative and we tried to send it to address %v", ownerAddressT)
-				}
 				// transfer miner's balance back to owner
-				addIfPresent(&balanceTransfers, ownerAddressT, valueT)
+				if err := addPositiveIfPresent(&balanceTransfers, ownerAddressT, valueT); err != nil {
+					return err
+				}
 
 				// prep to adjust power stats
 				if result.minerDeletedWasAboveMinPower {
@@ -405,7 +410,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 					return nil
 				}
 				// schedule that amount to go back to the owner
-				addIfPresent(&balanceTransfers, ownerAddressT, tokenAmountInEscrow)
+				if err := addPositiveIfPresent(&balanceTransfers, ownerAddressT, tokenAmountInEscrow); err != nil {
+					return nil
+				}
+				filToDeleteFromMarket = big.Add(filToDeleteFromMarket, tokenAmountInEscrow)
 				balanceTransferMapGuard.Unlock()
 			} else {
 				if err := actorsOut.SetActor(result.address, &result.actor); err != nil {
@@ -428,6 +436,9 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		return cid.Undef, err
 	}
 
+	// delete funds out of market that were removed from deleted miners' escrow
+	marketActor.Balance = big.Sub(marketActor.Balance, filToDeleteFromMarket)
+
 	// write back new escrow table into market state
 	newEscrowTableRoot, err := escrowTable.Root()
 	if err != nil {
@@ -438,13 +449,12 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 	if err != nil {
 		return cid.Undef, err
 	}
-	if actorsOut.SetActor(builtin6.StorageMarketActorAddr, marketActor) != nil {
+	if err := actorsOut.SetActor(builtin6.StorageMarketActorAddr, marketActor); err != nil {
 		return cid.Undef, err
 	}
 
 	// doing balance increments for owners of the deleted miners with test state tree types
 	// this is balances from the miners' balances in the tree and also from the escrow tables in the market actor.
-
 	for addressT, valueT := range balanceTransfers { //nolint:nomaprange // this nolint is ok, this thing will be like 30 entries long max...
 		// check and make sure this is positive... just as a fun invariant, haha
 
@@ -571,33 +581,33 @@ func (n nilMigrator) migratedCodeCID() cid.Cid {
 	return n.OutCodeCID
 }
 
-type cachedMigrator struct {
-	cache MigrationCache
-	actorMigration
-}
+// type cachedMigrator struct {
+// 	cache MigrationCache
+// 	actorMigration
+// }
 
-func (c cachedMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	newHead, err := c.cache.Load(ActorHeadKey(in.address, in.head), func() (cid.Cid, error) {
-		result, err := c.actorMigration.migrateState(ctx, store, in)
-		if err != nil {
-			return cid.Undef, err
-		}
-		return result.newHead, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &actorMigrationResult{
-		newCodeCID:                            c.migratedCodeCID(),
-		newHead:                               newHead,
-		minerTypeMigrationShouldDelete:        false,
-		minerDeletedWasAboveMinPower:          false,
-		minerTypeMigrationBalanceTransferInfo: balanceTransferInfo{},
-	}, nil
-}
-func cachedMigration(cache MigrationCache, m actorMigration) actorMigration {
-	return cachedMigrator{
-		actorMigration: m,
-		cache:          cache,
-	}
-}
+// func (c cachedMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+// 	newHead, err := c.cache.Load(ActorHeadKey(in.address, in.head), func() (cid.Cid, error) {
+// 		result, err := c.actorMigration.migrateState(ctx, store, in)
+// 		if err != nil {
+// 			return cid.Undef, err
+// 		}
+// 		return result.newHead, nil
+// 	})
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &actorMigrationResult{
+// 		newCodeCID:                            c.migratedCodeCID(),
+// 		newHead:                               newHead,
+// 		minerTypeMigrationShouldDelete:        false,
+// 		minerDeletedWasAboveMinPower:          false,
+// 		minerTypeMigrationBalanceTransferInfo: balanceTransferInfo{},
+// 	}, nil
+// }
+// func cachedMigration(cache MigrationCache, m actorMigration) actorMigration {
+// 	return cachedMigrator{
+// 		actorMigration: m,
+// 		cache:          cache,
+// 	}
+// }
