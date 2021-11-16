@@ -2244,8 +2244,12 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			quant := st.QuantSpecForDeadline(dlIdx)
 
 			for _, updateWithDetails := range declsByDeadline[dlIdx] {
+				updateProofType, err := updateWithDetails.sectorInfo.SealProof.RegisteredUpdateProof()
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "couldn't load update proof type")
+
 				err = rt.VerifyReplicaUpdate(
 					proof.ReplicaUpdateInfo{
+						UpdateProof:          updateProofType,
 						NewSealedSectorCID:   updateWithDetails.update.NewSealedSectorCID,
 						OldSealedSectorCID:   updateWithDetails.sectorInfo.SealedCID,
 						NewUnsealedSectorCID: updateWithDetails.unsealedSectorCID,

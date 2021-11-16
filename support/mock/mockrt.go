@@ -699,6 +699,10 @@ func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInf
 func (rt *Runtime) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
 	exp := rt.expectReplicaVerify
 	if exp != nil {
+		if replicaInfo.UpdateProof != exp.inRUI.UpdateProof {
+			rt.failTest("UpdateProof mismatch, expected: %v, actual: %v", exp.inRUI.UpdateProof, replicaInfo.UpdateProof)
+		}
+
 		if replicaInfo.NewSealedSectorCID != exp.inRUI.NewSealedSectorCID {
 			rt.failTest("NewSealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.NewSealedSectorCID, replicaInfo.NewSealedSectorCID)
 		}
