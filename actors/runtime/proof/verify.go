@@ -17,7 +17,7 @@ import (
 //	DealIDs               []abi.DealID
 //	Randomness            abi.SealRandomness
 //	InteractiveRandomness abi.InteractiveSealRandomness
-//	Proof                 []byte
+//	ReplicaProof                 []byte
 //
 //	// Safe because we get those from the miner actor
 //	SealedCID   cid.Cid `checked:"true"` // CommR

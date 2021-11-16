@@ -172,6 +172,7 @@ type SectorOnChainInfo struct {
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 	ReplacedSectorAge     abi.ChainEpoch  // Age of sector this sector replaced or zero
 	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
+	SectorKeyCID          *cid.Cid        // The original SealedSectorCID, only gets set on the first ReplicaUpdate
 }
 
 func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64) (*State, error) {

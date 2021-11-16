@@ -986,7 +986,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 
 //type ProveCommitSectorParams struct {
 //	SectorNumber abi.SectorNumber
-//	Proof        []byte
+//	ReplicaProof        []byte
 //}
 type ProveCommitSectorParams = miner0.ProveCommitSectorParams
 
@@ -2072,29 +2072,19 @@ type ReplicaUpdate struct {
 	SectorID           abi.SectorNumber
 	Deadline           uint64
 	Partition          uint64
-	NewSealedSectorCID cid.Cid
+	NewSealedSectorCID cid.Cid `checked:"true"`
 	Deals              []abi.DealID
-	// TODO: actual type for this
-	Proof []byte
+	ReplicaProof       []byte
 }
 
 type ProveReplicaUpdatesParams struct {
 	Updates []ReplicaUpdate
 }
 
-// TODO: Should return type be aliased
 func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams) bitfield.BitField {
 	// Validate inputs
 
-	// TODO: check how this gets rendered and fix as needed
-	builtin.RequireParam(rt, len(params.Updates) <= ProveReplicaUpdatesMaxSize, "too many updates", len(params.Updates), ProveReplicaUpdatesMaxSize)
-
-	// TODO: Any more quick checks before we jump into it?
-	// see extendsectorexpirations for more checks to plagiarize
-
-	// Kinda sad to be doing (and pay this before a bunch of checks, but oh well?
-	rewRet := requestCurrentEpochBlockReward(rt)
-	powRet := requestCurrentTotalPower(rt)
+	builtin.RequireParam(rt, len(params.Updates) <= ProveReplicaUpdatesMaxSize, "too many updates (%d > %d)", len(params.Updates), ProveReplicaUpdatesMaxSize)
 
 	store := adt.AsStore(rt)
 	var stReadOnly State
@@ -2118,7 +2108,8 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 	var sectorsDataSpec []*market.SectorDataSpec
 	var validatedUpdates []*updateAndSectorInfo
 	sectorNumbers := bitfield.New()
-	for _, update := range params.Updates {
+	for i := range params.Updates {
+		update := params.Updates[i]
 		// Bitfied.IsSet() is fast when there are only locally-set values.
 		set, err := sectorNumbers.IsSet(uint64(update.SectorID))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "error checking sector number")
@@ -2129,8 +2120,8 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 		sectorNumbers.Set(uint64(update.SectorID))
 
-		if len(update.Proof) > 4096 {
-			rt.Log(rtt.INFO, "update proof is too large (%d), skipping sector %d", len(update.Proof), update.SectorID)
+		if len(update.ReplicaProof) > 4096 {
+			rt.Log(rtt.INFO, "update proof is too large (%d), skipping sector %d", len(update.ReplicaProof), update.SectorID)
 			continue
 		}
 
@@ -2144,6 +2135,22 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
+		if update.Deadline >= WPoStPeriodDeadlines {
+			rt.Log(rtt.INFO, "deadline %d not in range 0..%d, skipping sector %d", update.Deadline, WPoStPeriodDeadlines, update.SectorID)
+			continue
+		}
+
+		if !update.NewSealedSectorCID.Defined() {
+			rt.Abortf(exitcode.ErrIllegalArgument, "new sealed CID undefined")
+		}
+
+		if update.NewSealedSectorCID.Prefix() != SealedCIDPrefix {
+			rt.Abortf(exitcode.ErrIllegalArgument, "new sealed CID had wrong prefix")
+		}
+
+		err = stReadOnly.CheckSectorHealth(store, update.Deadline, update.Partition, update.SectorID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "sector is not healthy")
+
 		sectorInfo, err := sectors.MustGet(update.SectorID)
 		if err != nil {
 			rt.Log(rtt.INFO, "failed to get sector, skipping sector %d", update.SectorID)
@@ -2154,8 +2161,6 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			rt.Log(rtt.INFO, "cannot update sector with deals, skipping sector %d", update.SectorID)
 			continue
 		}
-
-		// TODO: confirm sector is healthy (happens implicitly later, but should be done ahead of time)
 
 		code := rt.Send(
 			builtin.StorageMarketActorAddr,
@@ -2204,12 +2209,10 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		unsealedSectorCID cid.Cid
 	}
 
-	// Group declarations by deadline, and remember iteration order.
-	// This should be merged with the iteration outside the state transaction.
+	// Group declarations by deadline
 	declsByDeadline := map[uint64][]*updateWithDetails{}
 	var deadlinesToLoad []uint64
 	for i, updateWithSectorInfo := range validatedUpdates {
-		// TODO extend sector has a blurb about pointer vs temp loop variable that i don't understand
 		if _, ok := declsByDeadline[updateWithSectorInfo.update.Deadline]; !ok {
 			deadlinesToLoad = append(deadlinesToLoad, updateWithSectorInfo.update.Deadline)
 		}
@@ -2220,6 +2223,9 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			unsealedSectorCID: unsealedSectorCIDs[i],
 		})
 	}
+
+	rewRet := requestCurrentEpochBlockReward(rt)
+	powRet := requestCurrentTotalPower(rt)
 
 	succeededSectors := bitfield.New()
 	var st State
@@ -2243,6 +2249,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 						NewSealedSectorCID:   updateWithDetails.update.NewSealedSectorCID,
 						OldSealedSectorCID:   updateWithDetails.sectorInfo.SealedCID,
 						NewUnsealedSectorCID: updateWithDetails.unsealedSectorCID,
+						Proof:                updateWithDetails.update.ReplicaProof,
 					})
 
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to verify replica proof for sector %d", updateWithDetails.sectorInfo.SectorNumber)
@@ -2250,19 +2257,18 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 				newSectorInfo := updateWithDetails.sectorInfo
 
 				newSectorInfo.SealedCID = updateWithDetails.update.NewSealedSectorCID
+				if newSectorInfo.SectorKeyCID == nil {
+					newSectorInfo.SectorKeyCID = &updateWithDetails.sectorInfo.SealedCID
+				}
+
 				newSectorInfo.DealIDs = updateWithDetails.update.Deals
+				newSectorInfo.Activation = rt.CurrEpoch()
 
 				newSectorInfo.DealWeight = updateWithDetails.dealWeight.DealWeight
 				newSectorInfo.VerifiedDealWeight = updateWithDetails.dealWeight.VerifiedDealWeight
 
 				// compute initial pledge
 				duration := updateWithDetails.sectorInfo.Expiration - rt.CurrEpoch()
-
-				// TODO: Should we include this?
-				//if duration < MinSectorExpiration {
-				//	rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
-				//	continue
-				//}
 
 				pwr := QAPowerForWeight(info.SectorSize, duration, newSectorInfo.DealWeight, newSectorInfo.VerifiedDealWeight)
 
@@ -2298,7 +2304,6 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 					rt.Abortf(exitcode.ErrNotFound, "no such deadline %v partition %v", dlIdx, updateWithDetails.update.Partition)
 				}
 
-				// TODO: Group by partition
 				partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store,
 					[]*SectorOnChainInfo{updateWithDetails.sectorInfo},
 					[]*SectorOnChainInfo{newSectorInfo},
@@ -2308,24 +2313,22 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector at deadline %d partition %d", updateWithDetails.update.Deadline, updateWithDetails.update.Partition)
 
 				powerDelta = powerDelta.Add(partitionPowerDelta)
-				pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta) // expected to be zero, see note below.
+				pledgeDelta = big.Add(pledgeDelta, partitionPledgeDelta)
 
 				err = partitions.Set(updateWithDetails.update.Partition, &partition)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %v partition %v",
 					updateWithDetails.update.Deadline,
 					updateWithDetails.update.Partition)
 
-				deadline.Partitions, err = partitions.Root()
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", updateWithDetails.update.Deadline)
-
-				err = deadlines.UpdateDeadline(store, updateWithDetails.update.Deadline, deadline)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", updateWithDetails.update.Deadline)
-
-				// TODO: sectorkey (phase 2)
-
 				newSectors = append(newSectors, newSectorInfo)
 				succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 			}
+
+			deadline.Partitions, err = partitions.Root()
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save partitions for deadline %d", dlIdx)
+
+			err = deadlines.UpdateDeadline(store, dlIdx, deadline)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadline %d", dlIdx)
 		}
 
 		successCount, err := succeededSectors.Count()
@@ -2344,6 +2347,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 	})
 
+	notifyPledgeChanged(rt, pledgeDelta)
 	requestUpdatePower(rt, powerDelta)
 
 	return succeededSectors
@@ -2745,7 +2749,7 @@ func verifyWindowedPost(rt Runtime, challengeEpoch abi.ChainEpoch, sectors []*Se
 		Prover:            abi.ActorID(minerActorID),
 	}
 
-	// Verify the PoSt Proof
+	// Verify the PoSt ReplicaProof
 	err = rt.VerifyPoSt(pvInfo)
 	if err != nil {
 		return fmt.Errorf("invalid PoSt %+v: %w", pvInfo, err)

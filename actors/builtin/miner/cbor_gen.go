@@ -1790,7 +1790,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{141}
+var lengthBufSectorOnChainInfo = []byte{142}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1902,6 +1902,19 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if err := t.ReplacedDayReward.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.SectorKeyCID (cid.Cid) (struct)
+
+	if t.SectorKeyCID == nil {
+		if _, err := w.Write(cbg.CborNull); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteCidBuf(scratch, w, *t.SectorKeyCID); err != nil {
+			return xerrors.Errorf("failed to write cid field t.SectorKeyCID: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1919,7 +1932,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 13 {
+	if extra != 14 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2133,6 +2146,28 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.ReplacedDayReward.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ReplacedDayReward: %w", err)
+		}
+
+	}
+	// t.SectorKeyCID (cid.Cid) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+
+			c, err := cbg.ReadCid(br)
+			if err != nil {
+				return xerrors.Errorf("failed to read cid field t.SectorKeyCID: %w", err)
+			}
+
+			t.SectorKeyCID = &c
 		}
 
 	}
@@ -2776,16 +2811,16 @@ func (t *ReplicaUpdate) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Proof ([]uint8) (slice)
-	if len(t.Proof) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.Proof was too long")
+	// t.ReplicaProof ([]uint8) (slice)
+	if len(t.ReplicaProof) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("Byte array in field t.ReplicaProof was too long")
 	}
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.Proof))); err != nil {
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.ReplicaProof))); err != nil {
 		return err
 	}
 
-	if _, err := w.Write(t.Proof[:]); err != nil {
+	if _, err := w.Write(t.ReplicaProof[:]); err != nil {
 		return err
 	}
 	return nil
@@ -2896,7 +2931,7 @@ func (t *ReplicaUpdate) UnmarshalCBOR(r io.Reader) error {
 		t.Deals[i] = abi.DealID(val)
 	}
 
-	// t.Proof ([]uint8) (slice)
+	// t.ReplicaProof ([]uint8) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
@@ -2904,17 +2939,17 @@ func (t *ReplicaUpdate) UnmarshalCBOR(r io.Reader) error {
 	}
 
 	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.Proof: byte array too large (%d)", extra)
+		return fmt.Errorf("t.ReplicaProof: byte array too large (%d)", extra)
 	}
 	if maj != cbg.MajByteString {
 		return fmt.Errorf("expected byte array")
 	}
 
 	if extra > 0 {
-		t.Proof = make([]uint8, extra)
+		t.ReplicaProof = make([]uint8, extra)
 	}
 
-	if _, err := io.ReadFull(br, t.Proof[:]); err != nil {
+	if _, err := io.ReadFull(br, t.ReplicaProof[:]); err != nil {
 		return err
 	}
 	return nil

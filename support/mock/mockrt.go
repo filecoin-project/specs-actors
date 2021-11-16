@@ -99,9 +99,8 @@ type expectAggregateVerifySeals struct {
 }
 
 type expectReplicaVerify struct {
-	inRUIs  []proof.ReplicaUpdateInfo
-	inProof []byte
-	err     error
+	inRUI proof.ReplicaUpdateInfo
+	err   error
 }
 
 type expectRandomness struct {
@@ -698,6 +697,27 @@ func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInf
 }
 
 func (rt *Runtime) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
+	exp := rt.expectReplicaVerify
+	if exp != nil {
+		if replicaInfo.NewSealedSectorCID != exp.inRUI.NewSealedSectorCID {
+			rt.failTest("NewSealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.NewSealedSectorCID, replicaInfo.NewSealedSectorCID)
+		}
+
+		if replicaInfo.OldSealedSectorCID != exp.inRUI.OldSealedSectorCID {
+			rt.failTest("OldSealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.OldSealedSectorCID, replicaInfo.OldSealedSectorCID)
+		}
+
+		if replicaInfo.NewUnsealedSectorCID != exp.inRUI.NewUnsealedSectorCID {
+			rt.failTest("NewUnsealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.NewUnsealedSectorCID, replicaInfo.NewUnsealedSectorCID)
+		}
+
+		defer func() {
+			rt.expectAggregateVerifySeals = nil
+		}()
+		return nil
+	}
+
+	rt.failTestNow("unexpected syscall to verify replica: %v", replicaInfo)
 	return nil
 }
 
@@ -937,6 +957,12 @@ func (rt *Runtime) ExpectBatchVerifySeals(in map[addr.Address][]proof.SealVerify
 func (rt *Runtime) ExpectAggregateVerifySeals(agg proof.AggregateSealVerifyProofAndInfos, err error) {
 	rt.expectAggregateVerifySeals = &expectAggregateVerifySeals{
 		agg.Infos, agg.Proof, err,
+	}
+}
+
+func (rt *Runtime) ExpectReplicaVerify(replica proof.ReplicaUpdateInfo, err error) {
+	rt.expectReplicaVerify = &expectReplicaVerify{
+		replica, err,
 	}
 }
 
