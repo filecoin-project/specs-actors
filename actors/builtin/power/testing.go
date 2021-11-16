@@ -11,8 +11,8 @@ import (
 )
 
 type MinerCronEvent struct {
-	Epoch   abi.ChainEpoch
-	Payload []byte
+	Epoch       abi.ChainEpoch
+	CronPayload builtin.CronEventPayload
 }
 
 type CronEventsByAddress map[address.Address][]MinerCronEvent
@@ -77,8 +77,8 @@ func CheckCronInvariants(st *State, store adt.Store, acc *builtin.MessageAccumul
 		var event CronEvent
 		return arr.ForEach(&event, func(i int64) error {
 			byAddress[event.MinerAddr] = append(byAddress[event.MinerAddr], MinerCronEvent{
-				Epoch:   abi.ChainEpoch(epoch),
-				Payload: event.CallbackPayload,
+				Epoch:       abi.ChainEpoch(epoch),
+				CronPayload: event.EventPayload,
 			})
 
 			return nil

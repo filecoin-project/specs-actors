@@ -1,8 +1,6 @@
 package states
 
 import (
-	"bytes"
-
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -179,13 +177,14 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 		var payload miner.CronEventPayload
 		var provingPeriodCron *power.MinerCronEvent
 		for _, event := range crons {
-			err := payload.UnmarshalCBOR(bytes.NewReader(event.Payload))
-			acc.Require(err == nil, "miner %v registered cron at epoch %d with wrong or corrupt payload",
-				addr, event.Epoch)
-			acc.Require(payload.EventType == miner.CronEventProcessEarlyTerminations || payload.EventType == miner.CronEventProvingDeadline,
+			// this should be impossible now- types are constrained.
+			// err := payload.UnmarshalCBOR(bytes.NewReader(event.CronPayload))
+			// acc.Require(err == nil, "miner %v registered cron at epoch %d with wrong or corrupt payload",
+			// 	addr, event.Epoch)
+			acc.Require(payload.EventType == builtin.CronEventProcessEarlyTerminations || payload.EventType == builtin.CronEventProvingDeadline,
 				"miner %v has unexpected cron event type %v", addr, payload.EventType)
 
-			if payload.EventType == miner.CronEventProvingDeadline {
+			if payload.EventType == builtin.CronEventProvingDeadline {
 				if provingPeriodCron != nil {
 					acc.Require(false, "miner %v has duplicate proving period crons at epoch %d and %d",
 						addr, provingPeriodCron.Epoch, event.Epoch)

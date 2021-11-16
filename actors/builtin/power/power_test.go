@@ -170,42 +170,51 @@ func TestEnrollCronEpoch(t *testing.T) {
 	owner := tutil.NewBLSAddr(t, 0)
 	miner := tutil.NewIDAddr(t, 101)
 
+	deadlinePayload := builtin.CronEventPayload{
+		EventType: builtin.CronEventProvingDeadline,
+	}
+	terminationPayload := builtin.CronEventPayload{
+		EventType: builtin.CronEventProcessEarlyTerminations,
+	}
 	t.Run("enroll multiple events", func(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 		ac.createMinerBasic(rt, owner, owner, miner)
 		e1 := abi.ChainEpoch(1)
 
 		// enroll event with miner 1
-		p1 := []byte("hello")
+		// no longer allowing arbitrary cron event payloads
+		// p1 := []byte("hello")
+		p1 := deadlinePayload
 		ac.enrollCronEvent(rt, miner, e1, p1)
 
 		events := ac.getEnrolledCronTicks(rt, e1)
 
 		evt := events[0]
-		require.EqualValues(t, p1, evt.CallbackPayload)
+		require.EqualValues(t, p1, evt.EventPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
 		// enroll another event with the same miner
-		p2 := []byte("hello2")
+		// no longer allowing arbitrary cron event payloads
+		// p2 := []byte("hello2")
+		p2 := terminationPayload
 		ac.enrollCronEvent(rt, miner, e1, p2)
 		events = ac.getEnrolledCronTicks(rt, e1)
 		evt = events[0]
-		require.EqualValues(t, p1, evt.CallbackPayload)
+		require.EqualValues(t, p1, evt.EventPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
 		evt = events[1]
-		require.EqualValues(t, p2, evt.CallbackPayload)
+		require.EqualValues(t, p2, evt.EventPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 
 		// enroll another event with a different miner for a different epoch
 		e2 := abi.ChainEpoch(2)
-		p3 := []byte("test")
 		miner2 := tutil.NewIDAddr(t, 501)
 		ac.createMinerBasic(rt, owner, owner, miner2)
-		ac.enrollCronEvent(rt, miner2, e2, p3)
+		ac.enrollCronEvent(rt, miner2, e2, p2)
 		events = ac.getEnrolledCronTicks(rt, e2)
 		evt = events[0]
-		require.EqualValues(t, p3, evt.CallbackPayload)
+		require.EqualValues(t, p2, evt.EventPayload)
 		require.EqualValues(t, miner2, evt.MinerAddr)
 		ac.checkState(rt)
 	})
@@ -219,23 +228,27 @@ func TestEnrollCronEpoch(t *testing.T) {
 		rt.SetEpoch(current)
 
 		// enroll event with miner at epoch=2
-		p1 := []byte("hello")
 		e1 := abi.ChainEpoch(2)
+		// no longer allowing arbitrary cron event payloads
+		// p1 := []byte("hello")
+		p1 := terminationPayload
 		ac.enrollCronEvent(rt, miner, e1, p1)
 		events := ac.getEnrolledCronTicks(rt, e1)
 		evt := events[0]
-		require.EqualValues(t, p1, evt.CallbackPayload)
+		require.EqualValues(t, p1, evt.EventPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 		st := getState(rt)
 		require.EqualValues(t, abi.ChainEpoch(0), st.FirstCronEpoch)
 
 		// enroll event with miner at epoch=1
-		p2 := []byte("hello2")
+		// no longer allowing arbitrary cron event payloads
+		// p2 := []byte("hello2")
+		p2 := deadlinePayload
 		e2 := abi.ChainEpoch(1)
 		ac.enrollCronEvent(rt, miner, e2, p2)
 		events = ac.getEnrolledCronTicks(rt, e2)
 		evt = events[0]
-		require.EqualValues(t, p2, evt.CallbackPayload)
+		require.EqualValues(t, p2, evt.EventPayload)
 		require.EqualValues(t, miner, evt.MinerAddr)
 		require.EqualValues(t, abi.ChainEpoch(0), st.FirstCronEpoch)
 		ac.checkState(rt)
@@ -245,7 +258,7 @@ func TestEnrollCronEpoch(t *testing.T) {
 		rt, ac := basicPowerSetup(t)
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			ac.enrollCronEvent(rt, miner, abi.ChainEpoch(-1), []byte("payload"))
+			ac.enrollCronEvent(rt, miner, abi.ChainEpoch(-1), deadlinePayload)
 		})
 	})
 }
@@ -544,6 +557,13 @@ func TestCron(t *testing.T) {
 	miner2 := tutil.NewIDAddr(t, 102)
 	owner := tutil.NewIDAddr(t, 103)
 
+	deadlinePayload := builtin.CronEventPayload{
+		EventType: builtin.CronEventProvingDeadline,
+	}
+	terminationPayload := builtin.CronEventPayload{
+		EventType: builtin.CronEventProcessEarlyTerminations,
+	}
+
 	builder := mock.NewBuilder(builtin.StoragePowerActorAddr).WithCaller(builtin.SystemActorAddr, builtin.SystemActorCodeID)
 
 	t.Run("calls reward actor", func(t *testing.T) {
@@ -608,16 +628,18 @@ func TestCron(t *testing.T) {
 		//  4 - block - has event
 
 		rt.SetEpoch(1)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
-		actor.enrollCronEvent(rt, miner2, 4, []byte{0x2, 0x3})
+		actor.enrollCronEvent(rt, miner1, 2, deadlinePayload)
+		actor.enrollCronEvent(rt, miner2, 4, deadlinePayload)
 
 		expectedRawBytePower := big.NewInt(0)
 		rt.SetEpoch(4)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		expectQueryNetworkInfo(rt, actor)
 
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
-		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x2, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent,
+			deadlinePayload, big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner2, builtin.MethodsMiner.OnDeferredCronEvent,
+			deadlinePayload, big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -646,13 +668,13 @@ func TestCron(t *testing.T) {
 		rt.Verify()
 
 		// enroll a cron task at epoch 2 (which is in the past)
-		actor.enrollCronEvent(rt, miner1, 2, []byte{0x1, 0x3})
+		actor.enrollCronEvent(rt, miner1, 2, deadlinePayload)
 
 		// run cron again in the future
 		rt.SetEpoch(6)
 		rt.ExpectValidateCallerAddr(builtin.CronActorAddr)
 		expectQueryNetworkInfo(rt, actor)
-		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, builtin.CBORBytes([]byte{0x1, 0x3}), big.Zero(), nil, exitcode.Ok)
+		rt.ExpectSend(miner1, builtin.MethodsMiner.OnDeferredCronEvent, deadlinePayload, big.Zero(), nil, exitcode.Ok)
 		rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.UpdateNetworkKPI, &expectedRawBytePower, big.Zero(), nil, exitcode.Ok)
 		rt.SetCaller(builtin.CronActorAddr, builtin.CronActorCodeID)
 		rt.ExpectBatchVerifySeals(nil, nil, nil)
@@ -681,7 +703,7 @@ func TestCron(t *testing.T) {
 
 		// enroll a cron task at epoch 2 (which is in the past)
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "epoch -2 cannot be less than zero", func() {
-			actor.enrollCronEvent(rt, miner1, -2, []byte{0x1, 0x3})
+			actor.enrollCronEvent(rt, miner1, -2, deadlinePayload)
 		})
 	})
 
@@ -693,8 +715,8 @@ func TestCron(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		actor.enrollCronEvent(rt, miner1, 2, []byte{})
-		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+		actor.enrollCronEvent(rt, miner1, 2, deadlinePayload)
+		actor.enrollCronEvent(rt, miner2, 2, deadlinePayload)
 
 		// explicitly delete miner 1's claim
 		actor.deleteClaim(rt, miner1)
@@ -730,8 +752,8 @@ func TestCron(t *testing.T) {
 		actor.createMinerBasic(rt, owner, owner, miner1)
 		actor.createMinerBasic(rt, owner, owner, miner2)
 
-		actor.enrollCronEvent(rt, miner1, 2, []byte{})
-		actor.enrollCronEvent(rt, miner2, 2, []byte{})
+		actor.enrollCronEvent(rt, miner1, 2, deadlinePayload)
+		actor.enrollCronEvent(rt, miner2, 2, terminationPayload)
 
 		rawPow, err := builtin.ConsensusMinerMinPower(abi.RegisteredPoStProof_StackedDrgWindow32GiBV1)
 		require.NoError(t, err)
@@ -1335,12 +1357,12 @@ func (h *spActorHarness) currentPowerTotal(rt *mock.Runtime) *power.CurrentTotal
 	return ret
 }
 
-func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, epoch abi.ChainEpoch, payload []byte) {
+func (h *spActorHarness) enrollCronEvent(rt *mock.Runtime, miner addr.Address, epoch abi.ChainEpoch, payload builtin.CronEventPayload) {
 	rt.ExpectValidateCallerType(builtin.StorageMinerActorCodeID)
 	rt.SetCaller(miner, builtin.StorageMinerActorCodeID)
 	rt.Call(h.Actor.EnrollCronEvent, &power.EnrollCronEventParams{
-		EventEpoch: epoch,
-		Payload:    payload,
+		EventEpoch:   epoch,
+		EventPayload: payload,
 	})
 	rt.Verify()
 

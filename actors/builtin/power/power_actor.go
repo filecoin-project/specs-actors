@@ -2,6 +2,7 @@ package power
 
 import (
 	"bytes"
+	"io"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -177,18 +178,29 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 	return nil
 }
 
-//type EnrollCronEventParams struct {
-//	EventEpoch abi.ChainEpoch
-//	Payload    []byte
-//}
-type EnrollCronEventParams = power0.EnrollCronEventParams
+type EnrollCronEventParams struct {
+	EventEpoch   abi.ChainEpoch
+	EventPayload builtin.CronEventPayload
+}
+
+func (c EnrollCronEventParams) MarshalCBOR(w io.Writer) error {
+	_, err := w.Write([]byte(""))
+	return err
+}
+
+func (b *EnrollCronEventParams) UnmarshalCBOR(r io.Reader) error {
+	var c bytes.Buffer
+	_, err := c.ReadFrom(r)
+	*b = EnrollCronEventParams{}
+	return err
+}
 
 func (a Actor) EnrollCronEvent(rt Runtime, params *EnrollCronEventParams) *abi.EmptyValue {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
 	minerAddr := rt.Caller()
 	minerEvent := CronEvent{
-		MinerAddr:       minerAddr,
-		CallbackPayload: params.Payload,
+		MinerAddr:    minerAddr,
+		EventPayload: params.EventPayload,
 	}
 
 	// Ensure it is not possible to enter a large negative number which would cause problems in cron processing.
@@ -491,7 +503,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime) {
 		code := rt.Send(
 			event.MinerAddr,
 			builtin.MethodsMiner.OnDeferredCronEvent,
-			builtin.CBORBytes(event.CallbackPayload),
+			event.EventPayload,
 			abi.NewTokenAmount(0),
 			&builtin.Discard{},
 		)

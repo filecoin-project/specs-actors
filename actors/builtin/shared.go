@@ -21,6 +21,20 @@ import (
 // This value has been empirically chosen, but the optimal value for maps with different mutation profiles may differ.
 const DefaultHamtBitwidth = 5
 
+//type CronEventPayload struct {
+//	EventType CronEventType
+//}
+type CronEventPayload struct {
+	EventType CronEventType
+}
+
+type CronEventType = int64
+
+const (
+	CronEventProvingDeadline          CronEventType = 1
+	CronEventProcessEarlyTerminations CronEventType = 2
+)
+
 type BigFrac struct {
 	Numerator   big.Int
 	Denominator big.Int

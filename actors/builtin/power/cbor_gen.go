@@ -466,23 +466,13 @@ func (t *CronEvent) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	scratch := make([]byte, 9)
-
 	// t.MinerAddr (address.Address) (struct)
 	if err := t.MinerAddr.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.CallbackPayload ([]uint8) (slice)
-	if len(t.CallbackPayload) > cbg.ByteArrayMaxLen {
-		return xerrors.Errorf("Byte array in field t.CallbackPayload was too long")
-	}
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(t.CallbackPayload))); err != nil {
-		return err
-	}
-
-	if _, err := w.Write(t.CallbackPayload[:]); err != nil {
+	// t.EventPayload (builtin.CronEventPayload) (struct)
+	if err := t.EventPayload.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -515,26 +505,14 @@ func (t *CronEvent) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.CallbackPayload ([]uint8) (slice)
+	// t.EventPayload (builtin.CronEventPayload) (struct)
 
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
+	{
 
-	if extra > cbg.ByteArrayMaxLen {
-		return fmt.Errorf("t.CallbackPayload: byte array too large (%d)", extra)
-	}
-	if maj != cbg.MajByteString {
-		return fmt.Errorf("expected byte array")
-	}
+		if err := t.EventPayload.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.EventPayload: %w", err)
+		}
 
-	if extra > 0 {
-		t.CallbackPayload = make([]uint8, extra)
-	}
-
-	if _, err := io.ReadFull(br, t.CallbackPayload[:]); err != nil {
-		return err
 	}
 	return nil
 }

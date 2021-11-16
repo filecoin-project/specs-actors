@@ -5854,7 +5854,7 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 	rt.SetCaller(builtin.StoragePowerActorAddr, builtin.StoragePowerActorCodeID)
 	rt.Call(h.a.OnDeferredCronEvent, &miner.CronEventPayload{
-		EventType: miner.CronEventProvingDeadline,
+		EventType: builtin.CronEventProvingDeadline,
 	})
 	rt.Verify()
 }
@@ -6138,14 +6138,14 @@ func getState(rt *mock.Runtime) *miner.State {
 }
 
 func makeDeadlineCronEventParams(t testing.TB, epoch abi.ChainEpoch) *power.EnrollCronEventParams {
-	eventPayload := miner.CronEventPayload{EventType: miner.CronEventProvingDeadline}
+	eventPayload := miner.CronEventPayload{EventType: builtin.CronEventProvingDeadline}
 	buf := bytes.Buffer{}
 	err := eventPayload.MarshalCBOR(&buf)
 	require.NoError(t, err)
 
 	params := &power.EnrollCronEventParams{
-		EventEpoch: epoch,
-		Payload:    buf.Bytes(),
+		EventEpoch:   epoch,
+		EventPayload: eventPayload,
 	}
 	return params
 }

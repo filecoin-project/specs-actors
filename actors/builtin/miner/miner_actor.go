@@ -850,7 +850,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 	if needsCron {
 		newDlInfo := st.DeadlineInfo(currEpoch)
 		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
-			EventType: CronEventProvingDeadline,
+			EventType: builtin.CronEventProvingDeadline,
 		})
 	}
 
@@ -2075,22 +2075,17 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 //type CronEventPayload struct {
 //	EventType CronEventType
 //}
-type CronEventPayload = miner0.CronEventPayload
+type CronEventPayload = builtin.CronEventPayload
 
-type CronEventType = miner0.CronEventType
-
-const (
-	CronEventProvingDeadline          = miner0.CronEventProvingDeadline
-	CronEventProcessEarlyTerminations = miner0.CronEventProcessEarlyTerminations
-)
+type CronEventType = builtin.CronEventType
 
 func (a Actor) OnDeferredCronEvent(rt Runtime, payload *CronEventPayload) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
 
 	switch payload.EventType {
-	case CronEventProvingDeadline:
+	case builtin.CronEventProvingDeadline:
 		handleProvingDeadline(rt)
-	case CronEventProcessEarlyTerminations:
+	case builtin.CronEventProcessEarlyTerminations:
 		if processEarlyTerminations(rt) {
 			scheduleEarlyTerminationWork(rt)
 		}
@@ -2285,7 +2280,7 @@ func handleProvingDeadline(rt Runtime) {
 	if continueCron {
 		newDlInfo := st.DeadlineInfo(currEpoch + 1)
 		enrollCronEvent(rt, newDlInfo.Last(), &CronEventPayload{
-			EventType: CronEventProvingDeadline,
+			EventType: builtin.CronEventProvingDeadline,
 		})
 	} else {
 		rt.Log(rtt.INFO, "miner %s going inactive, deadline cron discontinued", rt.Receiver())
@@ -2375,8 +2370,8 @@ func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *Cro
 		builtin.StoragePowerActorAddr,
 		builtin.MethodsPower.EnrollCronEvent,
 		&power.EnrollCronEventParams{
-			EventEpoch: eventEpoch,
-			Payload:    payload.Bytes(),
+			EventEpoch:   eventEpoch,
+			EventPayload: *callbackPayload,
 		},
 		abi.NewTokenAmount(0),
 		&builtin.Discard{},
@@ -2423,7 +2418,7 @@ func scheduleEarlyTerminationWork(rt Runtime) {
 	rt.Log(rtt.INFO, "scheduling early terminations with cron...")
 
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
-		EventType: CronEventProcessEarlyTerminations,
+		EventType: builtin.CronEventProcessEarlyTerminations,
 	})
 }
 

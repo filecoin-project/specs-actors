@@ -8,13 +8,12 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	cid "github.com/ipfs/go-cid"
-	errors "github.com/pkg/errors"
-	"golang.org/x/xerrors"
-
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
+	cid "github.com/ipfs/go-cid"
+	errors "github.com/pkg/errors"
+	"golang.org/x/xerrors"
 )
 
 // genesis power in bytes = 750,000 GiB
@@ -80,8 +79,8 @@ type Claim struct {
 }
 
 type CronEvent struct {
-	MinerAddr       addr.Address
-	CallbackPayload []byte
+	MinerAddr    addr.Address
+	EventPayload builtin.CronEventPayload
 }
 
 func ConstructState(store adt.Store) (*State, error) {

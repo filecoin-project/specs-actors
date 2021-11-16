@@ -145,7 +145,7 @@ func TestCronTick(t *testing.T) {
 				Method: builtin.MethodsMiner.OnDeferredCronEvent,
 				From:   builtin.StoragePowerActorAddr,
 				Value:  vm.ExpectAttoFil(big.Zero()),
-				Params: vm.ExpectBytes(cronConfig.Payload),
+				Params: vm.ExpectObject(cronConfig.EventPayload),
 			},
 			{
 				// expect call to reward to update kpi
