@@ -2182,7 +2182,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		)
 
 		if code != exitcode.Ok {
-			rt.Log(rtt.INFO, "failed to activate deals on sector %d, skipping sector %d", update.SectorID)
+			rt.Log(rtt.INFO, "failed to activate deals, skipping sector %d", update.SectorID)
 			continue
 		}
 
@@ -2251,7 +2251,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 			quant := st.QuantSpecForDeadline(dlIdx)
 
-			for _, updateWithDetails := range declsByDeadline[dlIdx] {
+			for i, updateWithDetails := range declsByDeadline[dlIdx] {
 				updateProofType, err := updateWithDetails.sectorInfo.SealProof.RegisteredUpdateProof()
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "couldn't load update proof type")
 				builtin.RequirePredicate(rt, updateWithDetails.update.UpdateProofType == updateProofType, exitcode.ErrIllegalArgument, "unsupported update proof type %d", updateWithDetails.update.UpdateProofType)
@@ -2319,7 +2319,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 				partitionPowerDelta, partitionPledgeDelta, err := partition.ReplaceSectors(store,
 					[]*SectorOnChainInfo{updateWithDetails.sectorInfo},
-					[]*SectorOnChainInfo{newSectorInfo},
+					[]*SectorOnChainInfo{&newSectorInfo},
 					info.SectorSize,
 					quant)
 
@@ -2333,7 +2333,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 					updateWithDetails.update.Deadline,
 					updateWithDetails.update.Partition)
 
-				newSectors = append(newSectors, newSectorInfo)
+				newSectors[i] = &newSectorInfo
 				succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 			}
 

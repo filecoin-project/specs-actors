@@ -12,7 +12,6 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/text/language"
@@ -24,7 +23,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v7/actors/states"
 	"github.com/filecoin-project/specs-actors/v7/support/ipld"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm"
 )
 
@@ -46,7 +44,7 @@ func TestCommitPoStFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	sectorNumber := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, 1, 1, worker, minerAddrs.IDAddress, sealProof, sectorNumber, true)
+	precommits := preCommitSectors(t, v, 1, 1, worker, minerAddrs.IDAddress, sealProof, sectorNumber, true, 0)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -302,7 +300,7 @@ func TestMeasurePreCommitGas(t *testing.T) {
 		tv, err := v.WithEpoch(v.GetEpoch())
 		require.NoError(t, err)
 		firstSectorNo := abi.SectorNumber(sectorCount * batchSize)
-		preCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+		preCommitSectors(t, tv, sectorCount, batchSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 
 		stats := tv.GetCallStats()
 		precommitStats := stats[statsKey]
@@ -341,7 +339,7 @@ func TestMeasurePoRepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
@@ -495,8 +493,7 @@ func TestBatchOnboarding(t *testing.T) {
 		require.NoError(t, err)
 
 		if spec.preCommitSectorCount > 0 {
-			newPrecommits := preCommitSectors(t, v, spec.preCommitSectorCount, spec.preCommitBatchSize, worker, minerAddrs.IDAddress,
-				sealProof, nextSectorNo, nextSectorNo == 0)
+			newPrecommits := preCommitSectors(t, v, spec.preCommitSectorCount, spec.preCommitBatchSize, worker, minerAddrs.IDAddress, sealProof, nextSectorNo, nextSectorNo == 0, 0)
 			precommits = append(precommits, newPrecommits...)
 			nextSectorNo += abi.SectorNumber(spec.preCommitSectorCount)
 			preCommittedCount += spec.preCommitSectorCount
@@ -573,13 +570,13 @@ func TestAggregateOnePreCommitExpires(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	earlyPreCommitTime := v.GetEpoch()
-	earlyPrecommits := preCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	earlyPrecommits := preCommitSectors(t, v, 1, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 
 	earlyPreCommitInvalid := earlyPreCommitTime + miner.MaxProveCommitDuration[sealProof] + abi.ChainEpoch(1)
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, earlyPreCommitInvalid)
 
 	// later precommits
-	laterPrecommits := preCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false)
+	laterPrecommits := preCommitSectors(t, v, 3, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo+1, false, 0)
 	allPrecommits := append(earlyPrecommits, laterPrecommits...)
 	sectorNosBf := precommitSectorNumbers(allPrecommits)
 
@@ -640,7 +637,7 @@ func TestAggregateSizeLimits(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := preCommitSectors(t, v, overSizedBatch, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -703,7 +700,7 @@ func TestAggregateBadSender(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	preCommitTime := v.GetEpoch()
-	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 
 	//
 	// attempt proving with invalid args
@@ -747,7 +744,7 @@ func TestAggregateBadSectorNumber(t *testing.T) {
 	firstSectorNo := abi.SectorNumber(100)
 	// early precommit
 	preCommitTime := v.GetEpoch()
-	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := preCommitSectors(t, v, 4, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 
 	//
 	// attempt proving with invalid args
@@ -795,7 +792,7 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	// precommit sectors
 	//
 	firstSectorNo := abi.SectorNumber(100)
-	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true)
+	precommits := preCommitSectors(t, v, sectorCount, miner.PreCommitSectorBatchMaxSize, addrs[0], minerAddrs.IDAddress, sealProof, firstSectorNo, true, 0)
 	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
 	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
@@ -861,71 +858,6 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	networkStats := vm.GetNetworkStats(t, v)
 	assert.Equal(t, big.Zero(), networkStats.TotalBytesCommitted)
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
-}
-
-func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof,
-	sectorNumberBase abi.SectorNumber, expectCronEnrollment bool) []*miner.SectorPreCommitOnChainInfo {
-	invocsCommon := []vm.ExpectInvocation{
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-	}
-	invocFirst := vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}
-
-	sectorIndex := 0
-	for sectorIndex < count {
-		msgSectorIndexStart := sectorIndex
-		invocs := invocsCommon
-
-		// Prepare message.
-		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
-		for j := 0; j < batchSize && sectorIndex < count; j++ {
-			sectorNumber := sectorNumberBase + abi.SectorNumber(sectorIndex)
-			sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
-			params.Sectors[j] = miner0.SectorPreCommitInfo{
-				SealProof:     sealProof,
-				SectorNumber:  sectorNumber,
-				SealedCID:     sealedCid,
-				SealRandEpoch: v.GetEpoch() - 1,
-				DealIDs:       nil,
-				Expiration:    v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100,
-			}
-			sectorIndex++
-		}
-		if sectorIndex == count && sectorIndex%batchSize != 0 {
-			// Trim the last, partial batch.
-			params.Sectors = params.Sectors[:sectorIndex%batchSize]
-		}
-
-		// Finalize invocation expectation list
-		if len(params.Sectors) > 1 {
-			aggFee := miner.AggregatePreCommitNetworkFee(len(params.Sectors), big.Zero())
-			invocs = append(invocs, vm.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: &aggFee})
-		}
-		if expectCronEnrollment && msgSectorIndexStart == 0 {
-			invocs = append(invocs, invocFirst)
-		}
-		vm.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
-		vm.ExpectInvocation{
-			To:             mAddr,
-			Method:         builtin.MethodsMiner.PreCommitSectorBatch,
-			Params:         vm.ExpectObject(&params),
-			SubInvocations: invocs,
-		}.Matches(t, v.LastInvocation())
-	}
-
-	// Extract chain state.
-	var minerState miner.State
-	err := v.GetState(mAddr, &minerState)
-	require.NoError(t, err)
-
-	precommits := make([]*miner.SectorPreCommitOnChainInfo, count)
-	for i := 0; i < count; i++ {
-		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumberBase+abi.SectorNumber(i))
-		require.NoError(t, err)
-		require.True(t, found)
-		precommits[i] = precommit
-	}
-	return precommits
 }
 
 // Proves pre-committed sectors as batches of aggSize.

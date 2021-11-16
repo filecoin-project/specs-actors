@@ -1,7 +1,11 @@
 package test
 
 import (
+	"fmt"
 	"testing"
+
+	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
@@ -18,6 +22,74 @@ import (
 	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm"
 )
+
+func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch) []*miner.SectorPreCommitOnChainInfo {
+	invocsCommon := []vm.ExpectInvocation{
+		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+	}
+	invocFirst := vm.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}
+
+	sectorIndex := 0
+	for sectorIndex < count {
+		msgSectorIndexStart := sectorIndex
+		invocs := invocsCommon
+
+		// Prepare message.
+		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
+		if expiration == 0 {
+			expiration = v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100
+		}
+
+		for j := 0; j < batchSize && sectorIndex < count; j++ {
+			sectorNumber := sectorNumberBase + abi.SectorNumber(sectorIndex)
+			sealedCid := tutil.MakeCID(fmt.Sprintf("%d", sectorNumber), &miner.SealedCIDPrefix)
+			params.Sectors[j] = miner0.SectorPreCommitInfo{
+				SealProof:     sealProof,
+				SectorNumber:  sectorNumber,
+				SealedCID:     sealedCid,
+				SealRandEpoch: v.GetEpoch() - 1,
+				DealIDs:       nil,
+				Expiration:    expiration,
+			}
+			sectorIndex++
+		}
+		if sectorIndex == count && sectorIndex%batchSize != 0 {
+			// Trim the last, partial batch.
+			params.Sectors = params.Sectors[:sectorIndex%batchSize]
+		}
+
+		// Finalize invocation expectation list
+		if len(params.Sectors) > 1 {
+			aggFee := miner.AggregatePreCommitNetworkFee(len(params.Sectors), big.Zero())
+			invocs = append(invocs, vm.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: &aggFee})
+		}
+		if expectCronEnrollment && msgSectorIndexStart == 0 {
+			invocs = append(invocs, invocFirst)
+		}
+		vm.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
+		vm.ExpectInvocation{
+			To:             mAddr,
+			Method:         builtin.MethodsMiner.PreCommitSectorBatch,
+			Params:         vm.ExpectObject(&params),
+			SubInvocations: invocs,
+		}.Matches(t, v.LastInvocation())
+	}
+
+	// Extract chain state.
+	var minerState miner.State
+	err := v.GetState(mAddr, &minerState)
+	require.NoError(t, err)
+
+	precommits := make([]*miner.SectorPreCommitOnChainInfo, count)
+	for i := 0; i < count; i++ {
+		precommit, found, err := minerState.GetPrecommittedSector(v.Store(), sectorNumberBase+abi.SectorNumber(i))
+		require.NoError(t, err)
+		require.True(t, found)
+		precommits[i] = precommit
+	}
+	return precommits
+}
 
 func createMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof abi.RegisteredPoStProof, balance abi.TokenAmount) *power.CreateMinerReturn {
 	params := power.CreateMinerParams{
