@@ -2116,8 +2116,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 	var sectorsDeals []market.SectorDeals
 	var sectorsDataSpec []*market.SectorDataSpec
-	// Filters out the first wave of invalid updates with quick checks about sector status
-	var prevalidatedUpdates []*updateAndSectorInfo
+	var validatedUpdates []*updateAndSectorInfo
 	sectorNumbers := bitfield.New()
 	for _, update := range params.Updates {
 		// Bitfied.IsSet() is fast when there are only locally-set values.
@@ -2130,9 +2129,8 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 		sectorNumbers.Set(uint64(update.SectorID))
 
-		// TODO: actual length
-		if len(update.Proof) <= 10 {
-			rt.Log(rtt.INFO, "update proof is wrong length (%d), skipping sector %d", len(update.Proof), update.SectorID)
+		if len(update.Proof) > 4096 {
+			rt.Log(rtt.INFO, "update proof is too large (%d), skipping sector %d", len(update.Proof), update.SectorID)
 			continue
 		}
 
@@ -2146,15 +2144,12 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
-		// TODO Confirm the sector is actually in the stated deadline? This happens later when we try to update partition, but maybe do here first?
-
 		sectorInfo, err := sectors.MustGet(update.SectorID)
 		if err != nil {
 			rt.Log(rtt.INFO, "failed to get sector, skipping sector %d", update.SectorID)
 			continue
 		}
 
-		// TODO: this will change to "was originally dealless, and is currently no active deals"
 		if len(sectorInfo.DealIDs) != 0 {
 			rt.Log(rtt.INFO, "cannot update sector with deals, skipping sector %d", update.SectorID)
 			continue
@@ -2178,7 +2173,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
-		prevalidatedUpdates = append(prevalidatedUpdates, &updateAndSectorInfo{
+		validatedUpdates = append(validatedUpdates, &updateAndSectorInfo{
 			update:     &update,
 			sectorInfo: sectorInfo,
 		})
@@ -2190,17 +2185,17 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		})
 	}
 
+	builtin.RequireParam(rt, len(validatedUpdates) > 0, "no valid updates")
+
 	// Errors past this point cause the ProveReplicaUpdates call to fail (no more skipping sectors)
 
 	dealWeights := requestDealWeights(rt, sectorsDeals)
-
-	builtin.RequirePredicate(rt, len(dealWeights.Sectors) == len(prevalidatedUpdates), exitcode.ErrIllegalState,
-		"deal weight request returned %d records, expected %d", len(dealWeights.Sectors), len(prevalidatedUpdates))
+	builtin.RequirePredicate(rt, len(dealWeights.Sectors) == len(validatedUpdates), exitcode.ErrIllegalState,
+		"deal weight request returned %d records, expected %d", len(dealWeights.Sectors), len(validatedUpdates))
 
 	unsealedSectorCIDs := requestUnsealedSectorCIDs(rt, sectorsDataSpec...)
-
-	builtin.RequirePredicate(rt, len(unsealedSectorCIDs) == len(prevalidatedUpdates), exitcode.ErrIllegalState,
-		"unsealed sector cid request returned %d records, expected %d", len(unsealedSectorCIDs), len(prevalidatedUpdates))
+	builtin.RequirePredicate(rt, len(unsealedSectorCIDs) == len(validatedUpdates), exitcode.ErrIllegalState,
+		"unsealed sector cid request returned %d records, expected %d", len(unsealedSectorCIDs), len(validatedUpdates))
 
 	type updateWithDetails struct {
 		update            *ReplicaUpdate
@@ -2213,7 +2208,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 	// This should be merged with the iteration outside the state transaction.
 	declsByDeadline := map[uint64][]*updateWithDetails{}
 	var deadlinesToLoad []uint64
-	for i, updateWithSectorInfo := range prevalidatedUpdates {
+	for i, updateWithSectorInfo := range validatedUpdates {
 		// TODO extend sector has a blurb about pointer vs temp loop variable that i don't understand
 		if _, ok := declsByDeadline[updateWithSectorInfo.update.Deadline]; !ok {
 			deadlinesToLoad = append(deadlinesToLoad, updateWithSectorInfo.update.Deadline)
@@ -2232,7 +2227,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		newSectors := make([]*SectorOnChainInfo, len(prevalidatedUpdates))
+		newSectors := make([]*SectorOnChainInfo, len(validatedUpdates))
 		for _, dlIdx := range deadlinesToLoad {
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
@@ -2332,6 +2327,10 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 				succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 			}
 		}
+
+		successCount, err := succeededSectors.Count()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count succeededSectors")
+		builtin.RequirePredicate(rt, successCount == uint64(len(validatedUpdates)), exitcode.ErrIllegalState, "unexpected successcount %d != %d", successCount, len(validatedUpdates))
 
 		// Overwrite sector infos.
 		err = sectors.Store(newSectors...)
