@@ -37,7 +37,7 @@ type AggregateSealVerifyProofAndInfos = proof5.AggregateSealVerifyProofAndInfos
 // Information needed to verify a replica update
 
 type ReplicaUpdateInfo struct {
-	UpdateProof          abi.RegisteredUpdateProof
+	UpdateProofType      abi.RegisteredUpdateProof
 	OldSealedSectorCID   cid.Cid
 	NewSealedSectorCID   cid.Cid
 	NewUnsealedSectorCID cid.Cid

@@ -2074,6 +2074,7 @@ type ReplicaUpdate struct {
 	Partition          uint64
 	NewSealedSectorCID cid.Cid `checked:"true"`
 	Deals              []abi.DealID
+	UpdateProofType    abi.RegisteredUpdateProof
 	ReplicaProof       []byte
 }
 
@@ -2148,7 +2149,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			rt.Abortf(exitcode.ErrIllegalArgument, "new sealed CID had wrong prefix")
 		}
 
-		err = stReadOnly.CheckSectorHealth(store, update.Deadline, update.Partition, update.SectorID)
+		err = stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "sector is not healthy")
 
 		sectorInfo, err := sectors.MustGet(update.SectorID)
@@ -2246,10 +2247,11 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			for _, updateWithDetails := range declsByDeadline[dlIdx] {
 				updateProofType, err := updateWithDetails.sectorInfo.SealProof.RegisteredUpdateProof()
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "couldn't load update proof type")
+				builtin.RequirePredicate(rt, updateWithDetails.update.UpdateProofType == updateProofType, exitcode.ErrIllegalArgument, "unsupported update proof type %d", updateWithDetails.update.UpdateProofType)
 
 				err = rt.VerifyReplicaUpdate(
 					proof.ReplicaUpdateInfo{
-						UpdateProof:          updateProofType,
+						UpdateProofType:      updateProofType,
 						NewSealedSectorCID:   updateWithDetails.update.NewSealedSectorCID,
 						OldSealedSectorCID:   updateWithDetails.sectorInfo.SealedCID,
 						NewUnsealedSectorCID: updateWithDetails.unsealedSectorCID,
