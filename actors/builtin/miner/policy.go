@@ -167,6 +167,10 @@ var MaxProveCommitDuration = map[abi.RegisteredSealProof]abi.ChainEpoch{
 // 32 sectors per epoch would support a single miner onboarding 1EiB of 32GiB sectors in 1 year.
 const PreCommitSectorBatchMaxSize = 256
 
+// The maximum number of sector replica updates in a single batch.
+// Same as PreCommitSectorBatchMaxSize for consistency
+const ProveReplicaUpdatesMaxSize = PreCommitSectorBatchMaxSize
+
 // Maximum delay between challenge and pre-commitment.
 // This prevents a miner sealing sectors far in advance of committing them to the chain, thus committing to a
 // particular chain.

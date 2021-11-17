@@ -1,8 +1,10 @@
 package proof
 
 import (
+	"github.com/filecoin-project/go-state-types/abi"
 	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
+	"github.com/ipfs/go-cid"
 )
 
 ///
@@ -16,7 +18,7 @@ import (
 //	DealIDs               []abi.DealID
 //	Randomness            abi.SealRandomness
 //	InteractiveRandomness abi.InteractiveSealRandomness
-//	Proof                 []byte
+//	ReplicaProof                 []byte
 //
 //	// Safe because we get those from the miner actor
 //	SealedCID   cid.Cid `checked:"true"` // CommR
@@ -27,6 +29,20 @@ type SealVerifyInfo = proof0.SealVerifyInfo
 type AggregateSealVerifyInfo = proof5.AggregateSealVerifyInfo
 
 type AggregateSealVerifyProofAndInfos = proof5.AggregateSealVerifyProofAndInfos
+
+///
+/// Replica
+///
+
+// Information needed to verify a replica update
+
+type ReplicaUpdateInfo struct {
+	UpdateProofType      abi.RegisteredUpdateProof
+	OldSealedSectorCID   cid.Cid
+	NewSealedSectorCID   cid.Cid
+	NewUnsealedSectorCID cid.Cid
+	Proof                []byte
+}
 
 ///
 /// PoSting

@@ -206,12 +206,14 @@ func main() {
 		//miner.CronEventPayload{}, // Aliased from v0
 		// miner.DisputeWindowedPoStParams{}, // Aliased from v3
 		miner.PreCommitSectorBatchParams{},
+		miner.ProveReplicaUpdatesParams{},
 		// other types
 		//miner.FaultDeclaration{}, // Aliased from v0
 		//miner.RecoveryDeclaration{}, // Aliased from v0
 		//miner.ExpirationExtension{}, // Aliased from v0
 		//miner.TerminationDeclaration{}, // Aliased from v0
 		//miner.PoStPartition{}, // Aliased from v0
+		miner.ReplicaUpdate{},
 	); err != nil {
 		panic(err)
 	}

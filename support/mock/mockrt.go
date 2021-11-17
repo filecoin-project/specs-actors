@@ -79,6 +79,7 @@ type Runtime struct {
 	expectDeleteActor              *addr.Address
 	expectBatchVerifySeals         *expectBatchVerifySeals
 	expectAggregateVerifySeals     *expectAggregateVerifySeals
+	expectReplicaVerify            *expectReplicaVerify
 	// Gas charged explicitly through rt.ChargeGas. Note: most charges are implicit
 	expectGasCharged []int64
 
@@ -95,6 +96,11 @@ type expectAggregateVerifySeals struct {
 	inSVIs  []proof.AggregateSealVerifyInfo
 	inProof []byte
 	err     error
+}
+
+type expectReplicaVerify struct {
+	inRUI proof.ReplicaUpdateInfo
+	err   error
 }
 
 type expectRandomness struct {
@@ -690,6 +696,35 @@ func (rt *Runtime) VerifyAggregateSeals(agg proof.AggregateSealVerifyProofAndInf
 	return nil
 }
 
+func (rt *Runtime) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
+	exp := rt.expectReplicaVerify
+	if exp != nil {
+		if replicaInfo.UpdateProofType != exp.inRUI.UpdateProofType {
+			rt.failTest("UpdateProof mismatch, expected: %v, actual: %v", exp.inRUI.UpdateProofType, replicaInfo.UpdateProofType)
+		}
+
+		if replicaInfo.NewSealedSectorCID != exp.inRUI.NewSealedSectorCID {
+			rt.failTest("NewSealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.NewSealedSectorCID, replicaInfo.NewSealedSectorCID)
+		}
+
+		if replicaInfo.OldSealedSectorCID != exp.inRUI.OldSealedSectorCID {
+			rt.failTest("OldSealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.OldSealedSectorCID, replicaInfo.OldSealedSectorCID)
+		}
+
+		if replicaInfo.NewUnsealedSectorCID != exp.inRUI.NewUnsealedSectorCID {
+			rt.failTest("NewUnsealedSectorCID mismatch, expected: %v, actual: %v", exp.inRUI.NewUnsealedSectorCID, replicaInfo.NewUnsealedSectorCID)
+		}
+
+		defer func() {
+			rt.expectAggregateVerifySeals = nil
+		}()
+		return nil
+	}
+
+	rt.failTestNow("unexpected syscall to verify replica: %v", replicaInfo)
+	return nil
+}
+
 func (rt *Runtime) VerifyPoSt(vi proof.WindowPoStVerifyInfo) error {
 	exp := rt.expectVerifyPoSt
 	if exp != nil {
@@ -926,6 +961,12 @@ func (rt *Runtime) ExpectBatchVerifySeals(in map[addr.Address][]proof.SealVerify
 func (rt *Runtime) ExpectAggregateVerifySeals(agg proof.AggregateSealVerifyProofAndInfos, err error) {
 	rt.expectAggregateVerifySeals = &expectAggregateVerifySeals{
 		agg.Infos, agg.Proof, err,
+	}
+}
+
+func (rt *Runtime) ExpectReplicaVerify(replica proof.ReplicaUpdateInfo, err error) {
+	rt.expectReplicaVerify = &expectReplicaVerify{
+		replica, err,
 	}
 }
 

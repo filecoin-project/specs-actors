@@ -172,6 +172,7 @@ type SectorOnChainInfo struct {
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
 	ReplacedSectorAge     abi.ChainEpoch  // Age of sector this sector replaced or zero
 	ReplacedDayReward     abi.TokenAmount // Day reward of sector this sector replace or zero
+	SectorKeyCID          *cid.Cid        // The original SealedSectorCID, only gets set on the first ReplicaUpdate
 }
 
 func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch, deadlineIndex uint64) (*State, error) {
@@ -687,6 +688,50 @@ func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector a
 		return xc.ErrIllegalState.Wrapf("failed to decode terminated bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
 	} else if terminated {
 		return xc.ErrNotFound.Wrapf("sector %d of partition %d, deadline %d is terminated", sector, pIdx, dlIdx)
+	}
+
+	return nil
+}
+
+// Returns an error if the target sector cannot be found and/or is faulty/terminated/unproven.
+func (st *State) CheckSectorHealthExcludeUnproven(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) error {
+	dls, err := st.LoadDeadlines(store)
+	if err != nil {
+		return err
+	}
+
+	dl, err := dls.LoadDeadline(store, dlIdx)
+	if err != nil {
+		return err
+	}
+
+	partition, err := dl.LoadPartition(store, pIdx)
+	if err != nil {
+		return err
+	}
+
+	if exists, err := partition.Sectors.IsSet(uint64(sector)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to decode sectors bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if !exists {
+		return xc.ErrNotFound.Wrapf("sector %d not a member of partition %d, deadline %d", sector, pIdx, dlIdx)
+	}
+
+	if faulty, err := partition.Faults.IsSet(uint64(sector)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to decode faults bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if faulty {
+		return xc.ErrForbidden.Wrapf("sector %d of partition %d, deadline %d is faulty", sector, pIdx, dlIdx)
+	}
+
+	if terminated, err := partition.Terminated.IsSet(uint64(sector)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to decode terminated bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if terminated {
+		return xc.ErrNotFound.Wrapf("sector %d of partition %d, deadline %d is terminated", sector, pIdx, dlIdx)
+	}
+
+	if unproven, err := partition.Unproven.IsSet(uint64(sector)); err != nil {
+		return xc.ErrIllegalState.Wrapf("failed to decode unproven bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if unproven {
+		return xc.ErrNotFound.Wrapf("sector %d of partition %d, deadline %d is unproven", sector, pIdx, dlIdx)
 	}
 
 	return nil

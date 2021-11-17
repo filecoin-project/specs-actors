@@ -187,6 +187,8 @@ type Syscalls interface {
 	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)
 	VerifyAggregateSeals(aggregate proof.AggregateSealVerifyProofAndInfos) error
 
+	VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error
+
 	// Verifies a proof of spacetime.
 	VerifyPoSt(vi proof.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:
