@@ -128,19 +128,19 @@ func (a *Array) Length() uint64 {
 //  indicating whether the element was found in the array
 func (a *Array) Get(k uint64, out cbor.Unmarshaler) (bool, error) {
 	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
-		return false, xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
+		return false, xerrors.Errorf("failed to get index %d in root %v: %w", k, a.root, err)
 	} else {
 		return found, nil
 	}
 }
 
-// MustGet retrieves array element into the 'out' unmarshaler, returning an error if it 
+// MustGet retrieves array element into the 'out' unmarshaler, returning an error if it
 //  failed to get the element or if it did not find the element in the array.
 func (a *Array) MustGet(k uint64, out cbor.Unmarshaler) error {
 	if found, err := a.root.Get(a.store.Context(), k, out); err != nil {
-		return xerrors.Errorf("failed to get index %v in root %v: %w", k, a.root, err)
-	} else if !found{
-		return xerrors.Errorf("did not find index %v in root %v.", k, a.root)
+		return xerrors.Errorf("failed to get index %d in root %v: %w", k, a.root, err)
+	} else if !found {
+		return xerrors.Errorf("did not find index %d in root %v.", k, a.root)
 	}
 	return nil
 }

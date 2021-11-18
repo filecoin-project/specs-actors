@@ -273,8 +273,7 @@ func TestPaymentChannelActor_CreateLane(t *testing.T) {
 				assert.Equal(t, uint64(1), lstates.Length())
 
 				var ls LaneState
-				found, err := lstates.Get(sv.Lane, &ls)
-				assert.True(t, found)
+				err = lstates.MustGet(sv.Lane, &ls)
 				assert.NoError(t, err)
 
 				assert.Equal(t, sv.Amount, ls.Redeemed)
@@ -319,9 +318,8 @@ func getLaneState(t *testing.T, rt *mock.Runtime, rcid cid.Cid, lane uint64) *La
 	assert.NoError(t, err)
 
 	var out LaneState
-	found, err := arr.Get(lane, &out)
+	err = arr.MustGet(lane, &out)
 	assert.NoError(t, err)
-	assert.True(t, found)
 
 	return &out
 }

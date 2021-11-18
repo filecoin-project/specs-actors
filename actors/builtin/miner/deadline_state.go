@@ -295,10 +295,8 @@ func (dl *Deadline) PopExpiredSectors(store adt.Store, until abi.ChainEpoch, qua
 	// For each partition with an expiry, remove and collect expirations from the partition queue.
 	if err = expiredPartitions.ForEach(func(partIdx uint64) error {
 		var partition Partition
-		if found, err := partitions.Get(partIdx, &partition); err != nil {
-			return err
-		} else if !found {
-			return xerrors.Errorf("missing expected partition %d", partIdx)
+		if err := partitions.MustGet(partIdx, &partition); err != nil {
+			return xerrors.Errorf("failed to lookup partition %d: %w", partIdx, err)
 		}
 
 		partExpiration, err := partition.PopExpiredSectors(store, until, quant)
@@ -897,12 +895,8 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec,
 		}
 
 		var partition Partition
-		found, err := partitions.Get(partIdx, &partition)
-		if err != nil {
-			return powerDelta, penalizedPower, xerrors.Errorf("failed to load partition %d: %w", partIdx, err)
-		}
-		if !found {
-			return powerDelta, penalizedPower, xerrors.Errorf("no partition %d", partIdx)
+		if err := partitions.MustGet(partIdx, &partition); err != nil {
+			return powerDelta, penalizedPower, xerrors.Errorf("failed to lookup partition %d: %w", partIdx, err)
 		}
 
 		// If we have no recovering power/sectors, and all power is faulty, skip
@@ -1243,10 +1237,8 @@ func (dl *Deadline) LoadPartitionsForDispute(store adt.Store, partitions bitfiel
 	disputedPower := NewPowerPairZero()
 	err = partitions.ForEach(func(partIdx uint64) error {
 		var partitionSnapshot Partition
-		if found, err := partitionsSnapshot.Get(partIdx, &partitionSnapshot); err != nil {
-			return err
-		} else if !found {
-			return xerrors.Errorf("failed to find partition %d", partIdx)
+		if err := partitionsSnapshot.MustGet(partIdx, &partitionSnapshot); err != nil {
+			return xerrors.Errorf("failed to lookup partition %d: %w", partIdx, err)
 		}
 
 		// Record sectors for proof verification

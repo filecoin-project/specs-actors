@@ -823,9 +823,8 @@ func TestSubmitPoRepForBulkVerify(t *testing.T) {
 		require.True(t, found)
 		assert.Equal(t, uint64(1), arr.Length())
 		var storedSealInfo proof.SealVerifyInfo
-		found, err = arr.Get(0, &storedSealInfo)
+		err = arr.MustGet(0, &storedSealInfo)
 		require.NoError(t, err)
-		require.True(t, found)
 		assert.Equal(t, commR, storedSealInfo.SealedCID)
 		actor.checkState(rt)
 	})

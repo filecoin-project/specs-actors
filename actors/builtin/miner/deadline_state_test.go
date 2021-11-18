@@ -980,9 +980,8 @@ func (s expectedDeadlineState) assert(t *testing.T, store adt.Store, dl *miner.D
 	require.Equal(t, uint64(len(s.partitionSectors)), partitions.Length(), "unexpected number of partitions")
 	for i, partSectors := range s.partitionSectors {
 		var partition miner.Partition
-		found, err := partitions.Get(uint64(i), &partition)
+		err := partitions.MustGet(uint64(i), &partition)
 		require.NoError(t, err)
-		require.True(t, found)
 		assertBitfieldsEqual(t, partSectors, partition.Sectors)
 	}
 }

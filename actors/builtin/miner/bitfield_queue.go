@@ -38,6 +38,7 @@ func (q BitfieldQueue) AddToQueue(rawEpoch abi.ChainEpoch, values bitfield.BitFi
 	}
 	epoch := q.quant.QuantizeUp(rawEpoch)
 	var bf bitfield.BitField
+	// is this a bug?
 	if _, err := q.Array.Get(uint64(epoch), &bf); err != nil {
 		return xerrors.Errorf("failed to lookup queue epoch %v: %w", epoch, err)
 	}

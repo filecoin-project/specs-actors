@@ -578,8 +578,7 @@ func TestCCUpgrade(t *testing.T) {
 			partitions, err := deadline.PartitionsArray(rt.AdtStore())
 			require.NoError(t, err)
 			var partition miner.Partition
-			found, err := partitions.Get(partIdx, &partition)
-			require.True(t, found)
+			err = partitions.MustGet(partIdx, &partition)
 			require.NoError(t, err)
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
@@ -614,8 +613,7 @@ func TestCCUpgrade(t *testing.T) {
 			partitions, err := deadline.PartitionsArray(rt.AdtStore())
 			require.NoError(t, err)
 			var partition miner.Partition
-			found, err := partitions.Get(partIdx, &partition)
-			require.True(t, found)
+			err = partitions.MustGet(partIdx, &partition)
 			require.NoError(t, err)
 			sectorArr, err := miner.LoadSectors(rt.AdtStore(), st.Sectors)
 			require.NoError(t, err)
@@ -1277,9 +1275,8 @@ func TestWindowPost(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, posts.Length(), 1)
 		var post miner.WindowedPoSt
-		found, err := posts.Get(0, &post)
+		err = posts.MustGet(0, &post)
 		require.NoError(t, err)
-		require.True(t, found)
 		assertBitfieldEquals(t, post.Partitions, pIdx)
 
 		// Advance to end-of-deadline cron to verify no penalties.
@@ -4638,9 +4635,8 @@ func (h *actorHarness) getSubmittedProof(rt *mock.Runtime, deadline *miner.Deadl
 	proofs, err := adt.AsArray(rt.AdtStore(), deadline.OptimisticPoStSubmissionsSnapshot, miner.DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	require.NoError(h.t, err)
 	var post miner.WindowedPoSt
-	found, err := proofs.Get(idx, &post)
+	err = proofs.MustGet(idx, &post)
 	require.NoError(h.t, err)
-	require.True(h.t, found)
 	return &post
 }
 
