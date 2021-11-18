@@ -73,7 +73,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin6.PaymentChannelActorCodeID:   nilMigrator{builtin7.PaymentChannelActorCodeID},
 		builtin6.RewardActorCodeID:           nilMigrator{builtin7.RewardActorCodeID},
 		builtin6.StorageMarketActorCodeID:    nilMigrator{builtin7.StorageMarketActorCodeID},
-		builtin6.StorageMinerActorCodeID:     nilMigrator{builtin7.StorageMinerActorCodeID},
+		builtin6.StorageMinerActorCodeID:     minerMigrator{},
 		builtin6.StoragePowerActorCodeID:     nilMigrator{builtin7.StoragePowerActorCodeID},
 		builtin6.SystemActorCodeID:           nilMigrator{builtin7.SystemActorCodeID},
 		builtin6.VerifiedRegistryActorCodeID: nilMigrator{builtin7.VerifiedRegistryActorCodeID},
