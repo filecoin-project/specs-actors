@@ -2131,7 +2131,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
-		if uint64(len(update.Deals)) >= SectorDealsMax(info.SectorSize) {
+		if uint64(len(update.Deals)) > SectorDealsMax(info.SectorSize) {
 			rt.Log(rtt.INFO, "more deals than policy allows, skipping sector %d", update.SectorID)
 			continue
 		}
@@ -2142,15 +2142,22 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		}
 
 		if !update.NewSealedSectorCID.Defined() {
-			rt.Abortf(exitcode.ErrIllegalArgument, "new sealed CID undefined")
+			rt.Log(rtt.INFO, "new sealed CID undefined, skipping sector %d", update.SectorID)
+			continue
 		}
 
 		if update.NewSealedSectorCID.Prefix() != SealedCIDPrefix {
-			rt.Abortf(exitcode.ErrIllegalArgument, "new sealed CID had wrong prefix")
+			rt.Log(rtt.INFO, "new sealed CID had wrong prefix %s, skipping sector %d", update.NewSealedSectorCID, update.SectorID)
+			continue
 		}
 
-		err = stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "sector is not healthy")
+		healthy, err := stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "error checking sector health")
+
+		if !healthy {
+			rt.Log(rtt.INFO, "sector isn't healthy, skipping sector %d", update.SectorID)
+			continue
+		}
 
 		sectorInfo, err := sectors.MustGet(update.SectorID)
 		if err != nil {
@@ -2260,7 +2267,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to verify replica proof for sector %d", updateWithDetails.sectorInfo.SectorNumber)
 
-				newSectorInfo := updateWithDetails.sectorInfo
+				newSectorInfo := *updateWithDetails.sectorInfo
 
 				newSectorInfo.SealedCID = updateWithDetails.update.NewSealedSectorCID
 				if newSectorInfo.SectorKeyCID == nil {
