@@ -379,6 +379,18 @@ func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorN
 	return dlIdx, pIdx
 }
 
+// find the sector info for the given id
+func SectorInfo(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) *miner.SectorOnChainInfo {
+	var minerState miner.State
+	err := v.GetState(minerIDAddress, &minerState)
+	require.NoError(t, err)
+
+	info, found, err := minerState.GetSector(v.Store(), sectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+	return info
+}
+
 ///
 // state abstraction
 //
