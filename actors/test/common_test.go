@@ -37,7 +37,7 @@ func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAdd
 
 		// Prepare message.
 		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
-		if expiration == 0 {
+		if expiration < 0 {
 			expiration = v.GetEpoch() + miner.MinSectorExpiration + miner.MaxProveCommitDuration[sealProof] + 100
 		}
 

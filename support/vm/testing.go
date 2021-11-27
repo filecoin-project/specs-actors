@@ -297,8 +297,18 @@ func NextMinerDLInfo(t *testing.T, v *VM, minerIDAddr address.Address) *dline.In
 	return miner.NewDeadlineInfoFromOffsetAndEpoch(minerState.ProvingPeriodStart, v.GetEpoch()+1)
 }
 
+// Advances to the next epoch, running cron.
+func AdvanceOneEpochWithCron(t *testing.T, v *VM) *VM {
+	result := RequireApplyMessage(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil, t.Name())
+
+	require.Equal(t, exitcode.Ok, result.Code)
+	v, err := v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
+	return v
+}
+
 // AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
-// miner state upu-to-date by running a cron at the end of each deadline period.
+// miner state up-to-date by running a cron at the end of each deadline period.
 func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*VM, *dline.Info) {
 	dlInfo := MinerDLInfo(t, v, minerIDAddr)
 	var err error
@@ -307,7 +317,6 @@ func AdvanceByDeadline(t *testing.T, v *VM, minerIDAddr address.Address, predica
 		require.NoError(t, err)
 
 		result := RequireApplyMessage(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil, t.Name())
-		require.NoError(t, err)
 		require.Equal(t, exitcode.Ok, result.Code)
 
 		dlInfo = NextMinerDLInfo(t, v, minerIDAddr)
@@ -344,28 +353,45 @@ func AdvanceTillProvingDeadline(t *testing.T, v *VM, minerIDAddress address.Addr
 	return dlInfo, pIdx, v
 }
 
-func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *VM, minerIDAddress, worker address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *VM {
+func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *VM, minerIDAddress address.Address, workerAddress address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *VM {
 	var dlInfo *dline.Info
 	var pIdx uint64
 	for v.GetEpoch() < e {
 		dlInfo, pIdx, v = AdvanceTillProvingDeadline(t, v, minerIDAddress, sectorNumber)
-		submitParams := miner.SubmitWindowedPoStParams{
-			Deadline: dlInfo.Index,
-			Partitions: []miner.PoStPartition{{
-				Index:   pIdx,
-				Skipped: bitfield.New(),
-			}},
-			Proofs: []proof.PoStProof{{
-				PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
-			}},
-			ChainCommitEpoch: dlInfo.Challenge,
-			ChainCommitRand:  []byte(RandString),
-		}
-		ApplyOk(t, v, worker, minerIDAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+		SubmitPoSt(t, v, minerIDAddress, workerAddress, dlInfo, pIdx)
 		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
 	}
 
 	return v
+}
+
+func DeclareRecovery(t *testing.T, v *VM, minerAddress, workerAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumber abi.SectorNumber) {
+	recoverParams := miner.RecoveryDeclaration{
+		Deadline:  deadlineIndex,
+		Partition: partitionIndex,
+		Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+	}
+
+	ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.DeclareFaultsRecovered, &miner.DeclareFaultsRecoveredParams{
+		Recoveries: []miner.RecoveryDeclaration{recoverParams},
+	})
+}
+
+func SubmitPoSt(t *testing.T, v *VM, minerAddress, workerAddress address.Address, dlInfo *dline.Info, partitionIndex uint64) {
+	submitParams := miner.SubmitWindowedPoStParams{
+		Deadline: dlInfo.Index,
+		Partitions: []miner.PoStPartition{{
+			Index:   partitionIndex,
+			Skipped: bitfield.New(),
+		}},
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		}},
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte(RandString),
+	}
+
+	ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
 
 // find the proving deadline and partition index of a miner's sector
@@ -389,6 +415,37 @@ func SectorInfo(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumbe
 	require.NoError(t, err)
 	require.True(t, found)
 	return info
+}
+
+// returns true if the sector is healthy
+func CheckSectorActive(t *testing.T, v *VM, minerIDAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumber abi.SectorNumber) bool {
+	var minerState miner.State
+	err := v.GetState(minerIDAddress, &minerState)
+	require.NoError(t, err)
+
+	active, err := minerState.CheckSectorActive(v.Store(), deadlineIndex, partitionIndex, sectorNumber, true)
+	require.NoError(t, err)
+	return active
+}
+
+// returns true if the sector is faulty -- a slightly more specific check than CheckSectorActive
+func CheckSectorFaulty(t *testing.T, v *VM, minerIDAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumber abi.SectorNumber) bool {
+	var st miner.State
+	require.NoError(t, v.GetState(minerIDAddress, &st))
+
+	deadlines, err := st.LoadDeadlines(v.Store())
+	require.NoError(t, err)
+
+	deadline, err := deadlines.LoadDeadline(v.Store(), deadlineIndex)
+	require.NoError(t, err)
+
+	partition, err := deadline.LoadPartition(v.Store(), partitionIndex)
+	require.NoError(t, err)
+
+	isFaulty, err := partition.Faults.IsSet(uint64(sectorNumber))
+	require.NoError(t, err)
+
+	return isFaulty
 }
 
 ///
