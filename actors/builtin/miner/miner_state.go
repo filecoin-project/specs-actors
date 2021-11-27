@@ -696,7 +696,7 @@ func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector a
 // Returns an error if the target sector cannot be found, or some other bad state is reached.
 // Returns false if the target sector is faulty, terminated, or unproven
 // Returns true otherwise
-func (st *State) CheckSectorHealthExcludeUnproven(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (bool, error) {
+func (st *State) CheckSectorActive(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) (bool, error) {
 	dls, err := st.LoadDeadlines(store)
 	if err != nil {
 		return false, err
