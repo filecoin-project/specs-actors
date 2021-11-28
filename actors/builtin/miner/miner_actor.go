@@ -600,10 +600,10 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 			err := st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", penaltyTarget, st.FeeDebt)
+			rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", penaltyTarget, st.FeeDebt)
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay debt")
-			rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
+			rt.Log(rtt.DEBUG, "paid fee debt: amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
 			toBurn = big.Add(penaltyFromVesting, penaltyFromBalance)
 
 			// Now, move as much of the target reward as
@@ -830,7 +830,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		}
 		err = st.AddPreCommitDeposit(totalDepositRequired)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", totalDepositRequired)
-		rt.Log(rtt.INFO, "added precommit deposit. amt added: %v, new total: %v", totalDepositRequired, st.PreCommitDeposits)
+		rt.Log(rtt.DEBUG, "added precommit deposit, amt added: %v, new total: %v", totalDepositRequired, st.PreCommitDeposits)
 
 		err = st.AllocateSectorNumbers(store, sectorNumbers, DenyCollisions)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to allocate sector ids %v", sectorNumbers)
@@ -1207,7 +1207,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
 		err = st.AddPreCommitDeposit(depositToUnlock.Neg())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositToUnlock.Neg())
-		rt.Log(rtt.INFO, "added precommit deposit. amt added: %v, new total: %v", depositToUnlock.Neg(), st.PreCommitDeposits)
+		rt.Log(rtt.DEBUG, "added precommit deposit, amt added: %v, new total: %v", depositToUnlock.Neg(), st.PreCommitDeposits)
 
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
@@ -1217,7 +1217,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 
 		err = st.AddInitialPledge(totalPledge)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalPledge)
-		rt.Log(rtt.INFO, "added initial pledge. amt added: %v, new total: %v", totalPledge, st.InitialPledge)
+		rt.Log(rtt.DEBUG, "added initial pledge, amt added: %v, new total: %v", totalPledge, st.InitialPledge)
 		err = st.CheckBalanceInvariants(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 	})
@@ -1874,21 +1874,19 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 
 		newlyVested, err := st.AddLockedFunds(store, rt.CurrEpoch(), rewardToLock, lockedRewardVestingSpec)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lock funds in vesting table")
-		/// XXX am unsure if this is correct! should i be logging amountUnlocked, or VestingSum from addLockedFunds?? could the return value be a bug? confused about what's going on.
-		rt.Log(rtt.INFO, "unlocked some funds. amount unlocked: %v, new amount locked: %v.", newlyVested, st.LockedFunds)
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, newlyVested)
 		pledgeDeltaTotal = big.Add(pledgeDeltaTotal, rewardToLock)
 
 		// If the miner incurred block mining penalties charge these to miner's fee debt
 		err = st.ApplyPenalty(params.Penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-		rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", params.Penalty, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", params.Penalty, st.FeeDebt)
 		// Attempt to repay all fee debt in this call. In most cases the miner will have enough
 		// funds in the *reward alone* to cover the penalty. In the rare case a miner incurs more
 		// penalty than it can pay for with reward and existing funds, it will go into fee debt.
 		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to repay penalty")
-		rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "paid fee debt, amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
 		pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 		toBurn = big.Add(penaltyFromVesting, penaltyFromBalance)
 	})
@@ -1956,11 +1954,11 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 		err := st.ApplyPenalty(faultPenalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 
-		rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", faultPenalty, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", faultPenalty, st.FeeDebt)
 		// Pay penalty
 		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), currEpoch, rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay fees")
-		rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "paid fee debt, amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
 		// Burn the amount actually payable. Any difference in this and faultPenalty already recorded as FeeDebt
 		burnAmount = big.Add(penaltyFromVesting, penaltyFromBalance)
 		pledgeDelta = big.Add(pledgeDelta, penaltyFromVesting.Neg())
@@ -2027,8 +2025,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		if err != nil {
 			rt.Abortf(exitcode.ErrIllegalState, "failed to vest fund: %v", err)
 		}
-		/// XXX unsure if returning/logging the right thing here, again
-		rt.Log(rtt.INFO, "unlocked vested funds. amount unlocked: %v, new total locked: %v", newlyVested, st.LockedFunds)
+	
 		// available balance already accounts for fee debt so it is correct to call
 		// this before RepayDebts. We would have to
 		// subtract fee debt explicitly if we called this after.
@@ -2071,7 +2068,7 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 		// Repay as much fee debt as possible.
 		fromVesting, fromBalance, err = st.RepayPartialDebtInPriorityOrder(adt.AsStore(rt), rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock fee debt")
-		rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", fromVesting, fromBalance, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "paid fee debt, amount from vesting table: %v, amount from balance: %v, new fee debt: %v", fromVesting, fromBalance, st.FeeDebt)
 	})
 
 	notifyPledgeChanged(rt, fromVesting.Neg())
@@ -2183,17 +2180,17 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		err = st.ApplyPenalty(penalty)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
 
-		rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", penalty, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", penalty, st.FeeDebt)
 		// Remove pledge requirement.
 		err = st.AddInitialPledge(totalInitialPledge.Neg())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalInitialPledge.Neg())
-		rt.Log(rtt.INFO, "added initial pledge. amt added: %v, new total: %v", totalInitialPledge.Neg(), st.InitialPledge)
+		rt.Log(rtt.DEBUG, "added initial pledge, amt added: %v, new total: %v", totalInitialPledge.Neg(), st.InitialPledge)
 		pledgeDelta = big.Sub(pledgeDelta, totalInitialPledge)
 
 		// Use unlocked pledge to pay down outstanding fee debt
 		penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, rt.CurrEpoch(), rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to pay penalty")
-		rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
+		rt.Log(rtt.DEBUG, "paid fee debt, amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
 		penalty = big.Add(penaltyFromVesting, penaltyFromBalance)
 		pledgeDelta = big.Sub(pledgeDelta, penaltyFromVesting)
 	})
@@ -2254,11 +2251,11 @@ func handleProvingDeadline(rt Runtime) {
 		{
 			depositToBurn, err := st.CleanUpExpiredPreCommits(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to expire pre-committed sectors")
-			rt.Log(rtt.INFO, "subtracted burnt deposits from precommit deposit while cleaning up expired precommits. amount burnt: %v, new total: %v", depositToBurn, st.PreCommitDeposits)
+			rt.Log(rtt.DEBUG, "subtracted burnt deposits from precommit deposit while cleaning up expired precommits, amount burnt: %v, new total: %v", depositToBurn, st.PreCommitDeposits)
 
 			err = st.ApplyPenalty(depositToBurn)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", depositToBurn, st.FeeDebt)
+			rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", depositToBurn, st.FeeDebt)
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -2269,7 +2266,7 @@ func handleProvingDeadline(rt Runtime) {
 			result, err := st.AdvanceDeadline(store, currEpoch)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to advance deadline")
 			if result.PledgeDelta.GreaterThan(big.Zero()) {
-				rt.Log(rtt.INFO, "advanced deadline and changed pledge. amt added: %v, new total: %v", result.PledgeDelta, st.InitialPledge)
+				rt.Log(rtt.DEBUG, "advanced deadline and changed pledge, amt added: %v, new total: %v", result.PledgeDelta, st.InitialPledge)
 			}
 			// Faults detected by this missed PoSt pay no penalty, but sectors that were already faulty
 			// and remain faulty through this deadline pay the fault fee.
@@ -2284,11 +2281,11 @@ func handleProvingDeadline(rt Runtime) {
 
 			err = st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.INFO, "added penalty to fee debt. about added: %v, new total fee debt: %v", penaltyTarget, st.FeeDebt)
+			rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", penaltyTarget, st.FeeDebt)
 
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
-			rt.Log(rtt.INFO, "paid fee debt. amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
+			rt.Log(rtt.DEBUG, "paid fee debt, amount from vesting table: %v, amount from balance: %v, new fee debt: %v", penaltyFromVesting, penaltyFromBalance, st.FeeDebt)
 			penaltyTotal = big.Add(penaltyFromVesting, penaltyFromBalance)
 			pledgeDeltaTotal = big.Sub(pledgeDeltaTotal, penaltyFromVesting)
 		}
