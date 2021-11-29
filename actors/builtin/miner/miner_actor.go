@@ -1206,8 +1206,8 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 
 		// Unlock deposit for successful proofs, make it available for lock-up as initial pledge.
 		err = st.AddPreCommitDeposit(depositToUnlock.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add pre-commit deposit %v", depositToUnlock.Neg())
-		rt.Log(rtt.DEBUG, "added precommit deposit, amt added: %v, new total: %v", depositToUnlock.Neg(), st.PreCommitDeposits)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock pre-commit deposit %v", depositToUnlock.Neg())
+		rt.Log(rtt.DEBUG, "unlocked precommit deposit, amt unlocked: %v, new total: %v", depositToUnlock.Neg(), st.PreCommitDeposits)
 
 		unlockedBalance, err := st.GetUnlockedBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate unlocked balance")
@@ -2183,8 +2183,8 @@ func processEarlyTerminations(rt Runtime) (more bool) {
 		rt.Log(rtt.DEBUG, "added penalty to fee debt, amount added: %v, new total fee debt: %v", penalty, st.FeeDebt)
 		// Remove pledge requirement.
 		err = st.AddInitialPledge(totalInitialPledge.Neg())
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add initial pledge %v", totalInitialPledge.Neg())
-		rt.Log(rtt.DEBUG, "added initial pledge, amt added: %v, new total: %v", totalInitialPledge.Neg(), st.InitialPledge)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock initial pledge %v", totalInitialPledge.Neg())
+		rt.Log(rtt.DEBUG, "unlocked initial pledge, amt unlocked: %v, new total: %v", totalInitialPledge.Neg(), st.InitialPledge)
 		pledgeDelta = big.Sub(pledgeDelta, totalInitialPledge)
 
 		// Use unlocked pledge to pay down outstanding fee debt
