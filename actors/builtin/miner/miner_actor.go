@@ -2939,7 +2939,7 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 
 func burnFunds(rt Runtime, amt abi.TokenAmount, bt BurnMethod) {
 	if amt.GreaterThan(big.Zero()) {
-		rt.Log(rtt.INFO, "storage provder %s burn type %s burning %s", rt.Receiver(), bt, amt)
+		rt.Log(rtt.DEBUG, "storage provder %s burn type %s burning %s", rt.Receiver(), bt, amt)
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}
