@@ -235,7 +235,7 @@ func ConstructState(store adt.Store, infoCid cid.Cid, periodStart abi.ChainEpoch
 	}, nil
 }
 
-func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address, pid []byte, multiAddrs [][]byte,
+func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address, pid []byte, multiAddrs []abi.Multiaddrs,
 	windowPoStProofType abi.RegisteredPoStProof) (*MinerInfo, error) {
 	sectorSize, err := windowPoStProofType.SectorSize()
 	if err != nil {
