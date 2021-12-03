@@ -1,16 +1,16 @@
 package miner
 
-type BurnType string
+type BurnMethod string
 
 const (
-	BurnTypeDisputeWindowedPoSt      BurnType = "DisputeWindowedPoSt"
-	BurnTypePreCommitSectorBatch     BurnType = "PreCommitSectorBatch"
-	BurnTypeProveCommitAggregate     BurnType = "ProveCommitAggregate"
-	BurnTypeDeclareFaultsRecovered   BurnType = "DeclareFaultsRecovered"
-	BurnTypeApplyRewards             BurnType = "ApplyRewards"
-	BurnTypeReportConsensusFault     BurnType = "ReportConsensusFault"
-	BurnTypeWithdrawBalance          BurnType = "WithdrawBalance "
-	BurnTypeRepayDebt                BurnType = "RepayDebt"
-	BurnTypeProcessEarlyTerminations BurnType = "processEarlyTerminations"
-	BurnTypeHandleProvingDeadline    BurnType = "handleProvingDeadline "
+	BurnMethodDisputeWindowedPoSt      BurnMethod = "DisputeWindowedPoSt"
+	BurnMethodPreCommitSectorBatch     BurnMethod = "PreCommitSectorBatch"
+	BurnMethodProveCommitAggregate     BurnMethod = "ProveCommitAggregate"
+	BurnMethodDeclareFaultsRecovered   BurnMethod = "DeclareFaultsRecovered"
+	BurnMethodApplyRewards             BurnMethod = "ApplyRewards"
+	BurnMethodReportConsensusFault     BurnMethod = "ReportConsensusFault"
+	BurnMethodWithdrawBalance          BurnMethod = "WithdrawBalance "
+	BurnMethodRepayDebt                BurnMethod = "RepayDebt"
+	BurnMethodProcessEarlyTerminations BurnMethod = "ProcessEarlyTerminations"
+	BurnMethodHandleProvingDeadline    BurnMethod = "HandleProvingDeadline "
 )
