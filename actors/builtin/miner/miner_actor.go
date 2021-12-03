@@ -626,7 +626,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			toBurn = big.Add(toBurn, toReward)
 		}
 	}
-	burnFunds(rt, toBurn)
+	burnFunds(rt, toBurn, BurnTypeDisputeWindowedPoSt)
 	notifyPledgeChanged(rt, pledgeDelta)
 	rt.StateReadonly(&st)
 
@@ -846,7 +846,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		st.DeadlineCronActive = true
 	})
 
-	burnFunds(rt, feeToBurn)
+	burnFunds(rt, feeToBurn, BurnTypePreCommitSectorBatch)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -976,7 +976,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 			unlockedBalance, aggregateFee,
 		)
 	}
-	burnFunds(rt, aggregateFee)
+	burnFunds(rt, aggregateFee, BurnTypeProveCommitAggregate)
 
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1720,7 +1720,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 
-	burnFunds(rt, feeToBurn)
+	burnFunds(rt, feeToBurn, BurnTypeDeclareFaultsRecovered)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1885,7 +1885,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 	})
 
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
-	burnFunds(rt, toBurn)
+	burnFunds(rt, toBurn, BurnTypeApplyRewards)
 	rt.StateReadonly(&st)
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1966,7 +1966,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	if !code.IsSuccess() {
 		rt.Log(rtt.ERROR, "failed to send reward")
 	}
-	burnFunds(rt, burnAmount)
+	burnFunds(rt, burnAmount, BurnTypeReportConsensusFault)
 	notifyPledgeChanged(rt, pledgeDelta)
 
 	rt.StateReadonly(&st)
@@ -2036,7 +2036,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 	}
 
-	burnFunds(rt, feeToBurn)
+	burnFunds(rt, feeToBurn, BurnTypeWithdrawBalance)
 
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2061,7 +2061,7 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	})
 
 	notifyPledgeChanged(rt, fromVesting.Neg())
-	burnFunds(rt, big.Sum(fromVesting, fromBalance))
+	burnFunds(rt, big.Sum(fromVesting, fromBalance), BurnTypeRepayDebt)
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
@@ -2488,7 +2488,7 @@ func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimat
 
 	// Burn penalty.
 	rt.Log(rtt.DEBUG, "storage provider %s penalized %s for sector termination", rt.Receiver(), penalty)
-	burnFunds(rt, penalty)
+	burnFunds(rt, penalty, BurnTypeProcessEarlyTerminations)
 
 	// Return pledge.
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2578,7 +2578,7 @@ func handleProvingDeadline(rt Runtime,
 	})
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDeltaTotal)
-	burnFunds(rt, penaltyTotal)
+	burnFunds(rt, penaltyTotal, BurnTypeHandleProvingDeadline)
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	// Schedule cron callback for next deadline's last epoch.
@@ -2937,9 +2937,9 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	return resolved
 }
 
-func burnFunds(rt Runtime, amt abi.TokenAmount) {
+func burnFunds(rt Runtime, amt abi.TokenAmount, bt BurnType) {
 	if amt.GreaterThan(big.Zero()) {
-		rt.Log(rtt.DEBUG, "storage provder %s burning %s", rt.Receiver(), amt)
+		rt.Log(rtt.INFO, "storage provder %s burn type %s burning %s", rt.Receiver(), bt, amt)
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}
