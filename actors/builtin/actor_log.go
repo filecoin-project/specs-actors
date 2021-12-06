@@ -17,7 +17,7 @@ type ActorLog struct {
 var actorLogSingle *ActorLog
 
 func init() {
-	actorLogSingle = &ActorLog{Actors: make(map[cid.Cid]rtt.LogLevel, 0)}
+	actorLogSingle = &ActorLog{Actors: make(map[cid.Cid]rtt.LogLevel)}
 }
 
 func SetActorsLogLevel(logLevel rtt.LogLevel, actors ...runtime.VMActor) {
