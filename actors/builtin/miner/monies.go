@@ -188,11 +188,11 @@ func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstima
 // may be slightly lower than the true amount. Computing vesting here would be
 // almost always redundant since vesting is quantized to ~daily units.  Vesting
 // will be at most one proving period old if computed in the cron callback.
-func RepayDebtsOrAbort(rt Runtime, st *State) abi.TokenAmount {
+func RepayDebtsOrAbort(rt Runtime, a Actor, st *State) abi.TokenAmount {
 	currBalance := rt.CurrentBalance()
 	toBurn, err := st.repayDebts(currBalance)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "unlocked balance can not repay fee debt")
-	rt.Log(rtt.DEBUG, "RepayDebtsOrAbort was called and succeeded")
+	rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "RepayDebtsOrAbort was called and succeeded")
 	return toBurn
 }
 

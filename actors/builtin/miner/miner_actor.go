@@ -562,7 +562,7 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 				rt.Abortf(exitcode.ErrIllegalArgument, "failed to dispute valid post")
 				return
 			}
-			rt.Log(rtt.INFO, "successfully disputed: %s", err)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "successfully disputed: %s", err)
 
 			// Ok, now we record faults. This always works because
 			// we don't allow compaction/moving sectors during the
@@ -622,11 +622,11 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 
 		// If we fail, log and burn the reward to make sure the balances remain correct.
 		if !code.IsSuccess() {
-			rt.Log(rtt.ERROR, "failed to send reward")
+			rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to send reward")
 			toBurn = big.Add(toBurn, toReward)
 		}
 	}
-	burnFunds(rt, toBurn, BurnMethodDisputeWindowedPoSt)
+	a.burnFunds(rt, toBurn, BurnMethodDisputeWindowedPoSt)
 	notifyPledgeChanged(rt, pledgeDelta)
 	rt.StateReadonly(&st)
 
@@ -760,7 +760,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		// subtract fee debt explicitly if we called this after.
 		availableBalance, err := st.GetAvailableBalance(rt.CurrentBalance())
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to calculate available balance")
-		feeToBurn = RepayDebtsOrAbort(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, a, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -846,7 +846,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		st.DeadlineCronActive = true
 	})
 
-	burnFunds(rt, feeToBurn, BurnMethodPreCommitSectorBatch)
+	a.burnFunds(rt, feeToBurn, BurnMethodPreCommitSectorBatch)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -902,7 +902,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 		}
 		proveCommitDue := precommit.PreCommitEpoch + msd
 		if rt.CurrEpoch() > proveCommitDue {
-			rt.Log(rtt.WARN, "skipping commitment for sector %d, too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "skipping commitment for sector %d, too late at %d, due %d", precommit.Info.SectorNumber, rt.CurrEpoch(), proveCommitDue)
 		} else {
 			precommitsToConfirm = append(precommitsToConfirm, precommit)
 		}
@@ -962,7 +962,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 	rew := requestCurrentEpochBlockReward(rt)
 	pwr := requestCurrentTotalPower(rt)
 
-	confirmSectorProofsValid(rt, precommitsToConfirm, rew.ThisEpochBaselinePower, rew.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
+	a.confirmSectorProofsValid(rt, precommitsToConfirm, rew.ThisEpochBaselinePower, rew.ThisEpochRewardSmoothed, pwr.QualityAdjPowerSmoothed)
 
 	// Compute and burn the aggregate network fee. We need to re-load the state as
 	// confirmSectorProofsValid can change it.
@@ -976,7 +976,7 @@ func (a Actor) ProveCommitAggregate(rt Runtime, params *ProveCommitAggregatePara
 			unlockedBalance, aggregateFee,
 		)
 	}
-	burnFunds(rt, aggregateFee, BurnMethodProveCommitAggregate)
+	a.burnFunds(rt, aggregateFee, BurnMethodProveCommitAggregate)
 
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1055,7 +1055,7 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	// This should be enforced by the power actor. We log here just in case
 	// something goes wrong.
 	if len(params.Sectors) > power.MaxMinerProveCommitsPerEpoch {
-		rt.Log(rtt.WARN, "confirmed more prove commits in an epoch than permitted: %d > %d",
+		rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "confirmed more prove commits in an epoch than permitted: %d > %d",
 			len(params.Sectors), power.MaxMinerProveCommitsPerEpoch,
 		)
 	}
@@ -1068,12 +1068,12 @@ func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSecto
 	precommittedSectors, err := st.FindPrecommittedSectors(store, params.Sectors...)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load pre-committed sectors")
 
-	confirmSectorProofsValid(rt, precommittedSectors, params.RewardBaselinePower, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
+	a.confirmSectorProofsValid(rt, precommittedSectors, params.RewardBaselinePower, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 
 	return nil
 }
 
-func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainInfo, thisEpochBaselinePower big.Int,
+func (a Actor) confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainInfo, thisEpochBaselinePower big.Int,
 	thisEpochRewardSmoothed smoothing.FilterEstimate, qualityAdjPowerSmoothed smoothing.FilterEstimate) {
 
 	circulatingSupply := rt.TotalFilCircSupply()
@@ -1110,7 +1110,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 			)
 
 			if code != exitcode.Ok {
-				rt.Log(rtt.INFO, "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "failed to activate deals on sector %d, dropping from prove commit set", precommit.Info.SectorNumber)
 				continue
 			}
 		}
@@ -1138,7 +1138,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 			duration := precommit.Info.Expiration - activation
 			// This should have been caught in precommit, but don't let other sectors fail because of it.
 			if duration < MinSectorExpiration {
-				rt.Log(rtt.WARN, "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "precommit %d has lifetime %d less than minimum. ignoring", precommit.Info.SectorNumber, duration, MinSectorExpiration)
 				continue
 			}
 			pwr := QAPowerForWeight(info.SectorSize, duration, precommit.DealWeight, precommit.VerifiedDealWeight)
@@ -1539,14 +1539,14 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 	pwrTotal := requestCurrentTotalPower(rt)
 
 	// Now, try to process these sectors.
-	more := processEarlyTerminations(rt, epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed)
+	more := a.processEarlyTerminations(rt, epochReward.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed)
 	if more && !hadEarlyTerminations {
 		// We have remaining terminations, and we didn't _previously_
 		// have early terminations to process, schedule a cron job.
 		// NOTE: This isn't quite correct. If we repeatedly fill, empty,
 		// fill, and empty, the queue, we'll keep scheduling new cron
 		// jobs. However, in practice, that shouldn't be all that bad.
-		scheduleEarlyTerminationWork(rt)
+		a.scheduleEarlyTerminationWork(rt)
 	}
 
 	rt.StateReadonly(&st)
@@ -1683,7 +1683,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 	rt.StateTransaction(&st, func() {
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		feeToBurn = RepayDebtsOrAbort(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, a, &st)
 
 		info := getMinerInfo(rt, &st)
 		rt.ValidateImmediateCallerIs(append(info.ControlAddresses, info.Owner, info.Worker)...)
@@ -1720,7 +1720,7 @@ func (a Actor) DeclareFaultsRecovered(rt Runtime, params *DeclareFaultsRecovered
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to save deadlines")
 	})
 
-	burnFunds(rt, feeToBurn, BurnMethodDeclareFaultsRecovered)
+	a.burnFunds(rt, feeToBurn, BurnMethodDeclareFaultsRecovered)
 	rt.StateReadonly(&st)
 	err = st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1885,7 +1885,7 @@ func (a Actor) ApplyRewards(rt Runtime, params *builtin.ApplyRewardParams) *abi.
 	})
 
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
-	burnFunds(rt, toBurn, BurnMethodApplyRewards)
+	a.burnFunds(rt, toBurn, BurnMethodApplyRewards)
 	rt.StateReadonly(&st)
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
@@ -1964,9 +1964,9 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 	})
 	code := rt.Send(reporter, builtin.MethodSend, nil, rewardAmount, &builtin.Discard{})
 	if !code.IsSuccess() {
-		rt.Log(rtt.ERROR, "failed to send reward")
+		rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to send reward")
 	}
-	burnFunds(rt, burnAmount, BurnMethodReportConsensusFault)
+	a.burnFunds(rt, burnAmount, BurnMethodReportConsensusFault)
 	notifyPledgeChanged(rt, pledgeDelta)
 
 	rt.StateReadonly(&st)
@@ -2024,7 +2024,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 
 		// Verify unlocked funds cover both InitialPledgeRequirement and FeeDebt
 		// and repay fee debt now.
-		feeToBurn = RepayDebtsOrAbort(rt, &st)
+		feeToBurn = RepayDebtsOrAbort(rt, a, &st)
 	})
 
 	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
@@ -2036,7 +2036,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 	}
 
-	burnFunds(rt, feeToBurn, BurnMethodWithdrawBalance)
+	a.burnFunds(rt, feeToBurn, BurnMethodWithdrawBalance)
 
 	pledgeDelta := newlyVested.Neg()
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2061,7 +2061,7 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	})
 
 	notifyPledgeChanged(rt, fromVesting.Neg())
-	burnFunds(rt, big.Sum(fromVesting, fromBalance), BurnMethodRepayDebt)
+	a.burnFunds(rt, big.Sum(fromVesting, fromBalance), BurnMethodRepayDebt)
 	err := st.CheckBalanceInvariants(rt.CurrentBalance())
 	builtin.RequireNoErr(rt, err, ErrBalanceInvariantBroken, "balance invariants broken")
 
@@ -2115,39 +2115,39 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		set, err := sectorNumbers.IsSet(uint64(update.SectorID))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "error checking sector number")
 		if set {
-			rt.Log(rtt.INFO, "duplicate sector being updated %d, skipping", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "duplicate sector being updated %d, skipping", update.SectorID)
 			continue
 		}
 
 		sectorNumbers.Set(uint64(update.SectorID))
 
 		if len(update.ReplicaProof) > 4096 {
-			rt.Log(rtt.INFO, "update proof is too large (%d), skipping sector %d", len(update.ReplicaProof), update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "update proof is too large (%d), skipping sector %d", len(update.ReplicaProof), update.SectorID)
 			continue
 		}
 
 		if len(update.Deals) <= 0 {
-			rt.Log(rtt.INFO, "must have deals to update, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "must have deals to update, skipping sector %d", update.SectorID)
 			continue
 		}
 
 		if uint64(len(update.Deals)) > SectorDealsMax(info.SectorSize) {
-			rt.Log(rtt.INFO, "more deals than policy allows, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "more deals than policy allows, skipping sector %d", update.SectorID)
 			continue
 		}
 
 		if update.Deadline >= WPoStPeriodDeadlines {
-			rt.Log(rtt.INFO, "deadline %d not in range 0..%d, skipping sector %d", update.Deadline, WPoStPeriodDeadlines, update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "deadline %d not in range 0..%d, skipping sector %d", update.Deadline, WPoStPeriodDeadlines, update.SectorID)
 			continue
 		}
 
 		if !update.NewSealedSectorCID.Defined() {
-			rt.Log(rtt.INFO, "new sealed CID undefined, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "new sealed CID undefined, skipping sector %d", update.SectorID)
 			continue
 		}
 
 		if update.NewSealedSectorCID.Prefix() != SealedCIDPrefix {
-			rt.Log(rtt.INFO, "new sealed CID had wrong prefix %s, skipping sector %d", update.NewSealedSectorCID, update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "new sealed CID had wrong prefix %s, skipping sector %d", update.NewSealedSectorCID, update.SectorID)
 			continue
 		}
 
@@ -2155,18 +2155,18 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "error checking sector health")
 
 		if !healthy {
-			rt.Log(rtt.INFO, "sector isn't healthy, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "sector isn't healthy, skipping sector %d", update.SectorID)
 			continue
 		}
 
 		sectorInfo, err := sectors.MustGet(update.SectorID)
 		if err != nil {
-			rt.Log(rtt.INFO, "failed to get sector, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "failed to get sector, skipping sector %d", update.SectorID)
 			continue
 		}
 
 		if len(sectorInfo.DealIDs) != 0 {
-			rt.Log(rtt.INFO, "cannot update sector with deals, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "cannot update sector with deals, skipping sector %d", update.SectorID)
 			continue
 		}
 
@@ -2182,7 +2182,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		)
 
 		if code != exitcode.Ok {
-			rt.Log(rtt.INFO, "failed to activate deals, skipping sector %d", update.SectorID)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "failed to activate deals, skipping sector %d", update.SectorID)
 			continue
 		}
 
@@ -2391,13 +2391,13 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *builtin.DeferredCronEvent
 
 	switch payload.EventType {
 	case CronEventProvingDeadline:
-		handleProvingDeadline(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
+		a.handleProvingDeadline(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed)
 	case CronEventProcessEarlyTerminations:
-		if processEarlyTerminations(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed) {
-			scheduleEarlyTerminationWork(rt)
+		if a.processEarlyTerminations(rt, params.RewardSmoothed, params.QualityAdjPowerSmoothed) {
+			a.scheduleEarlyTerminationWork(rt)
 		}
 	default:
-		rt.Log(rtt.ERROR, "onDeferredCronEvent invalid event type: %v", payload.EventType)
+		rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "onDeferredCronEvent invalid event type: %v", payload.EventType)
 	}
 
 	var st State
@@ -2414,7 +2414,7 @@ func (a Actor) OnDeferredCronEvent(rt Runtime, params *builtin.DeferredCronEvent
 // TODO: We're using the current power+epoch reward. Technically, we
 // should use the power/reward at the time of termination.
 // https://github.com/filecoin-project/specs-actors/v7/pull/648
-func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimate, qualityAdjPowerSmoothed smoothing.FilterEstimate) (more bool) {
+func (a Actor) processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimate, qualityAdjPowerSmoothed smoothing.FilterEstimate) (more bool) {
 	store := adt.AsStore(rt)
 
 	var (
@@ -2434,7 +2434,7 @@ func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimat
 		// This can happen if we end up processing early terminations
 		// before the cron callback fires.
 		if result.IsEmpty() {
-			rt.Log(rtt.INFO, "no early terminations (maybe cron callback hasn't happened yet?)")
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "no early terminations (maybe cron callback hasn't happened yet?)")
 			return
 		}
 
@@ -2482,13 +2482,13 @@ func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimat
 
 	// We didn't do anything, abort.
 	if result.IsEmpty() {
-		rt.Log(rtt.INFO, "no early terminations")
+		rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "no early terminations")
 		return more
 	}
 
 	// Burn penalty.
-	rt.Log(rtt.DEBUG, "storage provider %s penalized %s for sector termination", rt.Receiver(), penalty)
-	burnFunds(rt, penalty, BurnMethodProcessEarlyTerminations)
+	rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "storage provider %s penalized %s for sector termination", rt.Receiver(), penalty)
+	a.burnFunds(rt, penalty, BurnMethodProcessEarlyTerminations)
 
 	// Return pledge.
 	notifyPledgeChanged(rt, pledgeDelta)
@@ -2503,7 +2503,7 @@ func processEarlyTerminations(rt Runtime, rewardSmoothed smoothing.FilterEstimat
 }
 
 // Invoked at the end of the last epoch for each proving deadline.
-func handleProvingDeadline(rt Runtime,
+func (a Actor) handleProvingDeadline(rt Runtime,
 	rewardSmoothed smoothing.FilterEstimate,
 	qualityAdjPowerSmoothed smoothing.FilterEstimate) {
 	currEpoch := rt.CurrEpoch()
@@ -2539,7 +2539,7 @@ func handleProvingDeadline(rt Runtime,
 
 			err = st.ApplyPenalty(depositToBurn)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.DEBUG, "storage provider %s penalized %s for expired pre commits", rt.Receiver(), depositToBurn)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "storage provider %s penalized %s for expired pre commits", rt.Receiver(), depositToBurn)
 		}
 
 		// Record whether or not we _had_ early terminations in the queue before this method.
@@ -2563,7 +2563,7 @@ func handleProvingDeadline(rt Runtime,
 
 			err = st.ApplyPenalty(penaltyTarget)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to apply penalty")
-			rt.Log(rtt.DEBUG, "storage provider %s penalized %s for continued fault", rt.Receiver(), penaltyTarget)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "storage provider %s penalized %s for continued fault", rt.Receiver(), penaltyTarget)
 
 			penaltyFromVesting, penaltyFromBalance, err := st.RepayPartialDebtInPriorityOrder(store, currEpoch, rt.CurrentBalance())
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to unlock penalty")
@@ -2578,7 +2578,7 @@ func handleProvingDeadline(rt Runtime,
 	})
 	// Remove power for new faults, and burn penalties.
 	requestUpdatePower(rt, powerDeltaTotal)
-	burnFunds(rt, penaltyTotal, BurnMethodHandleProvingDeadline)
+	a.burnFunds(rt, penaltyTotal, BurnMethodHandleProvingDeadline)
 	notifyPledgeChanged(rt, pledgeDeltaTotal)
 
 	// Schedule cron callback for next deadline's last epoch.
@@ -2588,7 +2588,7 @@ func handleProvingDeadline(rt Runtime,
 			EventType: CronEventProvingDeadline,
 		})
 	} else {
-		rt.Log(rtt.INFO, "miner %s going inactive, deadline cron discontinued", rt.Receiver())
+		rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "miner %s going inactive, deadline cron discontinued", rt.Receiver())
 	}
 
 	// Record whether or not we _have_ early terminations now.
@@ -2598,9 +2598,9 @@ func handleProvingDeadline(rt Runtime,
 	// handle them at the next epoch.
 	if !hadEarlyTerminations && hasEarlyTerminations {
 		// First, try to process some of these terminations.
-		if processEarlyTerminations(rt, rewardSmoothed, qualityAdjPowerSmoothed) {
+		if a.processEarlyTerminations(rt, rewardSmoothed, qualityAdjPowerSmoothed) {
 			// If that doesn't work, just defer till the next epoch.
-			scheduleEarlyTerminationWork(rt)
+			a.scheduleEarlyTerminationWork(rt)
 		}
 		// Note: _don't_ process early terminations if we had a cron
 		// callback already scheduled. In that case, we'll already have
@@ -2719,8 +2719,8 @@ func requestTerminateDeals(rt Runtime, epoch abi.ChainEpoch, dealIDs []abi.DealI
 	}
 }
 
-func scheduleEarlyTerminationWork(rt Runtime) {
-	rt.Log(rtt.INFO, "scheduling early terminations with cron...")
+func (a Actor) scheduleEarlyTerminationWork(rt Runtime) {
+	rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "scheduling early terminations with cron...")
 
 	enrollCronEvent(rt, rt.CurrEpoch()+1, &CronEventPayload{
 		EventType: CronEventProcessEarlyTerminations,
@@ -2937,9 +2937,9 @@ func resolveWorkerAddress(rt Runtime, raw addr.Address) addr.Address {
 	return resolved
 }
 
-func burnFunds(rt Runtime, amt abi.TokenAmount, bt BurnMethod) {
+func (a Actor) burnFunds(rt Runtime, amt abi.TokenAmount, bt BurnMethod) {
 	if amt.GreaterThan(big.Zero()) {
-		rt.Log(rtt.DEBUG, "storage provder %s burn type %s burning %s", rt.Receiver(), bt, amt)
+		rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "storage provder %s burn type %s burning %s", rt.Receiver(), bt, amt)
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, amt, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to burn funds")
 	}

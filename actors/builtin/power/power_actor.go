@@ -220,7 +220,7 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	builtin.RequireSuccess(rt, rewretcode, "failed to check epoch baseline power")
 
 	if err := a.processBatchProofVerifies(rt, rewret); err != nil {
-		rt.Log(rtt.ERROR, "unexpected error processing batch proof verifies: %s. Skipping all verification for epoch %d", err, rt.CurrEpoch())
+		rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "unexpected error processing batch proof verifies: %s. Skipping all verification for epoch %d", err, rt.CurrEpoch())
 	}
 	a.processDeferredCronEvents(rt, rewret)
 
@@ -280,7 +280,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 		if st.ProofValidationBatch == nil {
 			mmap, err = adt.MakeEmptyMultimap(store, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to create empty proof validation set")
-			rt.Log(rtt.DEBUG, "ProofValidationBatch created")
+			rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "ProofValidationBatch created")
 		} else {
 			mmap, err = adt.AsMultimap(adt.AsStore(rt), *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load proof batch set")
@@ -356,7 +356,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 	rt.StateTransaction(&st, func() {
 		store := adt.AsStore(rt)
 		if st.ProofValidationBatch == nil {
-			rt.Log(rtt.DEBUG, "ProofValidationBatch was nil, quitting verification")
+			rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "ProofValidationBatch was nil, quitting verification")
 			return
 		}
 		mmap, err := adt.AsMultimap(store, *st.ProofValidationBatch, builtin.DefaultHamtBitwidth, ProofValidationBatchAmtBitwidth)
@@ -372,22 +372,22 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 		}
 
 		err = mmap.ForAll(func(k string, arr *adt.Array) error {
-			a, err := addr.NewFromBytes([]byte(k))
+			address, err := addr.NewFromBytes([]byte(k))
 			if err != nil {
 				return xerrors.Errorf("failed to parse address key: %w", err)
 			}
 
 			// refuse to process proofs for miner with no claim
-			found, err := claims.Has(abi.AddrKey(a))
+			found, err := claims.Has(abi.AddrKey(address))
 			if err != nil {
 				return xerrors.Errorf("failed to look up claim: %w", err)
 			}
 			if !found {
-				rt.Log(rtt.WARN, "skipping batch verifies for unknown miner %s", a)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "skipping batch verifies for unknown miner %s", a)
 				return nil
 			}
 
-			miners = append(miners, a)
+			miners = append(miners, address)
 
 			var infos []proof.SealVerifyInfo
 			var svi proof.SealVerifyInfo
@@ -399,7 +399,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 				return xerrors.Errorf("failed to iterate over proof verify array for miner %s: %w", a, err)
 			}
 
-			verifies[a] = infos
+			verifies[address] = infos
 			return nil
 		})
 		// Do not return immediately, all runs that get this far should wipe the ProofValidationBatchQueue.
@@ -435,14 +435,14 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 
 				if _, exists := seen[snum]; exists {
 					// filter-out duplicates
-					rt.Log(rtt.INFO, "skipped over a duplicate proof")
+					rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "skipped over a duplicate proof")
 					continue
 				}
 
 				seen[snum] = struct{}{}
 				successful = append(successful, snum)
 			} else {
-				rt.Log(rtt.INFO, "a proof failed from miner %s", m)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "a proof failed from miner %s", m)
 			}
 		}
 
@@ -459,7 +459,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 				&builtin.Discard{},
 			)
 			if code.IsError() {
-				rt.Log(rtt.ERROR,
+				rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR),
 					"failed to confirm sector proof validity to %s, error code %d",
 					m, code)
 			}
@@ -489,7 +489,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 				found, err := claims.Has(abi.AddrKey(evt.MinerAddr))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to look up claim")
 				if !found {
-					rt.Log(rtt.WARN, "skipping cron event for unknown miner %v", evt.MinerAddr)
+					rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "skipping cron event for unknown miner %v", evt.MinerAddr)
 					continue
 				}
 				cronEvents = append(cronEvents, evt)
@@ -499,7 +499,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 				err = events.RemoveAll(epochKey(epoch))
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to clear cron events at %v", epoch)
 			} else {
-				rt.Log(rtt.DEBUG, "no epoch events were loaded")
+				rt.Log(builtin.GetActorLogLevel(a, rtt.DEBUG), "no epoch events were loaded")
 			}
 		}
 
@@ -529,7 +529,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 		// and persists state removing the failed event from the event queue. It won't be tried again.
 		// Failures are unexpected here but will result in removal of miner power as a defensive measure.
 		if code != exitcode.Ok {
-			rt.Log(rtt.ERROR, "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "OnDeferredCronEvent failed for miner %s: exitcode %d", event.MinerAddr, code)
 			failedMinerCrons = append(failedMinerCrons, event.MinerAddr)
 		}
 	}
@@ -543,10 +543,10 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 			for _, minerAddr := range failedMinerCrons {
 				found, err := st.deleteClaim(claims, minerAddr)
 				if err != nil {
-					rt.Log(rtt.ERROR, "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+					rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to delete claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 					continue
 				} else if !found {
-					rt.Log(rtt.ERROR, "can't find claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
+					rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "can't find claim for miner %s after failing OnDeferredCronEvent: %s", minerAddr, err)
 					continue
 				}
 

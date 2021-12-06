@@ -63,7 +63,7 @@ func (a Actor) EpochTick(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue 
 		code := rt.Send(entry.Receiver, entry.MethodNum, nil, abi.NewTokenAmount(0), &builtin.Discard{})
 		// Any error and return value are ignored.
 		if code.IsError() {
-			rt.Log(rtt.ERROR, "cron failed to send entry to %s, send error code %d", entry.Receiver, code)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "cron failed to send entry to %s, send error code %d", entry.Receiver, code)
 		}
 	}
 

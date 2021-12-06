@@ -103,7 +103,7 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 		totalReward = big.Add(blockReward, params.GasReward)
 		currBalance := rt.CurrentBalance()
 		if totalReward.GreaterThan(currBalance) {
-			rt.Log(rtt.WARN, "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "reward actor balance %d below totalReward expected %d, paying out rest of balance", currBalance, totalReward)
 			totalReward = currBalance
 
 			blockReward = big.Sub(totalReward, params.GasReward)
@@ -122,10 +122,10 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 	}
 	code := rt.Send(minerAddr, builtin.MethodsMiner.ApplyRewards, &rewardParams, totalReward, &builtin.Discard{})
 	if !code.IsSuccess() {
-		rt.Log(rtt.ERROR, "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
+		rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to send ApplyRewards call to the miner actor with funds: %v, code: %v", totalReward, code)
 		code := rt.Send(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, totalReward, &builtin.Discard{})
 		if !code.IsSuccess() {
-			rt.Log(rtt.ERROR, "failed to send unsent reward to the burnt funds actor, code: %v", code)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to send unsent reward to the burnt funds actor, code: %v", code)
 		}
 	}
 

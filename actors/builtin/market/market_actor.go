@@ -203,16 +203,16 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 			drop malformed deals
 		*/
 		if err := validateDeal(rt, deal, networkRawPower, networkQAPower, baselinePower); err != nil {
-			rt.Log(rtt.INFO, "invalid deal %d: %s", di, err)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal %d: %s", di, err)
 			continue
 		}
 		if deal.Proposal.Provider != provider && deal.Proposal.Provider != providerRaw {
-			rt.Log(rtt.INFO, "invalid deal %d: cannot publish deals from multiple providers in one batch", di)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal %d: cannot publish deals from multiple providers in one batch", di)
 			continue
 		}
 		client, ok := rt.ResolveAddress(deal.Proposal.Client)
 		if !ok {
-			rt.Log(rtt.INFO, "invalid deal %d: failed to resolve proposal.Client address %v for deal ", di, deal.Proposal.Client)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal %d: failed to resolve proposal.Client address %v for deal ", di, deal.Proposal.Client)
 			continue
 		}
 
@@ -226,14 +226,14 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		clientBalanceOk, err := msm.balanceCovered(client, totalClientLockup[client])
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check client balance coverage")
 		if !clientBalanceOk {
-			rt.Log(rtt.INFO, "invalid deal: %d: insufficient client funds to cover proposal cost", di)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal: %d: insufficient client funds to cover proposal cost", di)
 			continue
 		}
 		totalProviderLockup = big.Sum(totalProviderLockup, deal.Proposal.ProviderCollateral)
 		providerBalanceOk, err := msm.balanceCovered(provider, totalProviderLockup)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check provider balance coverage")
 		if !providerBalanceOk {
-			rt.Log(rtt.INFO, "invalid deal: %d: insufficient provider funds to cover proposal cost", di)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal: %d: insufficient provider funds to cover proposal cost", di)
 			continue
 		}
 
@@ -255,7 +255,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check for existence of deal proposal")
 		_, duplicateInMessage := proposalCidLookup[pcid]
 		if duplicateInState || duplicateInMessage {
-			rt.Log(rtt.INFO, "invalid deal %d: cannot publish duplicate deal proposal %s", di)
+			rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal %d: cannot publish duplicate deal proposal %s", di)
 			continue
 		}
 
@@ -275,7 +275,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				&builtin.Discard{},
 			)
 			if code.IsError() {
-				rt.Log(rtt.INFO, "invalid deal %d: failed to acquire datacap exitcode: %d", di, code)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "invalid deal %d: failed to acquire datacap exitcode: %d", di, code)
 				continue
 			}
 		}
@@ -527,7 +527,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// The deal may have expired and been deleted before the sector is terminated.
 			// Log the dealID for the dealProposal and continue execution for other deals
 			if !found {
-				rt.Log(rtt.INFO, "couldn't find deal %d", dealID)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "couldn't find deal %d", dealID)
 				continue
 			}
 			builtin.RequireState(rt, deal.Provider == minerAddr, "caller %v is not the provider %v of deal %v",
@@ -535,7 +535,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// do not slash expired deals
 			if deal.EndEpoch <= params.Epoch {
-				rt.Log(rtt.INFO, "deal %d expired, not slashing", dealID)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "deal %d expired, not slashing", dealID)
 				continue
 			}
 
@@ -549,7 +549,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 
 			// if a deal is already slashed, we don't need to do anything here.
 			if state.SlashEpoch != epochUndefined {
-				rt.Log(rtt.INFO, "deal %d already slashed", dealID)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.INFO), "deal %d already slashed", dealID)
 				continue
 			}
 
@@ -688,7 +688,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 		)
 
 		if !code.IsSuccess() {
-			rt.Log(rtt.ERROR, "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
+			rt.Log(builtin.GetActorLogLevel(a, rtt.ERROR), "failed to send RestoreBytes call to the VerifReg actor for timed-out verified deal, client: %s, dealSize: %v, "+
 				"provider: %v, got code %v", d.Client, d.PieceSize, d.Provider, code)
 		}
 	}
