@@ -383,7 +383,7 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 				return xerrors.Errorf("failed to look up claim: %w", err)
 			}
 			if !found {
-				rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "skipping batch verifies for unknown miner %s", a)
+				rt.Log(builtin.GetActorLogLevel(a, rtt.WARN), "skipping batch verifies for unknown miner %s", address)
 				return nil
 			}
 
