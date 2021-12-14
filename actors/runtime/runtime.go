@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-state-types/rt"
 	cid "github.com/ipfs/go-cid"
 
+	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 )
 
@@ -190,7 +191,7 @@ type Syscalls interface {
 	VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error
 
 	// Verifies a proof of spacetime.
-	VerifyPoSt(vi proof.WindowPoStVerifyInfo) error
+	VerifyPoSt(vi proof5.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:
 	// - both headers mined by the same actor
 	// - headers are different

@@ -72,7 +72,7 @@ func TestSimplePathSuccess(t *testing.T) {
 		builtin.MethodsMiner.ProveReplicaUpdates,
 		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
 
-	updatedSectors := ret.(bitfield.BitField)
+	updatedSectors := ret.(*bitfield.BitField)
 	count, err := updatedSectors.Count()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), count)
@@ -139,7 +139,8 @@ func TestFullPathSuccess(t *testing.T) {
 		builtin.MethodsMiner.ProveReplicaUpdates,
 		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
 
-	updatedSectors := ret.(bitfield.BitField)
+	updatedSectors, ok := ret.(*bitfield.BitField)
+	require.True(t, ok)
 	count, err := updatedSectors.Count()
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), count)

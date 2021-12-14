@@ -1168,7 +1168,6 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
-
 		// Capture deadline's faulty power after new faults have been detected, but before it is
 		// dropped along with faulty sectors expiring this round.
 		totalFaultyPower = deadline.FaultyPower

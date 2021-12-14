@@ -49,12 +49,19 @@ type ReplicaUpdateInfo struct {
 ///
 
 // Information about a proof necessary for PoSt verification.
-//type SectorInfo struct {
-//	SealProof    abi.RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
-//	SectorNumber abi.SectorNumber
-//	SealedCID    cid.Cid // CommR
-//}
+// type SectorInfo struct {
+// 	SealProof    abi.RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
+// 	SectorNumber abi.SectorNumber
+// 	SealedCID    cid.Cid // CommR
+// }
 type SectorInfo = proof0.SectorInfo
+
+type ExtendedSectorInfo struct {
+	SealProof    abi.RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
+	SectorNumber abi.SectorNumber
+	SectorKey    *cid.Cid
+	SealedCID    cid.Cid // CommR
+}
 
 //type PoStProof struct {
 //	PoStProof  abi.RegisteredPoStProof
@@ -74,9 +81,9 @@ type WinningPoStVerifyInfo = proof0.WinningPoStVerifyInfo
 
 // Information needed to verify a Window PoSt submitted directly to a miner actor.
 //type WindowPoStVerifyInfo struct {
-//	Randomness        abi.PoStRandomness
-//	Proofs            []PoStProof
-//	ChallengedSectors []SectorInfo
-//	Prover            abi.ActorID // used to derive 32-byte prover ID
+// Randomness        abi.PoStRandomness
+// Proofs            []PoStProof
+// ChallengedSectors []SectorInfo
+// Prover            abi.ActorID // used to derive 32-byte prover ID
 //}
 type WindowPoStVerifyInfo = proof0.WindowPoStVerifyInfo
