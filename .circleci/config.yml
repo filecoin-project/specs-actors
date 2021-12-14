@@ -24,7 +24,7 @@ commands:
       - when:
           condition: << parameters.linux >>
           steps:
-            - run: sudo apt-get update
+            - run: sudo apt-get  --allow-releaseinfo-change-suite update
   build-all:
 
 
