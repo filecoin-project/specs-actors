@@ -153,7 +153,7 @@ func (s *Sim) Tick() error {
 	nextEpoch := s.v.GetEpoch() + 1
 	if s.Config.CheckpointEpochs > 0 && uint64(nextEpoch)%s.Config.CheckpointEpochs == 0 {
 		nextStore := ipld.NewBlockStoreInMemory()
-		blks, size, err := BlockstoreCopy(s.blkStore, nextStore, s.v.StateRoot())
+		blks, size, err := BlockstoreCopy(s.ctx, s.blkStore, nextStore, s.v.StateRoot())
 		if err != nil {
 			return err
 		}

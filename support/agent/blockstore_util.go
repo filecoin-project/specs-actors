@@ -2,6 +2,8 @@ package agent
 
 import (
 	"bytes"
+	"context"
+
 	block "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -12,30 +14,30 @@ import (
 
 // extracted from lotus/chain/vm/vm.go
 
-func BlockstoreCopy(from, to cbor.IpldBlockstore, root cid.Cid) (blocks uint64, copySize uint64, err error) {
+func BlockstoreCopy(ctx context.Context, from, to cbor.IpldBlockstore, root cid.Cid) (blocks uint64, copySize uint64, err error) {
 	var numBlocks uint64
 	var totalCopySize uint64
 
 	cp := func(blk block.Block) error {
 		numBlocks++
 		totalCopySize += uint64(len(blk.RawData()))
-		return to.Put(blk)
+		return to.Put(ctx, blk)
 	}
 
-	if err := copyRec(from, to, root, cp); err != nil {
+	if err := copyRec(ctx, from, to, root, cp); err != nil {
 		return 0, 0, xerrors.Errorf("copyRec: %w", err)
 	}
 
 	return numBlocks, totalCopySize, nil
 }
 
-func copyRec(from, to cbor.IpldBlockstore, root cid.Cid, cp func(block.Block) error) error {
+func copyRec(ctx context.Context, from, to cbor.IpldBlockstore, root cid.Cid, cp func(block.Block) error) error {
 	if root.Prefix().MhType == 0 {
 		// identity cid, skip
 		return nil
 	}
 
-	blk, err := from.Get(root)
+	blk, err := from.Get(ctx, root)
 	if err != nil {
 		return xerrors.Errorf("get %s failed: %w", root, err)
 	}
@@ -60,7 +62,7 @@ func copyRec(from, to cbor.IpldBlockstore, root cid.Cid, cp func(block.Block) er
 			}
 		}
 
-		if err := copyRec(from, to, link, cp); err != nil {
+		if err := copyRec(ctx, from, to, link, cp); err != nil {
 			lerr = err
 			return
 		}
