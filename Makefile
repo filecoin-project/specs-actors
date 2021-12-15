@@ -36,7 +36,7 @@ determinism-check:
 	SPECS_ACTORS_DETERMINISM="$(TEST_VECTOR_PATH)/determinism" $(GO_BIN) test ./actors/test -count=1
 	$(GO_BIN) build ./test-vectors/tools/digest
 
-	if [ "`./digest ./test-vectors/determinism`" != "`cat ./test-vectors/determinism-check`" ]; then \
+	@if [ "`./digest ./test-vectors/determinism`" != "`cat ./test-vectors/determinism-check`" ]; then \
 		echo "test-vectors don't match expected";\
 		exit 1;\
 	fi
