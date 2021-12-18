@@ -43,11 +43,7 @@ type Logger interface {
 	Log(level rt.LogLevel, msg string, args ...interface{})
 }
 
-func ActorHeadKey(addr address.Address, head cid.Cid) string {
-	return addr.String() + "-h-" + head.String()
-}
-
-// Migrates from v13 to v14
+// Migrates from v14 to v15
 //
 // This migration only updates the actor code CIDs in the state tree.
 // MigrationCache stores and loads cached data. Its implementation must be threadsafe

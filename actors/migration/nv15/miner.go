@@ -22,9 +22,15 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 		return nil, err
 	}
 
-	sectorsOut, err := migrateSectors(ctx, store, inState.Sectors)
+	ctxStore := adt.WrapStore(ctx, store)
+	sectorsOut, err := migrateSectors(ctx, ctxStore, inState.Sectors)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to migrate sectors: %w", err)
+	}
+
+	deadlinesOut, err := m.migrateDeadlines(ctx, ctxStore, inState.Deadlines)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to migrate deadlines: %w", err)
 	}
 
 	outState := miner7.State{
@@ -40,7 +46,7 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 		Sectors:                    sectorsOut,
 		ProvingPeriodStart:         inState.ProvingPeriodStart,
 		CurrentDeadline:            inState.CurrentDeadline,
-		Deadlines:                  inState.Deadlines,
+		Deadlines:                  deadlinesOut,
 		EarlyTerminations:          inState.EarlyTerminations,
 		DeadlineCronActive:         inState.DeadlineCronActive,
 	}
@@ -56,14 +62,13 @@ func (m minerMigrator) migratedCodeCID() cid.Cid {
 	return builtin7.StorageMinerActorCodeID
 }
 
-func migrateSectors(ctx context.Context, store cbor.IpldStore, inRoot cid.Cid) (cid.Cid, error) {
-	ctxStore := adt.WrapStore(ctx, store)
-	inArray, err := adt.AsArray(ctxStore, inRoot, miner6.SectorsAmtBitwidth)
+func migrateSectors(ctx context.Context, store adt.Store, inRoot cid.Cid) (cid.Cid, error) {
+	inArray, err := adt.AsArray(store, inRoot, miner6.SectorsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to read sectors array: %w", err)
 	}
 
-	outArray, err := adt.MakeEmptyArray(ctxStore, miner7.SectorsAmtBitwidth)
+	outArray, err := adt.MakeEmptyArray(store, miner7.SectorsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to construct new sectors array: %w", err)
 	}
@@ -76,6 +81,51 @@ func migrateSectors(ctx context.Context, store cbor.IpldStore, inRoot cid.Cid) (
 	}
 
 	return outArray.Root()
+}
+func (m *minerMigrator) migrateDeadlines(ctx context.Context, store adt.Store, deadlines cid.Cid) (cid.Cid, error) {
+	var inDeadlines miner6.Deadlines
+	err := store.Get(store.Context(), deadlines, &inDeadlines)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	if miner6.WPoStPeriodDeadlines != miner7.WPoStPeriodDeadlines {
+		return cid.Undef, xerrors.Errorf("unexpected WPoStPeriodDeadlines changed from %d to %d",
+			miner6.WPoStPeriodDeadlines, miner7.WPoStPeriodDeadlines)
+	}
+
+	outDeadlines := miner7.Deadlines{Due: [miner7.WPoStPeriodDeadlines]cid.Cid{}}
+
+	// Start from an empty template to zero-initialize new fields.
+	deadlineTemplate, err := miner7.ConstructDeadline(adt.WrapStore(ctx, store))
+	if err != nil {
+		return cid.Undef, xerrors.Errorf("failed to construct new deadline template: %w", err)
+	}
+
+	err = inDeadlines.ForEach(store, func(dlIdx uint64, inDeadline *miner6.Deadline) error {
+		outDeadline := *deadlineTemplate
+		outDeadline.Partitions = inDeadline.Partitions
+		outDeadline.ExpirationsEpochs = inDeadline.ExpirationsEpochs
+		outDeadline.PartitionsPoSted = inDeadline.PartitionsPoSted
+		outDeadline.EarlyTerminations = inDeadline.EarlyTerminations
+		outDeadline.LiveSectors = inDeadline.LiveSectors
+		outDeadline.TotalSectors = inDeadline.TotalSectors
+		outDeadline.FaultyPower = inDeadline.FaultyPower
+		outDlCid, err := store.Put(ctx, &outDeadline)
+		if err != nil {
+			return xerrors.Errorf("failed to put new deadline: %w", err)
+		}
+
+		outDeadlines.Due[dlIdx] = outDlCid
+
+		return nil
+	})
+
+	if err != nil {
+		return cid.Undef, xerrors.Errorf("failed to construct new deadlines")
+	}
+
+	return store.Put(ctx, &outDeadlines)
 }
 
 func migrateSectorInfo(sectorInfo miner6.SectorOnChainInfo) *miner7.SectorOnChainInfo {
