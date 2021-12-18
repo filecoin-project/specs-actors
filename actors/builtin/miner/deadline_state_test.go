@@ -83,7 +83,10 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, result.PowerDelta.Equals(power))
 
-		faultyPower, recoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 0)
+		sectorArrRoot, err := sectorArr.Root()
+		require.NoError(t, err)
+
+		faultyPower, recoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 0, sectorArrRoot)
 		require.NoError(t, err)
 		require.True(t, faultyPower.IsZero())
 		require.True(t, recoveryPower.IsZero())
@@ -550,7 +553,10 @@ func TestDeadlines(t *testing.T) {
 				bf(9, 10),
 			).assert(t, store, dl)
 
-		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
+		sectorArrRoot, err := sectorArr.Root()
+		require.NoError(t, err)
+
+		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13, sectorArrRoot)
 		require.NoError(t, err)
 
 		// No power delta for successful post.
@@ -629,7 +635,10 @@ func TestDeadlines(t *testing.T) {
 				bf(9, 10),
 			).assert(t, store, dl)
 
-		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
+		sectorArrRoot, err := sectorArr.Root()
+		require.NoError(t, err)
+
+		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13, sectorArrRoot)
 		require.NoError(t, err)
 
 		expFaultPower := sectorPower(t, 9, 10)
@@ -687,7 +696,10 @@ func TestDeadlines(t *testing.T) {
 				bf(9, 10),
 			).assert(t, store, dl)
 
-		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
+		sectorArrRoot, err := sectorArr.Root()
+		require.NoError(t, err)
+
+		powerDelta, penalizedPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13, sectorArrRoot)
 		require.NoError(t, err)
 
 		// All posts submitted, no power delta, no extra penalties.
@@ -808,7 +820,10 @@ func TestDeadlines(t *testing.T) {
 				bf(9),
 			).assert(t, store, dl)
 
-		newFaultyPower, failedRecoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13)
+		sectorArrRoot, err := sectorArr.Root()
+		require.NoError(t, err)
+
+		newFaultyPower, failedRecoveryPower, err := dl.ProcessDeadlineEnd(store, quantSpec, 13, sectorArrRoot)
 		require.NoError(t, err)
 
 		// No power changes.

@@ -550,8 +550,8 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 			penalisedPower = disputeInfo.DisputedPower
 
 			// Load sectors for the dispute.
-			sectors, err := LoadSectors(store, st.Sectors)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors array")
+			sectors, err := LoadSectors(store, dlCurrent.SectorsSnapshot)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors snapshot array")
 
 			sectorInfos, err := sectors.LoadForProof(disputeInfo.AllSectorNos, disputeInfo.IgnoredSectorNos)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors to dispute window post")
