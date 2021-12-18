@@ -1492,7 +1492,7 @@ func (a Actor) TerminateSectors(rt Runtime, params *TerminateSectorsParams) *Ter
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
 
 		err = toProcess.ForEach(func(dlIdx uint64, partitionSectors PartitionSectorMap) error {
-			// If the deadline the current or next deadline to prove, don't allow terminating sectors.
+			// If the deadline is the current or next deadline to prove, don't allow terminating sectors.
 			// We assume that deadlines are immutable when being proven.
 			if !deadlineIsMutable(st.CurrentProvingPeriodStart(currEpoch), dlIdx, currEpoch) {
 				rt.Abortf(exitcode.ErrIllegalArgument, "cannot terminate sectors in immutable deadline %d", dlIdx)
@@ -2137,7 +2137,15 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
+		// If the deadline is the current or next deadline to prove, don't allow updating sectors.
+		// We assume that deadlines are immutable when being proven.
+		if !deadlineIsMutable(stReadOnly.CurrentProvingPeriodStart(rt.CurrEpoch()), update.Deadline, rt.CurrEpoch()) {
+			rt.Log(rtt.INFO, "cannot upgrade sectors in immutable deadline %d, skipping sector %d", update.Deadline, update.SectorID)
+			continue
+		}
+
 		healthy, err := stReadOnly.CheckSectorActive(store, update.Deadline, update.Partition, update.SectorID, true)
+
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "error checking sector health")
 
 		if !healthy {
