@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/filecoin-project/go-address v0.0.5
+	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0
 	github.com/filecoin-project/go-amt-ipld/v4 v4.0.0
 	github.com/filecoin-project/go-bitfield v0.2.3
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
@@ -21,6 +22,7 @@ require (
 	github.com/ipld/go-car v0.1.0
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
 	github.com/minio/sha256-simd v0.1.1
+	github.com/multiformats/go-multibase v0.0.3
 	github.com/multiformats/go-multihash v0.0.14
 	github.com/stretchr/testify v1.7.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210118024343-169e9d70c0c2
@@ -33,7 +35,6 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
-	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0 // indirect
 	github.com/filecoin-project/go-hamt-ipld v0.1.5 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
@@ -57,7 +58,6 @@ require (
 	github.com/mr-tron/base58 v1.1.3 // indirect
 	github.com/multiformats/go-base32 v0.0.3 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
-	github.com/multiformats/go-multibase v0.0.3 // indirect
 	github.com/multiformats/go-varint v0.0.5 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
