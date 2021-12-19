@@ -3,8 +3,6 @@ package miner
 import (
 	"errors"
 
-	miner6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -58,7 +56,10 @@ const PartitionExpirationAmtBitwidth = 4
 const PartitionEarlyTerminationArrayAmtBitwidth = 3
 
 // Value type for a pair of raw and QA power.
-type PowerPair = miner6.PowerPair
+type PowerPair struct {
+	Raw abi.StoragePower
+	QA  abi.StoragePower
+}
 
 // A set of sectors associated with a given epoch.
 func ConstructPartition(store adt.Store) (*Partition, error) {
@@ -936,4 +937,40 @@ func NewPowerPairZero() PowerPair {
 
 func NewPowerPair(raw, qa abi.StoragePower) PowerPair {
 	return PowerPair{Raw: raw, QA: qa}
+}
+
+func (pp PowerPair) IsZero() bool {
+	return pp.Raw.IsZero() && pp.QA.IsZero()
+}
+
+func (pp PowerPair) Add(other PowerPair) PowerPair {
+	return PowerPair{
+		Raw: big.Add(pp.Raw, other.Raw),
+		QA:  big.Add(pp.QA, other.QA),
+	}
+}
+
+func (pp PowerPair) Sub(other PowerPair) PowerPair {
+	return PowerPair{
+		Raw: big.Sub(pp.Raw, other.Raw),
+		QA:  big.Sub(pp.QA, other.QA),
+	}
+}
+
+func (pp PowerPair) Neg() PowerPair {
+	return PowerPair{
+		Raw: pp.Raw.Neg(),
+		QA:  pp.QA.Neg(),
+	}
+}
+
+func (pp PowerPair) Mul(m big.Int) PowerPair {
+	return PowerPair{
+		Raw: big.Mul(pp.Raw, m),
+		QA:  big.Mul(pp.QA, m),
+	}
+}
+
+func (pp *PowerPair) Equals(other PowerPair) bool {
+	return pp.Raw.Equals(other.Raw) && pp.QA.Equals(other.QA)
 }

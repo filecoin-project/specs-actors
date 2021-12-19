@@ -53,6 +53,28 @@ type MigrationCache interface {
 	Load(key string, loadFunc func() (cid.Cid, error)) (cid.Cid, error)
 }
 
+func ActorHeadKey(addr address.Address, head cid.Cid) string {
+	return addr.String() + "-h-" + head.String()
+}
+
+func SectorsAmtKey(sectorsAmt cid.Cid) string {
+	return "s-" + sectorsAmt.String()
+}
+
+func DeadlineKey(dl cid.Cid) string {
+	return "d-" + dl.String()
+}
+
+func MinerPrevSectorsInKey(m address.Address) string {
+	// "i" for "in"
+	return "i-" + m.String()
+}
+
+func MinerPrevSectorsOutKey(m address.Address) string {
+	// "o" for "out"
+	return "o-" + m.String()
+}
+
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 // The store must support concurrent writes (even if the configured worker count is 1).
 func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config, log Logger, cache MigrationCache) (cid.Cid, error) {
@@ -69,7 +91,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin6.PaymentChannelActorCodeID:   nilMigrator{builtin7.PaymentChannelActorCodeID},
 		builtin6.RewardActorCodeID:           nilMigrator{builtin7.RewardActorCodeID},
 		builtin6.StorageMarketActorCodeID:    cachedMigration(cache, marketMigrator{}),
-		builtin6.StorageMinerActorCodeID:     minerMigrator{},
+		builtin6.StorageMinerActorCodeID:     cachedMigration(cache, minerMigrator{}),
 		builtin6.StoragePowerActorCodeID:     nilMigrator{builtin7.StoragePowerActorCodeID},
 		builtin6.SystemActorCodeID:           nilMigrator{builtin7.SystemActorCodeID},
 		builtin6.VerifiedRegistryActorCodeID: verifregMigrator{},
@@ -117,12 +139,14 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 			if !ok {
 				return xerrors.Errorf("actor with code %s has no registered migration function", actorIn.Code)
 			}
+
 			nextInput := &migrationJob{
 				Address:        addr,
 				Actor:          *actorIn, // Must take a copy, the pointer is not stable.
 				cache:          cache,
 				actorMigration: migration,
 			}
+
 			select {
 			case jobCh <- nextInput:
 			case <-ctx.Done():
@@ -222,10 +246,9 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 
 type actorMigrationInput struct {
 	address    address.Address // actor's address
-	balance    abi.TokenAmount // actor's balance
-	head       cid.Cid         // actor's state head CID
-	priorEpoch abi.ChainEpoch  // epoch of last state transition prior to migration
-	cache      MigrationCache  // cache of existing cid -> cid migrations for this actor
+	head       cid.Cid
+	priorEpoch abi.ChainEpoch // epoch of last state transition prior to migration
+	cache      MigrationCache // cache of existing cid -> cid migrations for this actor
 }
 
 type actorMigrationResult struct {
@@ -255,7 +278,6 @@ type migrationJobResult struct {
 func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpoch abi.ChainEpoch) (*migrationJobResult, error) {
 	result, err := job.migrateState(ctx, store, actorMigrationInput{
 		address:    job.Address,
-		balance:    job.Actor.Balance,
 		head:       job.Actor.Head,
 		priorEpoch: priorEpoch,
 		cache:      job.cache,
@@ -293,6 +315,7 @@ func (n nilMigrator) migratedCodeCID() cid.Cid {
 	return n.OutCodeCID
 }
 
+// Migrator that uses cached transformation if it exists
 type cachedMigrator struct {
 	cache MigrationCache
 	actorMigration
