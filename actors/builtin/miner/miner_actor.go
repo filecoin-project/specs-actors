@@ -646,11 +646,10 @@ func (a Actor) DisputeWindowedPoSt(rt Runtime, params *DisputeWindowedPoStParams
 //	SealRandEpoch   abi.ChainEpoch
 //	DealIDs         []abi.DealID
 //	Expiration      abi.ChainEpoch
-//	ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
-//	// The committed capacity sector to replace, and it's deadline/partition location
-//	ReplaceSectorDeadline  uint64
-//	ReplaceSectorPartition uint64
-//	ReplaceSectorNumber    abi.SectorNumber
+//	ReplaceCapacity bool                    // Must be false since v7
+//	ReplaceSectorDeadline  uint64           // Unused since v7
+//	ReplaceSectorPartition uint64           // Unused since v7
+//	ReplaceSectorNumber    abi.SectorNumber // Unused since v7
 //}
 type PreCommitSectorParams = miner0.SectorPreCommitInfo
 
@@ -672,8 +671,6 @@ type PreCommitSectorBatchParams struct {
 // The caller specifies sector numbers, sealed sector data CIDs, seal randomness epoch, expiration, and the IDs
 // of any storage deals contained in the sector data. The storage deal proposals must be already submitted
 // to the storage market actor.
-// A pre-commitment may specify an existing committed-capacity sector that the committed sector will replace
-// when proven.
 // This method calculates the sector's power, locks a pre-commit deposit for the sector, stores information about the
 // sector in state and waits for it to be proven or expire.
 func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchParams) *abi.EmptyValue {
@@ -790,10 +787,6 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 			dealWeight := dealWeights.Sectors[i]
 			if dealWeight.DealSpace > uint64(info.SectorSize) {
 				rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
-			}
-
-			if precommit.ReplaceCapacity {
-				validateReplaceSector(rt, &st, store, &precommit)
 			}
 
 			// Estimate the sector weight using the current epoch as an estimate for activation,
@@ -1080,10 +1073,7 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 
 	// 1. Activate deals, skipping pre-commits with invalid deals.
 	//    - calls the market actor.
-	// 2. Reschedule replacement sector expiration.
-	//    - loads and saves sectors
-	//    - loads and saves deadlines/partitions
-	// 3. Add new sectors.
+	// 2. Add new sectors.
 	//    - loads and saves sectors.
 	//    - loads and saves deadlines/partitions
 	//
@@ -1151,10 +1141,6 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 			initialPledge := InitialPledgeForPower(pwr, thisEpochBaselinePower, thisEpochRewardSmoothed,
 				qualityAdjPowerSmoothed, circulatingSupply)
 
-			// Lower-bound the pledge by that of the sector being replaced.
-			// Record the replaced age and reward rate for termination fee calculations.
-			_, replacedAge, replacedDayReward := zeroReplacedSectorParameters()
-
 			newSectorInfo := SectorOnChainInfo{
 				SectorNumber:          precommit.Info.SectorNumber,
 				SealProof:             precommit.Info.SealProof,
@@ -1167,8 +1153,8 @@ func confirmSectorProofsValid(rt Runtime, preCommits []*SectorPreCommitOnChainIn
 				InitialPledge:         initialPledge,
 				ExpectedDayReward:     dayReward,
 				ExpectedStoragePledge: storagePledge,
-				ReplacedSectorAge:     replacedAge,
-				ReplacedDayReward:     replacedDayReward,
+				ReplacedSectorAge:     0,          // The replacement mechanism is disabled since v7
+				ReplacedDayReward:     big.Zero(), // The replacement mechanism is disabled since v7
 			}
 
 			depositToUnlock = big.Add(depositToUnlock, precommit.PreCommitDeposit)
@@ -2151,7 +2137,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
-		healthy, err := stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID)
+		healthy, err := stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID, true)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "error checking sector health")
 
 		if !healthy {
@@ -2635,36 +2621,6 @@ func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealP
 	}
 }
 
-func validateReplaceSector(rt Runtime, st *State, store adt.Store, params *miner0.SectorPreCommitInfo) {
-	replaceSector, found, err := st.GetSector(store, params.ReplaceSectorNumber)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sector %v", params.SectorNumber)
-	if !found {
-		rt.Abortf(exitcode.ErrNotFound, "no such sector %v to replace", params.ReplaceSectorNumber)
-	}
-
-	if len(replaceSector.DealIDs) > 0 {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v which has deals", params.ReplaceSectorNumber)
-	}
-	// From network version 7, the new sector's seal type must have the same Window PoSt proof type as the one
-	// being replaced, rather than be exactly the same seal type.
-	// This permits replacing sectors with V1 seal types with V1_1 seal types.
-	replaceWPoStProof, err := replaceSector.SealProof.RegisteredWindowPoStProof()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to lookup Window PoSt proof type for sector seal proof %d", replaceSector.SealProof)
-	newWPoStProof, err := params.SealProof.RegisteredWindowPoStProof()
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to lookup Window PoSt proof type for new seal proof %d", params.SealProof)
-	if newWPoStProof != replaceWPoStProof {
-		rt.Abortf(exitcode.ErrIllegalArgument, "new sector window PoSt proof type %d must match replaced proof type %d (seal proof type %d)",
-			newWPoStProof, replaceWPoStProof, params.SealProof)
-	}
-	if params.Expiration < replaceSector.Expiration {
-		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector %v expiration %v with sooner expiration %v",
-			params.ReplaceSectorNumber, replaceSector.Expiration, params.Expiration)
-	}
-
-	err = st.CheckSectorHealth(store, params.ReplaceSectorDeadline, params.ReplaceSectorPartition, params.ReplaceSectorNumber)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to replace sector %v", params.ReplaceSectorNumber)
-}
-
 func enrollCronEvent(rt Runtime, eventEpoch abi.ChainEpoch, callbackPayload *CronEventPayload) {
 	payload := new(bytes.Buffer)
 	err := callbackPayload.MarshalCBOR(payload)
@@ -2997,10 +2953,6 @@ func currentProvingPeriodStart(currEpoch abi.ChainEpoch, offset abi.ChainEpoch) 
 // currEpoch must be within the proving period that starts at provingPeriodStart to produce a valid index.
 func currentDeadlineIndex(currEpoch abi.ChainEpoch, periodStart abi.ChainEpoch) uint64 {
 	return uint64((currEpoch - periodStart) / WPoStChallengeWindow)
-}
-
-func zeroReplacedSectorParameters() (pledge abi.TokenAmount, age abi.ChainEpoch, dayReward big.Int) {
-	return big.Zero(), abi.ChainEpoch(0), big.Zero()
 }
 
 // Update worker address with pending worker key if exists and delay has passed
