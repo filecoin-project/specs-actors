@@ -1281,9 +1281,6 @@ func (d *Deadline) IsLive() (bool, error) {
 		return true, nil
 	}
 
-	// TODO: Should the deadline be considered live if the sectors snapshot has changed?
-	// If only those sectors in this deadline have changed? Determining that isn't cheap?
-
 	// Otherwise, the deadline is definitely dead.
 	return false, nil
 }
