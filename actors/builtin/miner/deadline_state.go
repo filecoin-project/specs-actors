@@ -64,13 +64,18 @@ type Deadline struct {
 
 	// AMT of optimistically accepted WindowPoSt proofs, submitted during
 	// the current challenge window. At the end of the challenge window,
-	// this AMT will be moved to PoStSubmissionsSnapshot. WindowPoSt proofs
+	// this AMT will be moved to OptimisticPoStSubmissionsSnapshot. WindowPoSt proofs
 	// verified on-chain do not appear in this AMT.
 	OptimisticPoStSubmissions cid.Cid // AMT[]WindowedPoSt
+
+	// Snapshot of the miner's sectors AMT at the end of the previous challenge
+	// window for this deadline.
+	SectorsSnapshot cid.Cid
 
 	// Snapshot of partition state at the end of the previous challenge
 	// window for this deadline.
 	PartitionsSnapshot cid.Cid
+
 	// Snapshot of the proofs submitted by the end of the previous challenge
 	// window for this deadline.
 	//
@@ -167,6 +172,11 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		return nil, xerrors.Errorf("failed to construct empty deadline expiration array: %w", err)
 	}
 
+	emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct empty sectors snapshot array: %w", err)
+	}
+
 	emptyPoStSubmissionsArrayCid, err := adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct empty proofs array: %w", err)
@@ -182,6 +192,7 @@ func ConstructDeadline(store adt.Store) (*Deadline, error) {
 		PartitionsPoSted:                  bitfield.New(),
 		OptimisticPoStSubmissions:         emptyPoStSubmissionsArrayCid,
 		PartitionsSnapshot:                emptyPartitionsArrayCid,
+		SectorsSnapshot:                   emptySectorsSnapshotArrayCid,
 		OptimisticPoStSubmissionsSnapshot: emptyPoStSubmissionsArrayCid,
 	}, nil
 }
@@ -198,6 +209,14 @@ func (d *Deadline) OptimisticProofsArray(store adt.Store) (*adt.Array, error) {
 	arr, err := adt.AsArray(store, d.OptimisticPoStSubmissions, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load proofs: %w", err)
+	}
+	return arr, nil
+}
+
+func (d *Deadline) SectorsSnapshotArray(store adt.Store) (*adt.Array, error) {
+	arr, err := adt.AsArray(store, d.SectorsSnapshot, SectorsAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load sectors snapshot: %w", err)
 	}
 	return arr, nil
 }
@@ -874,7 +893,7 @@ func (dl *Deadline) DeclareFaultsRecovered(
 // ProcessDeadlineEnd processes all PoSt submissions, marking unproven sectors as
 // faulty and clearing failed recoveries. It returns the power delta, and any
 // power that should be penalized (new faults and failed recoveries).
-func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec, faultExpirationEpoch abi.ChainEpoch) (
+func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec, faultExpirationEpoch abi.ChainEpoch, sectors cid.Cid) (
 	powerDelta, penalizedPower PowerPair, err error,
 ) {
 	powerDelta = NewPowerPairZero()
@@ -954,6 +973,7 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec,
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
+	dl.SectorsSnapshot = sectors
 	dl.OptimisticPoStSubmissionsSnapshot = dl.OptimisticPoStSubmissions
 	dl.OptimisticPoStSubmissions, err = adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {

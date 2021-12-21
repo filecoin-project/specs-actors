@@ -777,7 +777,7 @@ func (t *Deadlines) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufDeadline = []byte{138}
+var lengthBufDeadline = []byte{139}
 
 func (t *Deadline) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -835,6 +835,12 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.OptimisticPoStSubmissions: %w", err)
 	}
 
+	// t.SectorsSnapshot (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.SectorsSnapshot); err != nil {
+		return xerrors.Errorf("failed to write cid field t.SectorsSnapshot: %w", err)
+	}
+
 	// t.PartitionsSnapshot (cid.Cid) (struct)
 
 	if err := cbg.WriteCidBuf(scratch, w, t.PartitionsSnapshot); err != nil {
@@ -864,7 +870,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 11 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -957,6 +963,18 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.OptimisticPoStSubmissions = c
+
+	}
+	// t.SectorsSnapshot (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.SectorsSnapshot: %w", err)
+		}
+
+		t.SectorsSnapshot = c
 
 	}
 	// t.PartitionsSnapshot (cid.Cid) (struct)
