@@ -2137,7 +2137,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 			continue
 		}
 
-		healthy, err := stReadOnly.CheckSectorHealthExcludeUnproven(store, update.Deadline, update.Partition, update.SectorID, true)
+		healthy, err := stReadOnly.CheckSectorActive(store, update.Deadline, update.Partition, update.SectorID, true)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "error checking sector health")
 
 		if !healthy {
