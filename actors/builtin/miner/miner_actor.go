@@ -2068,7 +2068,7 @@ type ProveReplicaUpdatesParams struct {
 	Updates []ReplicaUpdate
 }
 
-func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams) bitfield.BitField {
+func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams) *bitfield.BitField {
 	// Validate inputs
 
 	builtin.RequireParam(rt, len(params.Updates) <= ProveReplicaUpdatesMaxSize, "too many updates (%d > %d)", len(params.Updates), ProveReplicaUpdatesMaxSize)
@@ -2349,7 +2349,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 	notifyPledgeChanged(rt, pledgeDelta)
 	requestUpdatePower(rt, powerDelta)
 
-	return succeededSectors
+	return &succeededSectors
 }
 
 //////////
