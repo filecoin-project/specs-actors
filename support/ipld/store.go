@@ -9,7 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 )
 
 // Creates a new, empty, unsynchronized IPLD store in memory.

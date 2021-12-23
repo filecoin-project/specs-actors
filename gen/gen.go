@@ -3,21 +3,25 @@ package main
 import (
 	gen "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/cron"
-	init_ "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/cron"
+	init_ "github.com/filecoin-project/specs-actors/v8/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v8/support/vm"
 )
+
+// FIXME alias unchanged type to v7.
+// See https://github.com/filecoin-project/specs-actors/issues/1524 for outstanding debt doing this
+// from earlier upgrades. That would should happen on master and then we rebase against it here.
 
 func main() {
 	// Common types

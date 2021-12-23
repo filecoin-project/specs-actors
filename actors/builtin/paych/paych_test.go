@@ -17,11 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	. "github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	. "github.com/filecoin-project/specs-actors/v8/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
 )
 
 func TestExports(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"github.com/filecoin-project/go-address"
 
 	"github.com/filecoin-project/go-bitfield"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
 
 	"github.com/filecoin-project/go-state-types/exitcode"
 
@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v7/support/ipld"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v8/support/ipld"
+	"github.com/filecoin-project/specs-actors/v8/support/vm"
 )
 
 // Tests that an active CC sector can be correctly upgraded, and the expected state changes occur

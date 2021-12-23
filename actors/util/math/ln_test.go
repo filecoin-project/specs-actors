@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/math"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

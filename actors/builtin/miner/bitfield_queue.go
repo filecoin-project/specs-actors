@@ -9,8 +9,8 @@ import (
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 )
 
 // Wrapper for working with an AMT[ChainEpoch]*Bitfield functioning as a queue, bucketed by epoch.

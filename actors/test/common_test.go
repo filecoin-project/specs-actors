@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
 
 	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
@@ -13,14 +13,14 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/states"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/states"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
+	"github.com/filecoin-project/specs-actors/v8/support/vm"
 )
 
 func preCommitSectors(t *testing.T, v *vm.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch) []*miner.SectorPreCommitOnChainInfo {

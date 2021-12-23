@@ -1,14 +1,14 @@
-package nv15
+package nv16
 
 import (
 	"context"
 
-	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	builtin8 "github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 	"golang.org/x/xerrors"
 
-	miner6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	miner8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
 
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -17,7 +17,7 @@ import (
 type minerMigrator struct{}
 
 func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	var inState miner6.State
+	var inState miner7.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
 	}
@@ -27,7 +27,7 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 		return nil, err
 	}
 
-	outState := miner7.State{
+	outState := miner8.State{
 		Info:                       inState.Info,
 		PreCommitDeposits:          inState.PreCommitDeposits,
 		LockedFunds:                inState.LockedFunds,
@@ -53,22 +53,22 @@ func (m minerMigrator) migrateState(ctx context.Context, store cbor.IpldStore, i
 }
 
 func (m minerMigrator) migratedCodeCID() cid.Cid {
-	return builtin7.StorageMinerActorCodeID
+	return builtin8.StorageMinerActorCodeID
 }
 
 func migrateSectors(ctx context.Context, store cbor.IpldStore, inRoot cid.Cid) (cid.Cid, error) {
 	ctxStore := adt.WrapStore(ctx, store)
-	inArray, err := adt.AsArray(ctxStore, inRoot, miner6.SectorsAmtBitwidth)
+	inArray, err := adt.AsArray(ctxStore, inRoot, miner7.SectorsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to read sectors array: %w", err)
 	}
 
-	outArray, err := adt.MakeEmptyArray(ctxStore, miner7.SectorsAmtBitwidth)
+	outArray, err := adt.MakeEmptyArray(ctxStore, miner8.SectorsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to construct new sectors array: %w", err)
 	}
 
-	var sectorInfo miner6.SectorOnChainInfo
+	var sectorInfo miner7.SectorOnChainInfo
 	if err = inArray.ForEach(&sectorInfo, func(k int64) error {
 		return outArray.Set(uint64(k), migrateSectorInfo(sectorInfo))
 	}); err != nil {
@@ -78,8 +78,8 @@ func migrateSectors(ctx context.Context, store cbor.IpldStore, inRoot cid.Cid) (
 	return outArray.Root()
 }
 
-func migrateSectorInfo(sectorInfo miner6.SectorOnChainInfo) *miner7.SectorOnChainInfo {
-	return &miner7.SectorOnChainInfo{
+func migrateSectorInfo(sectorInfo miner7.SectorOnChainInfo) *miner8.SectorOnChainInfo {
+	return &miner8.SectorOnChainInfo{
 		SectorNumber:          sectorInfo.SectorNumber,
 		SealProof:             sectorInfo.SealProof,
 		SealedCID:             sectorInfo.SealedCID,
@@ -93,6 +93,6 @@ func migrateSectorInfo(sectorInfo miner6.SectorOnChainInfo) *miner7.SectorOnChai
 		ExpectedStoragePledge: sectorInfo.ExpectedStoragePledge,
 		ReplacedSectorAge:     sectorInfo.ReplacedSectorAge,
 		ReplacedDayReward:     sectorInfo.ReplacedDayReward,
-		SectorKeyCID:          nil,
+		SectorKeyCID:          sectorInfo.SectorKeyCID,
 	}
 }
