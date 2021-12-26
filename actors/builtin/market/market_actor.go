@@ -889,5 +889,5 @@ func requestCurrentNetworkPower(rt Runtime) (rawPower, qaPower abi.StoragePower)
 	var pwr power.CurrentTotalPowerReturn
 	code := rt.Send(builtin.StoragePowerActorAddr, builtin.MethodsPower.CurrentTotalPower, nil, big.Zero(), &pwr)
 	builtin.RequireSuccess(rt, code, "failed to check current power")
-	return pwr.RawBytePower, pwr.QualityAdjPower
+	return pwr.RawBytePower, big.Zero()
 }

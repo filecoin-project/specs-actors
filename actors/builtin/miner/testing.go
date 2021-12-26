@@ -17,24 +17,25 @@ type DealSummary struct {
 }
 
 type StateSummary struct {
-	LivePower           PowerPair
-	ActivePower         PowerPair
-	FaultyPower         PowerPair
+	LiveCount           uint64
+	ActiveCount         uint64
+	FaultyCount         uint64
 	Deals               map[abi.DealID]DealSummary
 	WindowPoStProofType abi.RegisteredPoStProof
 	DeadlineCronActive  bool
+	SectorSize          abi.SectorSize
 }
 
 // Checks internal invariants of init state.
 func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (*StateSummary, *builtin.MessageAccumulator) {
 	acc := &builtin.MessageAccumulator{}
-	sectorSize := abi.SectorSize(0)
 	minerSummary := &StateSummary{
-		LivePower:           NewPowerPairZero(),
-		ActivePower:         NewPowerPairZero(),
-		FaultyPower:         NewPowerPairZero(),
+		LiveCount:           0,
+		ActiveCount:         0,
+		FaultyCount:         0,
 		WindowPoStProofType: 0,
 		DeadlineCronActive:  st.DeadlineCronActive,
+		SectorSize:          abi.SectorSize(0),
 	}
 
 	// Load data from linked structures.
@@ -44,7 +45,7 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		return minerSummary, acc
 	} else {
 		minerSummary.WindowPoStProofType = info.WindowPoStProofType
-		sectorSize = info.SectorSize
+		minerSummary.SectorSize = info.SectorSize
 		CheckMinerInfo(info, acc)
 	}
 
@@ -103,11 +104,11 @@ func CheckStateInvariants(st *State, store adt.Store, balance abi.TokenAmount) (
 		err = deadlines.ForEach(store, func(dlIdx uint64, dl *Deadline) error {
 			acc := acc.WithPrefix("deadline %d: ", dlIdx) // Shadow
 			quant := st.QuantSpecForDeadline(dlIdx)
-			dlSummary := CheckDeadlineStateInvariants(dl, store, quant, sectorSize, allSectors, acc)
+			dlSummary := CheckDeadlineStateInvariants(dl, store, quant, allSectors, acc)
 
-			minerSummary.LivePower = minerSummary.LivePower.Add(dlSummary.LivePower)
-			minerSummary.ActivePower = minerSummary.ActivePower.Add(dlSummary.ActivePower)
-			minerSummary.FaultyPower = minerSummary.FaultyPower.Add(dlSummary.FaultyPower)
+			minerSummary.LiveCount += dlSummary.LiveCount
+			minerSummary.ActiveCount += dlSummary.ActiveCount
+			minerSummary.FaultyCount += dlSummary.FaultyCount
 			return nil
 		})
 		acc.RequireNoError(err, "error iterating deadlines")
@@ -123,12 +124,12 @@ type DeadlineStateSummary struct {
 	RecoveringSectors bitfield.BitField
 	UnprovenSectors   bitfield.BitField
 	TerminatedSectors bitfield.BitField
-	LivePower         PowerPair
-	ActivePower       PowerPair
-	FaultyPower       PowerPair
+	LiveCount         uint64
+	ActiveCount       uint64
+	FaultyCount       uint64
 }
 
-func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant builtin.QuantSpec, ssize abi.SectorSize,
+func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant builtin.QuantSpec,
 	sectors map[abi.SectorNumber]*SectorOnChainInfo, acc *builtin.MessageAccumulator) *DeadlineStateSummary {
 
 	// Load linked structures.
@@ -143,9 +144,9 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 			RecoveringSectors: bitfield.New(),
 			UnprovenSectors:   bitfield.New(),
 			TerminatedSectors: bitfield.New(),
-			LivePower:         NewPowerPairZero(),
-			ActivePower:       NewPowerPairZero(),
-			FaultyPower:       NewPowerPairZero(),
+			LiveCount:         0,
+			ActiveCount:       0,
+			FaultyCount:       0,
 		}
 	}
 
@@ -155,9 +156,9 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 	var allRecoveringSectors []bitfield.BitField
 	var allUnprovenSectors []bitfield.BitField
 	var allTerminatedSectors []bitfield.BitField
-	allLivePower := NewPowerPairZero()
-	allActivePower := NewPowerPairZero()
-	allFaultyPower := NewPowerPairZero()
+	allLiveCount := uint64(0)
+	allActiveCount := uint64(0)
+	allFaultyCount := uint64(0)
 
 	// Check partitions.
 	partitionsWithExpirations := map[abi.ChainEpoch][]uint64{}
@@ -171,7 +172,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 		partitionCount++
 
 		acc := acc.WithPrefix("partition %d: ", pIdx) // Shadow
-		summary := CheckPartitionStateInvariants(&partition, store, quant, ssize, sectors, acc)
+		summary := CheckPartitionStateInvariants(&partition, store, quant, sectors, acc)
 
 		if contains, err := util.BitFieldContainsAny(allSectors, summary.AllSectors); err != nil {
 			acc.Addf("error checking bitfield contains: %v", err)
@@ -196,9 +197,9 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 		allRecoveringSectors = append(allRecoveringSectors, summary.RecoveringSectors)
 		allUnprovenSectors = append(allUnprovenSectors, summary.UnprovenSectors)
 		allTerminatedSectors = append(allTerminatedSectors, summary.TerminatedSectors)
-		allLivePower = allLivePower.Add(summary.LivePower)
-		allActivePower = allActivePower.Add(summary.ActivePower)
-		allFaultyPower = allFaultyPower.Add(summary.FaultyPower)
+		allLiveCount += summary.LiveCount
+		allActiveCount += summary.ActiveCount
+		allFaultyCount += summary.FaultyCount
 		return nil
 	})
 	acc.RequireNoError(err, "error iterating partitions")
@@ -222,14 +223,14 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 	err = partitionsSnapshot.ForEach(&partition, func(i int64) error {
 		acc := acc.WithPrefix("partition snapshot %d: ", i) // Shadow
 
-		acc.Require(partition.RecoveringPower.IsZero(), "snapshot partition has recovering power")
+		//acc.Require(partition.RecoveringPower.IsZero(), "snapshot partition has recovering power")
 		if noRecoveries, err := partition.Recoveries.IsEmpty(); err != nil {
 			acc.Addf("error counting recoveries: %v", err)
 		} else {
 			acc.Require(noRecoveries, "snapshot partition has pending recoveries")
 		}
 
-		acc.Require(partition.UnprovenPower.IsZero(), "snapshot partition has unproven power")
+		//acc.Require(partition.UnprovenPower.IsZero(), "snapshot partition has unproven power")
 		if noUnproven, err := partition.Unproven.IsEmpty(); err != nil {
 			acc.Addf("error counting unproven: %v", err)
 		} else {
@@ -296,7 +297,7 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 		terminated = bitfield.New()
 	}
 
-	acc.Require(deadline.FaultyPower.Equals(allFaultyPower), "deadline faulty power %v != partitions total %v", deadline.FaultyPower, allFaultyPower)
+	acc.Require(deadline.FaultySectors == allFaultyCount, "deadline faulty count %v != partitions total %v", deadline.FaultySectors, allFaultyCount)
 
 	{
 		// Validate partition expiration queue contains an entry for each partition and epoch with an expiration.
@@ -335,9 +336,9 @@ func CheckDeadlineStateInvariants(deadline *Deadline, store adt.Store, quant bui
 		RecoveringSectors: recovering,
 		UnprovenSectors:   unproven,
 		TerminatedSectors: terminated,
-		LivePower:         allLivePower,
-		ActivePower:       allActivePower,
-		FaultyPower:       allFaultyPower,
+		LiveCount:         allLiveCount,
+		ActiveCount:       allActiveCount,
+		FaultyCount:       allFaultyCount,
 	}
 }
 
@@ -348,10 +349,10 @@ type PartitionStateSummary struct {
 	RecoveringSectors     bitfield.BitField
 	UnprovenSectors       bitfield.BitField
 	TerminatedSectors     bitfield.BitField
-	LivePower             PowerPair
-	ActivePower           PowerPair
-	FaultyPower           PowerPair
-	RecoveringPower       PowerPair
+	LiveCount             uint64
+	ActiveCount           uint64
+	FaultyCount           uint64
+	RecoveringCount       uint64
 	ExpirationEpochs      []abi.ChainEpoch // Epochs at which some sector is scheduled to expire.
 	EarlyTerminationCount int
 }
@@ -360,7 +361,6 @@ func CheckPartitionStateInvariants(
 	partition *Partition,
 	store adt.Store,
 	quant builtin.QuantSpec,
-	sectorSize abi.SectorSize,
 	sectors map[abi.SectorNumber]*SectorOnChainInfo,
 	acc *builtin.MessageAccumulator,
 ) *PartitionStateSummary {
@@ -370,9 +370,33 @@ func CheckPartitionStateInvariants(
 		acc.Addf("error computing live sectors: %v", err)
 		irrecoverable = true
 	}
+	liveCount, err := live.Count()
+	if err != nil {
+		acc.Addf("error counting live sectors: %v", err)
+		irrecoverable = true
+	}
+	faultyCount, err := partition.Faults.Count()
+	if err != nil {
+
+	}
+	recoveringCount, err := partition.Recoveries.Count()
+	if err != nil {
+
+	}
+	unprovenCount, err := partition.Unproven.Count()
+	if err != nil {
+		acc.Addf("error counting unproven sectors: %v", err)
+		irrecoverable = true
+	}
+
 	active, err := partition.ActiveSectors()
 	if err != nil {
 		acc.Addf("error computing active sectors: %v", err)
+		irrecoverable = true
+	}
+	activeCount, err := active.Count()
+	if err != nil {
+		acc.Addf("error counting active sectors: %v", err)
 		irrecoverable = true
 	}
 
@@ -384,10 +408,10 @@ func CheckPartitionStateInvariants(
 			RecoveringSectors:     partition.Recoveries,
 			UnprovenSectors:       partition.Unproven,
 			TerminatedSectors:     partition.Terminated,
-			LivePower:             partition.LivePower,
-			ActivePower:           partition.ActivePower(),
-			FaultyPower:           partition.FaultyPower,
-			RecoveringPower:       partition.RecoveringPower,
+			LiveCount:             liveCount,
+			ActiveCount:           activeCount,
+			FaultyCount:           faultyCount,
+			RecoveringCount:       recoveringCount,
 			ExpirationEpochs:      nil,
 			EarlyTerminationCount: 0,
 		}
@@ -423,56 +447,40 @@ func CheckPartitionStateInvariants(
 	// Validate power
 	var liveSectors map[abi.SectorNumber]*SectorOnChainInfo
 	var missing []abi.SectorNumber
-	livePower := NewPowerPairZero()
-	faultyPower := NewPowerPairZero()
-	unprovenPower := NewPowerPairZero()
 
 	if liveSectors, missing, err = selectSectorsMap(sectors, live); err != nil {
 		acc.Addf("error selecting live sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("live sectors missing from all sectors: %v", missing)
-	} else {
-		livePower = powerForSectors(liveSectors, sectorSize)
-		acc.Require(partition.LivePower.Equals(livePower), "live power was %v, expected %v", partition.LivePower, livePower)
 	}
 
-	if unprovenSectors, missing, err := selectSectorsMap(sectors, partition.Unproven); err != nil {
+	if _, missing, err := selectSectorsMap(sectors, partition.Unproven); err != nil {
 		acc.Addf("error selecting unproven sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("unproven sectors missing from all sectors: %v", missing)
-	} else {
-		unprovenPower = powerForSectors(unprovenSectors, sectorSize)
-		acc.Require(partition.UnprovenPower.Equals(unprovenPower), "unproven power was %v, expected %v", partition.UnprovenPower, unprovenPower)
 	}
 
-	if faultySectors, missing, err := selectSectorsMap(sectors, partition.Faults); err != nil {
+	if _, missing, err := selectSectorsMap(sectors, partition.Faults); err != nil {
 		acc.Addf("error selecting faulty sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("faulty sectors missing from all sectors: %v", missing)
-	} else {
-		faultyPower = powerForSectors(faultySectors, sectorSize)
-		acc.Require(partition.FaultyPower.Equals(faultyPower), "faulty power was %v, expected %v", partition.FaultyPower, faultyPower)
 	}
 
-	if recoveringSectors, missing, err := selectSectorsMap(sectors, partition.Recoveries); err != nil {
+	if _, missing, err := selectSectorsMap(sectors, partition.Recoveries); err != nil {
 		acc.Addf("error selecting recovering sectors: %v", err)
 	} else if len(missing) > 0 {
 		acc.Addf("recovering sectors missing from all sectors: %v", missing)
-	} else {
-		recoveringPower := powerForSectors(recoveringSectors, sectorSize)
-		acc.Require(partition.RecoveringPower.Equals(recoveringPower), "recovering power was %v, expected %v", partition.RecoveringPower, recoveringPower)
 	}
 
-	activePower := livePower.Sub(faultyPower).Sub(unprovenPower)
-	partitionActivePower := partition.ActivePower()
-	acc.Require(partitionActivePower.Equals(activePower), "active power was %v, expected %v", partitionActivePower, activePower)
+	expectedActiveCount := liveCount - faultyCount - unprovenCount
+	acc.Require(activeCount == expectedActiveCount, "active count %v doesn't match expected %v", activeCount, expectedActiveCount)
 
 	// Validate the expiration queue.
 	var expirationEpochs []abi.ChainEpoch
 	if expQ, err := LoadExpirationQueue(store, partition.ExpirationsEpochs, quant, PartitionExpirationAmtBitwidth); err != nil {
 		acc.Addf("error loading expiration queue: %v", err)
 	} else if liveSectors != nil {
-		qsummary := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, sectorSize, acc)
+		qsummary := CheckExpirationQueue(expQ, liveSectors, partition.Faults, quant, acc)
 		expirationEpochs = qsummary.ExpirationEpochs
 
 		// Check the queue is compatible with partition fields
@@ -498,10 +506,10 @@ func CheckPartitionStateInvariants(
 		RecoveringSectors:     partition.Recoveries,
 		UnprovenSectors:       partition.Unproven,
 		TerminatedSectors:     partition.Terminated,
-		LivePower:             livePower,
-		ActivePower:           activePower,
-		FaultyPower:           partition.FaultyPower,
-		RecoveringPower:       partition.RecoveringPower,
+		LiveCount:             uint64(len(liveSectors)),
+		ActiveCount:           activeCount,
+		FaultyCount:           faultyCount,
+		RecoveringCount:       recoveringCount,
 		ExpirationEpochs:      expirationEpochs,
 		EarlyTerminationCount: earlyTerminationCount,
 	}
@@ -510,15 +518,15 @@ func CheckPartitionStateInvariants(
 type ExpirationQueueStateSummary struct {
 	OnTimeSectors    bitfield.BitField
 	EarlySectors     bitfield.BitField
-	ActivePower      PowerPair
-	FaultyPower      PowerPair
+	ActiveCount      uint64
+	FaultyCount      uint64
 	OnTimePledge     abi.TokenAmount
 	ExpirationEpochs []abi.ChainEpoch
 }
 
 // Checks the expiration queue for consistency.
 func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber]*SectorOnChainInfo,
-	partitionFaults bitfield.BitField, quant builtin.QuantSpec, sectorSize abi.SectorSize, acc *builtin.MessageAccumulator) *ExpirationQueueStateSummary {
+	partitionFaults bitfield.BitField, quant builtin.QuantSpec, acc *builtin.MessageAccumulator) *ExpirationQueueStateSummary {
 	partitionFaultsMap, err := partitionFaults.AllMap(1 << 30)
 	if err != nil {
 		acc.Addf("error loading partition faults map: %v", err)
@@ -529,8 +537,8 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 	var allOnTime []bitfield.BitField
 	var allEarly []bitfield.BitField
 	var expirationEpochs []abi.ChainEpoch
-	allActivePower := NewPowerPairZero()
-	allFaultyPower := NewPowerPairZero()
+	allActiveCount := uint64(0)
+	allFaultyCount := uint64(0)
 	allOnTimePledge := big.Zero()
 	firstQueueEpoch := abi.ChainEpoch(-1)
 	var exp ExpirationSet
@@ -622,19 +630,19 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 		}
 
 		if activeSectors != nil && faultySectors != nil {
-			activeSectorsPower := powerForSectors(activeSectors, sectorSize)
-			acc.Require(exp.ActivePower.Equals(activeSectorsPower), "active power recorded %v doesn't match computed %v", exp.ActivePower, activeSectorsPower)
+			activeCount := uint64(len(activeSectors))
+			acc.Require(exp.ActiveCount == activeCount, "active power recorded %v doesn't match computed %v", exp.ActiveCount, activeCount)
 
-			faultySectorsPower := powerForSectors(faultySectors, sectorSize)
-			acc.Require(exp.FaultyPower.Equals(faultySectorsPower), "faulty power recorded %v doesn't match computed %v", exp.FaultyPower, faultySectorsPower)
+			faultyCount := uint64(len(faultySectors))
+			acc.Require(exp.FaultyCount == faultyCount, "faulty power recorded %v doesn't match computed %v", exp.FaultyCount, faultyCount)
 		}
 
 		acc.Require(exp.OnTimePledge.Equals(onTimeSectorsPledge), "on time pledge recorded %v doesn't match computed %v", exp.OnTimePledge, onTimeSectorsPledge)
 
 		allOnTime = append(allOnTime, exp.OnTimeSectors)
 		allEarly = append(allEarly, exp.EarlySectors)
-		allActivePower = allActivePower.Add(exp.ActivePower)
-		allFaultyPower = allFaultyPower.Add(exp.FaultyPower)
+		allActiveCount += exp.ActiveCount
+		allFaultyCount += exp.FaultyCount
 		allOnTimePledge = big.Add(allOnTimePledge, exp.OnTimePledge)
 		return nil
 	})
@@ -653,8 +661,8 @@ func CheckExpirationQueue(expQ ExpirationQueue, liveSectors map[abi.SectorNumber
 	return &ExpirationQueueStateSummary{
 		OnTimeSectors:    unionOnTime,
 		EarlySectors:     unionEarly,
-		ActivePower:      allActivePower,
-		FaultyPower:      allFaultyPower,
+		ActiveCount:      allActiveCount,
+		FaultyCount:      allFaultyCount,
 		OnTimePledge:     allOnTimePledge,
 		ExpirationEpochs: expirationEpochs,
 	}
@@ -819,18 +827,6 @@ func selectSectorsMap(sectors map[abi.SectorNumber]*SectorOnChainInfo, include b
 		return nil, nil, err
 	}
 	return included, missing, nil
-}
-
-func powerForSectors(sectors map[abi.SectorNumber]*SectorOnChainInfo, ssize abi.SectorSize) PowerPair {
-	qa := big.Zero()
-	for _, s := range sectors { // nolint:nomaprange
-		qa = big.Add(qa, QAPowerForSector(ssize, s))
-	}
-
-	return PowerPair{
-		Raw: big.Mul(big.NewIntUnsigned(uint64(ssize)), big.NewIntUnsigned(uint64(len(sectors)))),
-		QA:  qa,
-	}
 }
 
 func requireContainsAll(superset, subset bitfield.BitField, acc *builtin.MessageAccumulator, msg string) {

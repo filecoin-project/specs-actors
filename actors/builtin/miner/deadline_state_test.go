@@ -46,8 +46,8 @@ func TestDeadlines(t *testing.T) {
 		sectors:       allSectors,
 	}
 
-	sectorPower := func(t *testing.T, sectorNos ...uint64) miner.PowerPair {
-		return miner.PowerForSectors(sectorSize, selectSectors(t, allSectors, bf(sectorNos...)))
+	sectorPower := func(t *testing.T, sectorNos ...uint64) abi.StoragePower {
+		return miner.SectorsPower(sectorSize, len(sectorNos))
 	}
 
 	//
@@ -60,8 +60,8 @@ func TestDeadlines(t *testing.T) {
 	// Partition 2: sectors 5, 6, 7, 8
 	// Partition 3: sectors 9
 	addSectors := func(t *testing.T, store adt.Store, dl *miner.Deadline, prove bool) {
-		power := miner.PowerForSectors(sectorSize, sectors)
-		activatedPower, err := dl.AddSectors(store, partitionSize, false, sectors, sectorSize, quantSpec)
+		power := miner.SectorsPower(sectorSize, len(sectors))
+		activatedPower, err := dl.AddSectors(store, partitionSize, false, sectors, quantSpec)
 		require.NoError(t, err)
 		assert.True(t, activatedPower.Equals(power))
 
@@ -81,7 +81,7 @@ func TestDeadlines(t *testing.T) {
 		// Prove everything
 		result, err := dl.RecordProvenSectors(store, sectorArr, sectorSize, quantSpec, 0, []miner.PoStPartition{{Index: 0}, {Index: 1}, {Index: 2}})
 		require.NoError(t, err)
-		require.True(t, result.PowerDelta.Equals(power))
+		require.True(t, result.ActiveCountDelta.Equals(power))
 
 		sectorArrRoot, err := sectorArr.Root()
 		require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestDeadlines(t *testing.T) {
 		removedPower, err := dl.TerminateSectors(store, sectorsArr(t, store, sectors), 15, miner.PartitionSectorMap{
 			0: bf(1, 3),
 			1: bf(6),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.NoError(t, err)
 
 		expectedPower := miner.NewPowerPairZero()
@@ -158,7 +158,7 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err, "should have removed partitions")
 		assertBitfieldEquals(t, live, 2, 4)
 		assertBitfieldEquals(t, dead, 1, 3)
-		livePower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, live))
+		livePower := miner.SectorsPower(sectorSize, 2)
 		require.True(t, livePower.Equals(removedPower))
 
 		dlState.withTerminations(6).
@@ -360,11 +360,11 @@ func TestDeadlines(t *testing.T) {
 		removedPower, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
 			0: bf(1, 3),
 			1: bf(6),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.NoError(t, err)
 
 		// Sector 3 active, 1, 6 faulty
-		expectedPowerLoss := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(3)))
+		expectedPowerLoss := miner.SectorPower(sectorSize)
 		require.True(t, expectedPowerLoss.Equals(removedPower), "dlState to remove power for terminated sectors")
 
 		dlState.withTerminations(1, 3, 6).
@@ -386,7 +386,7 @@ func TestDeadlines(t *testing.T) {
 		removedPower, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
 			0: bf(1, 3),
 			1: bf(6),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.NoError(t, err)
 
 		// Sector 3 unproven, 1, 6 faulty
@@ -411,7 +411,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
 			0: bf(6),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "can only terminate live sectors")
 	})
@@ -425,7 +425,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
 			4: bf(6),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to find partition 4")
 	})
@@ -439,7 +439,7 @@ func TestDeadlines(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 		_, err := dl.TerminateSectors(store, sectorArr, 15, miner.PartitionSectorMap{
 			0: bf(1, 2),
-		}, sectorSize, quantSpec)
+		}, quantSpec)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "can only terminate live sectors")
 	})
@@ -506,9 +506,9 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, quantSpec)
 		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		expectedPower := miner.SectorsPower(sectorSize, len(extraSectors))
 		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
@@ -520,9 +520,9 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult1.Sectors, 1, 2, 3, 4, 5, 6, 7, 8)
 		assertEmptyBitfield(t, postResult1.IgnoredSectors)
-		require.True(t, postResult1.NewFaultyPower.Equals(miner.NewPowerPairZero()))
-		require.True(t, postResult1.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
-		require.True(t, postResult1.RecoveredPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult1.NewFaultyCount.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult1.RetractedRecoveryCount.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult1.RecoveredCount.Equals(miner.NewPowerPairZero()))
 
 		// First two partitions posted
 		dlState.withPosts(0, 1).
@@ -539,11 +539,11 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult2.Sectors, 9, 10)
 		assertEmptyBitfield(t, postResult2.IgnoredSectors)
-		require.True(t, postResult2.NewFaultyPower.Equals(miner.NewPowerPairZero()))
-		require.True(t, postResult2.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
-		require.True(t, postResult2.RecoveredPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult2.NewFaultyCount.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult2.RetractedRecoveryCount.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult2.RecoveredCount.Equals(miner.NewPowerPairZero()))
 		// activate sector 10
-		require.True(t, postResult2.PowerDelta.Equals(sectorPower(t, 10)))
+		require.True(t, postResult2.ActiveCountDelta.Equals(sectorPower(t, 10)))
 
 		// All 3 partitions posted, unproven sector 10 proven and power activated.
 		dlState.withPosts(0, 1, 2).
@@ -579,9 +579,9 @@ func TestDeadlines(t *testing.T) {
 		addThenMarkFaulty(t, store, dl, true)
 
 		// add an inactive sector
-		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, quantSpec)
 		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		expectedPower := miner.SectorsPower(sectorSize, len(extraSectors))
 		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
@@ -617,13 +617,13 @@ func TestDeadlines(t *testing.T) {
 		assertBitfieldEquals(t, postResult.Sectors, 1, 2, 3, 4, 5, 6, 7, 8)
 		assertBitfieldEquals(t, postResult.IgnoredSectors, 1, 5, 7)
 		// sector 7 is newly faulty
-		require.True(t, postResult.NewFaultyPower.Equals(sectorPower(t, 7)))
+		require.True(t, postResult.NewFaultyCount.Equals(sectorPower(t, 7)))
 		// we failed to recover 1 (retracted)
-		require.True(t, postResult.RetractedRecoveryPower.Equals(sectorPower(t, 1)))
+		require.True(t, postResult.RetractedRecoveryCount.Equals(sectorPower(t, 1)))
 		// we recovered 6
-		require.True(t, postResult.RecoveredPower.Equals(sectorPower(t, 6)))
+		require.True(t, postResult.RecoveredCount.Equals(sectorPower(t, 6)))
 		// no power delta from these deadlines.
-		require.True(t, postResult.PowerDelta.IsZero())
+		require.True(t, postResult.ActiveCountDelta.IsZero())
 
 		// First two partitions should be posted.
 		dlState.withPosts(0, 1).
@@ -666,9 +666,9 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, quantSpec)
 		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		expectedPower := miner.SectorsPower(sectorSize, len(extraSectors))
 		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
@@ -682,10 +682,10 @@ func TestDeadlines(t *testing.T) {
 		require.NoError(t, err)
 		assertBitfieldEquals(t, postResult1.Sectors, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 		assertBitfieldEquals(t, postResult1.IgnoredSectors, 10)
-		require.True(t, postResult1.NewFaultyPower.Equals(sectorPower(t, 10)))
-		require.True(t, postResult1.PowerDelta.IsZero()) // not proven yet.
-		require.True(t, postResult1.RetractedRecoveryPower.IsZero())
-		require.True(t, postResult1.RecoveredPower.IsZero())
+		require.True(t, postResult1.NewFaultyCount.Equals(sectorPower(t, 10)))
+		require.True(t, postResult1.ActiveCountDelta.IsZero()) // not proven yet.
+		require.True(t, postResult1.RetractedRecoveryCount.IsZero())
+		require.True(t, postResult1.RecoveredCount.IsZero())
 
 		// All posted
 		dlState.withPosts(0, 1, 2).
@@ -723,9 +723,9 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, quantSpec)
 		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		expectedPower := miner.SectorsPower(sectorSize, len(extraSectors))
 		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
@@ -745,9 +745,9 @@ func TestDeadlines(t *testing.T) {
 		addSectors(t, store, dl, true)
 
 		// add an inactive sector
-		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, extraSectors, quantSpec)
 		require.NoError(t, err)
-		expectedPower := miner.PowerForSectors(sectorSize, extraSectors)
+		expectedPower := miner.SectorsPower(sectorSize, len(extraSectors))
 		assert.True(t, expectedPower.Equals(power))
 
 		sectorArr := sectorsArr(t, store, allSectors)
@@ -805,11 +805,11 @@ func TestDeadlines(t *testing.T) {
 		assertBitfieldEquals(t, postResult.Sectors, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 		assertBitfieldEquals(t, postResult.IgnoredSectors, 1, 5)
 		// All faults were declared.
-		require.True(t, postResult.NewFaultyPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult.NewFaultyCount.Equals(miner.NewPowerPairZero()))
 		// we didn't fail to recover anything.
-		require.True(t, postResult.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
+		require.True(t, postResult.RetractedRecoveryCount.Equals(miner.NewPowerPairZero()))
 		// we recovered 6.
-		require.True(t, postResult.RecoveredPower.Equals(sectorPower(t, 6)))
+		require.True(t, postResult.RecoveredCount.Equals(sectorPower(t, 6)))
 
 		// First two partitions should be posted.
 		dlState.withPosts(0, 1, 2).
@@ -978,7 +978,7 @@ func checkDeadlineInvariants(
 	allUnproven bitfield.BitField,
 ) {
 	msgs := &builtin.MessageAccumulator{}
-	summary := miner.CheckDeadlineStateInvariants(dl, store, quant, ssize, sectorsAsMap(sectors), msgs)
+	summary := miner.CheckDeadlineStateInvariants(dl, store, quant, sectorsAsMap(sectors), msgs)
 	assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 
 	allSectors = summary.AllSectors

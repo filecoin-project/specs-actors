@@ -70,16 +70,16 @@ var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), builtin.TokenPrec
 
 // The projected block reward a sector would earn over some period.
 // Also known as "BR(t)".
-// BR(t) = ProjectedRewardFraction(t) * SectorQualityAdjustedPower
+// BR(t) = ProjectedRewardFraction(t) * SectorPower
 // ProjectedRewardFraction(t) is the sum of estimated reward over estimated total power
 // over all epochs in the projection period [t t+projectionDuration]
-func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
-	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
-	if networkQAPowerSmoothed.IsZero() {
+func ExpectedRewardForPower(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
+	networkPowerSmoothed := networkPowerEstimate.Estimate()
+	if networkPowerSmoothed.IsZero() {
 		return rewardEstimate.Estimate()
 	}
-	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
-	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
+	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkPowerEstimate)
+	br128 := big.Mul(sectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
 	br := big.Rsh(br128, math.Precision128)
 
 	return big.Max(br, big.Zero())
@@ -88,8 +88,8 @@ func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.Fil
 // BR but zero values are clamped at 1 attofil
 // Some uses of BR (PCD, IP) require a strictly positive value for BR derived values so
 // accounting variables can be used as succinct indicators of miner activity.
-func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
-	br := ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, projectionDuration)
+func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
+	br := ExpectedRewardForPower(rewardEstimate, networkPowerEstimate, sectorPower, projectionDuration)
 	if br.LessThanEqual(big.Zero()) {
 		br = abi.NewTokenAmount(1)
 	}
@@ -99,15 +99,15 @@ func ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstima
 // The penalty for a sector continuing faulty for another proving period.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "FF(t)"
-func PledgePenaltyForContinuedFault(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, ContinuedFaultProjectionPeriod)
+func PledgePenaltyForContinuedFault(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower) abi.TokenAmount {
+	return ExpectedRewardForPower(rewardEstimate, networkPowerEstimate, sectorPower, ContinuedFaultProjectionPeriod)
 }
 
 // Lower bound on the penalty for a terminating sector.
 // It is a projection of the expected reward earned by the sector.
 // Also known as "SP(t)"
-func PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, TerminationPenaltyLowerBoundProjectionPeriod)
+func PledgePenaltyForTerminationLowerBound(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower) abi.TokenAmount {
+	return ExpectedRewardForPower(rewardEstimate, networkPowerEstimate, sectorPower, TerminationPenaltyLowerBoundProjectionPeriod)
 }
 
 // Penalty to locked pledge collateral for the termination of a sector before scheduled expiry.
@@ -115,8 +115,8 @@ func PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimat
 // replacedDayReward and replacedSectorAge are the day reward and age of the replaced sector in a capacity upgrade.
 // They must be zero if no upgrade occurred.
 func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainEpoch,
-	twentyDayRewardAtActivation abi.TokenAmount, networkQAPowerEstimate smoothing.FilterEstimate,
-	qaSectorPower abi.StoragePower, rewardEstimate smoothing.FilterEstimate, replacedDayReward abi.TokenAmount,
+	twentyDayRewardAtActivation abi.TokenAmount, networkPowerEstimate smoothing.FilterEstimate,
+	sectorPower abi.StoragePower, rewardEstimate smoothing.FilterEstimate, replacedDayReward abi.TokenAmount,
 	replacedSectorAge abi.ChainEpoch) abi.TokenAmount {
 	// max(SP(t), BR(StartEpoch, 20d) + BR(StartEpoch, 1d) * terminationRewardFactor * min(SectorAgeInDays, 140))
 	// and sectorAgeInDays = sectorAge / EpochsInDay
@@ -131,7 +131,7 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 	penalizedReward := big.Mul(expectedReward, TerminationRewardFactor.Numerator)
 
 	return big.Max(
-		PledgePenaltyForTerminationLowerBound(rewardEstimate, networkQAPowerEstimate, qaSectorPower),
+		PledgePenaltyForTerminationLowerBound(rewardEstimate, networkPowerEstimate, sectorPower),
 		big.Add(
 			twentyDayRewardAtActivation,
 			big.Div(
@@ -140,20 +140,21 @@ func PledgePenaltyForTermination(dayReward abi.TokenAmount, sectorAge abi.ChainE
 }
 
 // The penalty for optimistically proving a sector with an invalid window PoSt.
-func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
+func PledgePenaltyForInvalidWindowPoSt(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower) abi.TokenAmount {
 	return big.Add(
-		ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate, qaSectorPower, InvalidWindowPoStProjectionPeriod),
+		ExpectedRewardForPower(rewardEstimate, networkPowerEstimate, sectorPower, InvalidWindowPoStProjectionPeriod),
 		BasePenaltyForDisputedWindowPoSt,
 	)
 }
 
-// Computes the PreCommit deposit given sector qa weight and current network conditions.
+// Computes the PreCommit deposit given sector power and current network conditions.
 // PreCommit Deposit = BR(PreCommitDepositProjectionPeriod)
-func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower) abi.TokenAmount {
-	return ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaSectorPower, PreCommitDepositProjectionPeriod)
+// FIXME: recompute only for consensus reward
+func PreCommitDepositForPower(rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, sectorPower abi.StoragePower) abi.TokenAmount {
+	return ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkPowerEstimate, sectorPower, PreCommitDepositProjectionPeriod)
 }
 
-// Computes the pledge requirement for committing new quality-adjusted power to the network, given the current
+// Computes the pledge requirement for committing new power to the network, given the current
 // network total and baseline power, per-epoch  reward, and circulating token supply.
 // The pledge comprises two parts:
 // - storage pledge, aka IP base: a multiple of the reward expected to be earned by newly-committed power
@@ -163,21 +164,21 @@ func PreCommitDepositForPower(rewardEstimate, networkQAPowerEstimate smoothing.F
 // IPBase(t) = BR(t, InitialPledgeProjectionPeriod)
 // AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
 // LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
-// PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
-func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, circulatingSupply abi.TokenAmount) abi.TokenAmount {
-	ipBase := ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkQAPowerEstimate, qaPower, InitialPledgeProjectionPeriod)
+// PledgeShare(t) = sectorPower / max(BaselinePower(t), NetworkPower(t))
+func InitialPledgeForPower(power, baselinePower abi.StoragePower, rewardEstimate, networkPowerEstimate smoothing.FilterEstimate, circulatingSupply abi.TokenAmount) abi.TokenAmount {
+	ipBase := ExpectedRewardForPowerClampedAtAttoFIL(rewardEstimate, networkPowerEstimate, power, InitialPledgeProjectionPeriod)
 
 	lockTargetNum := big.Mul(InitialPledgeLockTarget.Numerator, circulatingSupply)
 	lockTargetDenom := InitialPledgeLockTarget.Denominator
-	pledgeShareNum := qaPower
-	networkQAPower := networkQAPowerEstimate.Estimate()
-	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
+	pledgeShareNum := power
+	networkPower := networkPowerEstimate.Estimate()
+	pledgeShareDenom := big.Max(big.Max(networkPower, baselinePower), power) // use power in case others are 0
 	additionalIPNum := big.Mul(lockTargetNum, pledgeShareNum)
 	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)
 	additionalIP := big.Div(additionalIPNum, additionalIPDenom)
 
 	nominalPledge := big.Add(ipBase, additionalIP)
-	spaceRacePledgeCap := big.Mul(InitialPledgeMaxPerByte, qaPower)
+	spaceRacePledgeCap := big.Mul(InitialPledgeMaxPerByte, power)
 	return big.Min(nominalPledge, spaceRacePledgeCap)
 }
 

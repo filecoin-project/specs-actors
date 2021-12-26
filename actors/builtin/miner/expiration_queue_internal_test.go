@@ -18,16 +18,14 @@ func TestExpirations(t *testing.T) {
 		testSector(14, 3, 0, 0, 0),
 		testSector(13, 4, 0, 0, 0),
 	}
-	result := groupNewSectorsByDeclaredExpiration(2048, sectors, quant)
+	result := groupNewSectorsByDeclaredExpiration(sectors, quant)
 	expected := []*sectorEpochSet{{
 		epoch:   13,
 		sectors: []uint64{1, 2, 4},
-		power:   NewPowerPair(big.NewIntUnsigned(2048*3), big.NewIntUnsigned(2048*3)),
 		pledge:  big.Zero(),
 	}, {
 		epoch:   23,
 		sectors: []uint64{3},
-		power:   NewPowerPair(big.NewIntUnsigned(2048), big.NewIntUnsigned(2048)),
 		pledge:  big.Zero(),
 	}}
 	require.Equal(t, len(expected), len(result))
@@ -38,7 +36,7 @@ func TestExpirations(t *testing.T) {
 
 func TestExpirationsEmpty(t *testing.T) {
 	sectors := []*SectorOnChainInfo{}
-	result := groupNewSectorsByDeclaredExpiration(2048, sectors, builtin.NoQuantization)
+	result := groupNewSectorsByDeclaredExpiration(sectors, builtin.NoQuantization)
 	expected := []sectorEpochSet{}
 	require.Equal(t, expected, result)
 }
@@ -46,7 +44,6 @@ func TestExpirationsEmpty(t *testing.T) {
 func assertSectorSet(t *testing.T, expected, actual *sectorEpochSet) {
 	assert.Equal(t, expected.epoch, actual.epoch)
 	assert.Equal(t, expected.sectors, actual.sectors)
-	assert.True(t, expected.power.Equals(actual.power), "expected %v, actual %v", expected.power, actual.power)
 	assert.True(t, expected.pledge.Equals(actual.pledge), "expected %v, actual %v", expected.pledge, actual.pledge)
 }
 
@@ -54,8 +51,6 @@ func testSector(expiration, number, weight, vweight, pledge int64) *SectorOnChai
 	return &SectorOnChainInfo{
 		Expiration:         abi.ChainEpoch(expiration),
 		SectorNumber:       abi.SectorNumber(number),
-		DealWeight:         big.NewInt(weight),
-		VerifiedDealWeight: big.NewInt(vweight),
 		InitialPledge:      abi.NewTokenAmount(pledge),
 	}
 }

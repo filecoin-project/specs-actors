@@ -824,8 +824,9 @@ func (t *Deadline) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.FaultyPower (miner.PowerPair) (struct)
-	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
+	// t.FaultySectors (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.FaultySectors)); err != nil {
 		return err
 	}
 
@@ -944,13 +945,18 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 		t.TotalSectors = uint64(extra)
 
 	}
-	// t.FaultyPower (miner.PowerPair) (struct)
+	// t.FaultySectors (uint64) (uint64)
 
 	{
 
-		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
 		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.FaultySectors = uint64(extra)
 
 	}
 	// t.OptimisticPoStSubmissions (cid.Cid) (struct)
@@ -1004,7 +1010,7 @@ func (t *Deadline) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPartition = []byte{139}
+var lengthBufPartition = []byte{135}
 
 func (t *Partition) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1054,25 +1060,6 @@ func (t *Partition) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.EarlyTerminated: %w", err)
 	}
 
-	// t.LivePower (miner.PowerPair) (struct)
-	if err := t.LivePower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.UnprovenPower (miner.PowerPair) (struct)
-	if err := t.UnprovenPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.FaultyPower (miner.PowerPair) (struct)
-	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.RecoveringPower (miner.PowerPair) (struct)
-	if err := t.RecoveringPower.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1090,7 +1077,7 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 11 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1163,42 +1150,6 @@ func (t *Partition) UnmarshalCBOR(r io.Reader) error {
 		t.EarlyTerminated = c
 
 	}
-	// t.LivePower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.LivePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.LivePower: %w", err)
-		}
-
-	}
-	// t.UnprovenPower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.UnprovenPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.UnprovenPower: %w", err)
-		}
-
-	}
-	// t.FaultyPower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
-		}
-
-	}
-	// t.RecoveringPower (miner.PowerPair) (struct)
-
-	{
-
-		if err := t.RecoveringPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RecoveringPower: %w", err)
-		}
-
-	}
 	return nil
 }
 
@@ -1212,6 +1163,8 @@ func (t *ExpirationSet) MarshalCBOR(w io.Writer) error {
 	if _, err := w.Write(lengthBufExpirationSet); err != nil {
 		return err
 	}
+
+	scratch := make([]byte, 9)
 
 	// t.OnTimeSectors (bitfield.BitField) (struct)
 	if err := t.OnTimeSectors.MarshalCBOR(w); err != nil {
@@ -1228,15 +1181,18 @@ func (t *ExpirationSet) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ActivePower (miner.PowerPair) (struct)
-	if err := t.ActivePower.MarshalCBOR(w); err != nil {
+	// t.ActiveCount (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ActiveCount)); err != nil {
 		return err
 	}
 
-	// t.FaultyPower (miner.PowerPair) (struct)
-	if err := t.FaultyPower.MarshalCBOR(w); err != nil {
+	// t.FaultyCount (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.FaultyCount)); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -1285,22 +1241,32 @@ func (t *ExpirationSet) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.ActivePower (miner.PowerPair) (struct)
+	// t.ActiveCount (uint64) (uint64)
 
 	{
 
-		if err := t.ActivePower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.ActivePower: %w", err)
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
 		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.ActiveCount = uint64(extra)
 
 	}
-	// t.FaultyPower (miner.PowerPair) (struct)
+	// t.FaultyCount (uint64) (uint64)
 
 	{
 
-		if err := t.FaultyPower.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.FaultyPower: %w", err)
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
 		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.FaultyCount = uint64(extra)
 
 	}
 	return nil
@@ -1368,7 +1334,7 @@ func (t *PowerPair) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorPreCommitOnChainInfo = []byte{133}
+var lengthBufSectorPreCommitOnChainInfo = []byte{131}
 
 func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1401,16 +1367,6 @@ func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.DealWeight (big.Int) (struct)
-	if err := t.DealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.VerifiedDealWeight (big.Int) (struct)
-	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1428,7 +1384,7 @@ func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1475,28 +1431,10 @@ func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.PreCommitEpoch = abi.ChainEpoch(extraI)
 	}
-	// t.DealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.DealWeight: %w", err)
-		}
-
-	}
-	// t.VerifiedDealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
-		}
-
-	}
 	return nil
 }
 
-var lengthBufSectorPreCommitInfo = []byte{138}
+var lengthBufSectorPreCommitInfo = []byte{134}
 
 func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1567,30 +1505,6 @@ func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.ReplaceCapacity (bool) (bool)
-	if err := cbg.WriteBool(w, t.ReplaceCapacity); err != nil {
-		return err
-	}
-
-	// t.ReplaceSectorDeadline (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorDeadline)); err != nil {
-		return err
-	}
-
-	// t.ReplaceSectorPartition (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorPartition)); err != nil {
-		return err
-	}
-
-	// t.ReplaceSectorNumber (abi.SectorNumber) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorNumber)); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -1608,7 +1522,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 6 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1746,69 +1660,10 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.Expiration = abi.ChainEpoch(extraI)
 	}
-	// t.ReplaceCapacity (bool) (bool)
-
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.ReplaceCapacity = false
-	case 21:
-		t.ReplaceCapacity = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-	}
-	// t.ReplaceSectorDeadline (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ReplaceSectorDeadline = uint64(extra)
-
-	}
-	// t.ReplaceSectorPartition (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ReplaceSectorPartition = uint64(extra)
-
-	}
-	// t.ReplaceSectorNumber (abi.SectorNumber) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ReplaceSectorNumber = abi.SectorNumber(extra)
-
-	}
 	return nil
 }
 
-var lengthBufSectorOnChainInfo = []byte{142}
+var lengthBufSectorOnChainInfo = []byte{140}
 
 func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1880,16 +1735,6 @@ func (t *SectorOnChainInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.DealWeight (big.Int) (struct)
-	if err := t.DealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.VerifiedDealWeight (big.Int) (struct)
-	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
 	// t.InitialPledge (big.Int) (struct)
 	if err := t.InitialPledge.MarshalCBOR(w); err != nil {
 		return err
@@ -1950,7 +1795,7 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 14 {
+	if extra != 12 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2087,24 +1932,6 @@ func (t *SectorOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.Expiration = abi.ChainEpoch(extraI)
-	}
-	// t.DealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.DealWeight: %w", err)
-		}
-
-	}
-	// t.VerifiedDealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
-		}
-
 	}
 	// t.InitialPledge (big.Int) (struct)
 

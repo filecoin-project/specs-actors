@@ -163,9 +163,10 @@ func CheckMinersAgainstPower(acc *builtin.MessageAccumulator, minerSummaries map
 		claim, ok := powerSummary.Claims[addr]
 		acc.Require(ok, "miner %v has no power claim", addr)
 		if ok {
-			claimPower := miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
-			acc.Require(minerSummary.ActivePower.Equals(claimPower),
-				"miner %v computed active power %v does not match claim %v", addr, minerSummary.ActivePower, claimPower)
+			claimPower := claim.RawBytePower
+			minerPower := big.Mul(big.NewIntUnsigned(uint64(minerSummary.SectorSize)), big.NewIntUnsigned(minerSummary.ActiveCount))
+			acc.Require(minerPower.Equals(claimPower),
+				"miner %v computed active power %v does not match claim %v", addr, minerSummary.ActiveCount, claimPower)
 			acc.Require(minerSummary.WindowPoStProofType == claim.WindowPoStProofType,
 				"miner seal proof type %d does not match claim proof type %d", minerSummary.WindowPoStProofType, claim.WindowPoStProofType)
 		}

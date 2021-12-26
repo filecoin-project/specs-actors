@@ -135,7 +135,7 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-		err = setClaim(claims, addresses.IDAddress, &Claim{params.WindowPoStProofType, abi.NewStoragePower(0), abi.NewStoragePower(0)})
+		err = setClaim(claims, addresses.IDAddress, &Claim{params.WindowPoStProofType, abi.NewStoragePower(0)})
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put power in claimed table while creating miner")
 
 		st.MinerCount += 1
@@ -153,11 +153,11 @@ func (a Actor) CreateMiner(rt Runtime, params *CreateMinerParams) *CreateMinerRe
 	}
 }
 
-//type UpdateClaimedPowerParams struct {
-//	RawByteDelta         abi.StoragePower
-//	QualityAdjustedDelta abi.StoragePower
-//}
-type UpdateClaimedPowerParams = power0.UpdateClaimedPowerParams
+// Changed in v8:
+// - Removed QualityAdjustedDelta
+type UpdateClaimedPowerParams struct {
+	RawByteDelta abi.StoragePower
+}
 
 // Adds or removes claimed power for the calling actor.
 // May only be invoked by a miner actor.
@@ -169,8 +169,8 @@ func (a Actor) UpdateClaimedPower(rt Runtime, params *UpdateClaimedPowerParams) 
 		claims, err := adt.AsMap(adt.AsStore(rt), st.Claims, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load claims")
 
-		err = st.addToClaim(claims, minerAddr, params.RawByteDelta, params.QualityAdjustedDelta)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power raw %s, qa %s", params.RawByteDelta, params.QualityAdjustedDelta)
+		err = st.addToClaim(claims, minerAddr, params.RawByteDelta)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update power %s", params.RawByteDelta)
 
 		st.Claims, err = claims.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush claims")
@@ -229,9 +229,8 @@ func (a Actor) OnEpochTickEnd(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 		// update next epoch's power and pledge values
 		// this must come before the next epoch's rewards are calculated
 		// so that next epoch reward reflects power added this epoch
-		rawBytePower, qaPower := CurrentTotalPower(&st)
+		rawBytePower := CurrentTotalPower(&st)
 		st.ThisEpochPledgeCollateral = st.TotalPledgeCollateral
-		st.ThisEpochQualityAdjPower = qaPower
 		st.ThisEpochRawBytePower = rawBytePower
 		// we can now assume delta is one since cron is invoked on every epoch.
 		st.updateSmoothedEstimate(abi.ChainEpoch(1))
@@ -305,13 +304,15 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 	return nil
 }
 
-// Changed since v0:
-// - QualityAdjPowerSmoothed is not a pointer
+// Changed in v8:
+// - Removed QualityAdjPower and QualityAdjPowerSmoothed
+// - Added RawBytePowerSmoothed
 type CurrentTotalPowerReturn struct {
-	RawBytePower            abi.StoragePower
-	QualityAdjPower         abi.StoragePower
-	PledgeCollateral        abi.TokenAmount
-	QualityAdjPowerSmoothed smoothing.FilterEstimate
+	RawBytePower abi.StoragePower
+	//QualityAdjPower         abi.StoragePower
+	PledgeCollateral abi.TokenAmount
+	//QualityAdjPowerSmoothed smoothing.FilterEstimate
+	RawBytePowerSmoothed smoothing.FilterEstimate
 }
 
 // Returns the total power and pledge recorded by the power actor.
@@ -324,10 +325,9 @@ func (a Actor) CurrentTotalPower(rt Runtime, _ *abi.EmptyValue) *CurrentTotalPow
 	rt.StateReadonly(&st)
 
 	return &CurrentTotalPowerReturn{
-		RawBytePower:            st.ThisEpochRawBytePower,
-		QualityAdjPower:         st.ThisEpochQualityAdjPower,
-		PledgeCollateral:        st.ThisEpochPledgeCollateral,
-		QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+		RawBytePower:         st.ThisEpochRawBytePower,
+		PledgeCollateral:     st.ThisEpochPledgeCollateral,
+		RawBytePowerSmoothed: st.ThisEpochRawBytePowerSmoothed,
 	}
 }
 
@@ -451,10 +451,10 @@ func (a Actor) processBatchProofVerifies(rt Runtime, rewret reward.ThisEpochRewa
 				m,
 				builtin.MethodsMiner.ConfirmSectorProofsValid,
 				&builtin.ConfirmSectorProofsParams{
-					Sectors:                 successful,
-					RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
-					RewardBaselinePower:     rewret.ThisEpochBaselinePower,
-					QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed},
+					Sectors:              successful,
+					RewardSmoothed:       rewret.ThisEpochRewardSmoothed,
+					RewardBaselinePower:  rewret.ThisEpochBaselinePower,
+					RawBytePowerSmoothed: st.ThisEpochRawBytePowerSmoothed},
 				abi.NewTokenAmount(0),
 				&builtin.Discard{},
 			)
@@ -515,7 +515,7 @@ func (a Actor) processDeferredCronEvents(rt Runtime, rewret reward.ThisEpochRewa
 		params := builtin.DeferredCronEventParams{
 			EventPayload:            event.CallbackPayload,
 			RewardSmoothed:          rewret.ThisEpochRewardSmoothed,
-			QualityAdjPowerSmoothed: st.ThisEpochQAPowerSmoothed,
+			RawBytePowerSmoothed: st.ThisEpochRawBytePowerSmoothed,
 		}
 
 		code := rt.Send(

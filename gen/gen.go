@@ -37,8 +37,8 @@ func main() {
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
-		builtin.ConfirmSectorProofsParams{},
-		builtin.DeferredCronEventParams{},
+		builtin.ConfirmSectorProofsParams{}, // Changed in v8
+		builtin.DeferredCronEventParams{}, // Changed in v8
 		// builtin.ApplyRewardParams{}, // Aliased from v2
 	); err != nil {
 		panic(err)
@@ -140,7 +140,7 @@ func main() {
 		power.CreateMinerParams{},
 		//power.CreateMinerReturn{}, // Aliased from v0
 		//power.EnrollCronEventParams{}, // Aliased from v0
-		//power.UpdateClaimedPowerParams{}, // Aliased from v0
+		power.UpdateClaimedPowerParams{}, // Changed in v8
 		power.CurrentTotalPowerReturn{},
 		// other types
 		power.MinerConstructorParams{},

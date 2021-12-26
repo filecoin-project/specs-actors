@@ -218,49 +218,6 @@ const DealLimitDenominator = 134217728 // PARAM_SPEC
 // for permissioned actor methods and winning block elections.
 const ConsensusFaultIneligibilityDuration = ChainFinality
 
-// DealWeight and VerifiedDealWeight are spacetime occupied by regular deals and verified deals in a sector.
-// Sum of DealWeight and VerifiedDealWeight should be less than or equal to total SpaceTime of a sector.
-// Sectors full of VerifiedDeals will have a SectorQuality of VerifiedDealWeightMultiplier/QualityBaseMultiplier.
-// Sectors full of Deals will have a SectorQuality of DealWeightMultiplier/QualityBaseMultiplier.
-// Sectors with neither will have a SectorQuality of QualityBaseMultiplier/QualityBaseMultiplier.
-// SectorQuality of a sector is a weighted average of multipliers based on their proportions.
-func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.SectorQuality {
-	// sectorSpaceTime = size * duration
-	sectorSpaceTime := big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
-	// totalDealSpaceTime = dealWeight + verifiedWeight
-	totalDealSpaceTime := big.Add(dealWeight, verifiedWeight)
-
-	// Base - all size * duration of non-deals
-	// weightedBaseSpaceTime = (sectorSpaceTime - totalDealSpaceTime) * QualityBaseMultiplier
-	weightedBaseSpaceTime := big.Mul(big.Sub(sectorSpaceTime, totalDealSpaceTime), builtin.QualityBaseMultiplier)
-	// Deal - all deal size * deal duration * 10
-	// weightedDealSpaceTime = dealWeight * DealWeightMultiplier
-	weightedDealSpaceTime := big.Mul(dealWeight, builtin.DealWeightMultiplier)
-	// Verified - all verified deal size * verified deal duration * 100
-	// weightedVerifiedSpaceTime = verifiedWeight * VerifiedDealWeightMultiplier
-	weightedVerifiedSpaceTime := big.Mul(verifiedWeight, builtin.VerifiedDealWeightMultiplier)
-	// Sum - sum of all spacetime
-	// weightedSumSpaceTime = weightedBaseSpaceTime + weightedDealSpaceTime + weightedVerifiedSpaceTime
-	weightedSumSpaceTime := big.Sum(weightedBaseSpaceTime, weightedDealSpaceTime, weightedVerifiedSpaceTime)
-	// scaledUpWeightedSumSpaceTime = weightedSumSpaceTime * 2^20
-	scaledUpWeightedSumSpaceTime := big.Lsh(weightedSumSpaceTime, builtin.SectorQualityPrecision)
-
-	// Average of weighted space time: (scaledUpWeightedSumSpaceTime / sectorSpaceTime * 10)
-	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), builtin.QualityBaseMultiplier)
-}
-
-// The power for a sector size, committed duration, and weight.
-func QAPowerForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.StoragePower {
-	quality := QualityForWeight(size, duration, dealWeight, verifiedWeight)
-	return big.Rsh(big.Mul(big.NewIntUnsigned(uint64(size)), quality), builtin.SectorQualityPrecision)
-}
-
-// The quality-adjusted power for a sector.
-func QAPowerForSector(size abi.SectorSize, sector *SectorOnChainInfo) abi.StoragePower {
-	duration := sector.Expiration - sector.Activation
-	return QAPowerForWeight(size, duration, sector.DealWeight, sector.VerifiedDealWeight)
-}
-
 // Determine maximum number of deal miner's sector can hold
 func SectorDealsMax(size abi.SectorSize) uint64 {
 	return max64(256, uint64(size/DealLimitDenominator))
@@ -295,7 +252,7 @@ func RewardForConsensusSlashReport(epochReward abi.TokenAmount) abi.TokenAmount 
 }
 
 // The reward given for successfully disputing a window post.
-func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPower PowerPair) abi.TokenAmount {
+func RewardForDisputedWindowPoSt(proofType abi.RegisteredPoStProof, disputedPower abi.StoragePower) abi.TokenAmount {
 	// This is currently just the base. In the future, the fee may scale based on the disputed power.
 	return BaseRewardForDisputedWindowPoSt
 }

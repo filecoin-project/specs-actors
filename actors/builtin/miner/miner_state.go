@@ -141,11 +141,12 @@ type SectorPreCommitInfo struct {
 	SealRandEpoch   abi.ChainEpoch
 	DealIDs         []abi.DealID
 	Expiration      abi.ChainEpoch
-	ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
-	// The committed capacity sector to replace, and it's deadline/partition location
-	ReplaceSectorDeadline  uint64
-	ReplaceSectorPartition uint64
-	ReplaceSectorNumber    abi.SectorNumber
+	//ReplaceCapacity bool // Whether to replace a "committed capacity" no-deal sector (requires non-empty DealIDs)
+	//// The committed capacity sector to replace, and it's deadline/partition location.
+	//// Only applicable to sectors committed before v7.
+	//ReplaceSectorDeadline  uint64
+	//ReplaceSectorPartition uint64
+	//ReplaceSectorNumber    abi.SectorNumber
 }
 
 // Information stored on-chain for a pre-committed sector.
@@ -153,8 +154,8 @@ type SectorPreCommitOnChainInfo struct {
 	Info               SectorPreCommitInfo
 	PreCommitDeposit   abi.TokenAmount
 	PreCommitEpoch     abi.ChainEpoch
-	DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
-	VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
+	//DealWeight         abi.DealWeight // Integral of active deals over sector lifetime
+	//VerifiedDealWeight abi.DealWeight // Integral of active verified deals over sector lifetime
 }
 
 // Information stored on-chain for a proven sector.
@@ -165,8 +166,10 @@ type SectorOnChainInfo struct {
 	DealIDs               []abi.DealID
 	Activation            abi.ChainEpoch  // Epoch during which the sector proof was accepted
 	Expiration            abi.ChainEpoch  // Epoch during which the sector expires
-	DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime
-	VerifiedDealWeight    abi.DealWeight  // Integral of active verified deals over sector lifetime
+	//DealWeight            abi.DealWeight  // Integral of active deals over sector lifetime
+	//VerifiedDealWeight    abi.DealWeight  // Integral of active verified deals over sector lifetime
+	// Initial pledge and expected reward/pledge are technically derivable from the activation epoch and a history
+	// of network power, but retained for convenient and transparent access.
 	InitialPledge         abi.TokenAmount // Pledge collected to commit this sector
 	ExpectedDayReward     abi.TokenAmount // Expected one day projection of reward for sector computed at activation time
 	ExpectedStoragePledge abi.TokenAmount // Expected twenty day projection of reward for sector computed at activation time
@@ -528,9 +531,8 @@ func (st *State) FindSector(store adt.Store, sno abi.SectorNumber) (uint64, uint
 }
 
 // Assign new sectors to deadlines.
-func (st *State) AssignSectorsToDeadlines(
-	store adt.Store, currentEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo, partitionSize uint64, sectorSize abi.SectorSize,
-) error {
+func (st *State) AssignSectorsToDeadlines(store adt.Store, currentEpoch abi.ChainEpoch, sectors []*SectorOnChainInfo,
+	partitionSize uint64) error {
 	deadlines, err := st.LoadDeadlines(store)
 	if err != nil {
 		return err
@@ -567,7 +569,7 @@ func (st *State) AssignSectorsToDeadlines(
 
 		// The power returned from AddSectors is ignored because it's not activated (proven) yet.
 		proven := false
-		if _, err := dl.AddSectors(store, partitionSize, proven, deadlineSectors, sectorSize, quant); err != nil {
+		if _, err := dl.AddSectors(store, partitionSize, proven, deadlineSectors, quant); err != nil {
 			return err
 		}
 
@@ -1083,12 +1085,12 @@ func (st *State) CleanUpExpiredPreCommits(store adt.Store, currEpoch abi.ChainEp
 
 type AdvanceDeadlineResult struct {
 	PledgeDelta           abi.TokenAmount
-	PowerDelta            PowerPair
-	PreviouslyFaultyPower PowerPair // Power that was faulty before this advance (including recovering)
-	DetectedFaultyPower   PowerPair // Power of new faults and failed recoveries
-	TotalFaultyPower      PowerPair // Total faulty power after detecting faults (before expiring sectors)
-	// Note that failed recovery power is included in both PreviouslyFaultyPower and DetectedFaultyPower,
-	// so TotalFaultyPower is not simply their sum.
+	ActiveCountDelta      int64
+	PreviouslyFaultyCount uint64    // Count of that were faulty before this advance (including recovering)
+	DetectedFaultyCount   uint64    // Count of new faults and failed recoveries
+	TotalFaultyCount      uint64    // Total faulty count after detecting faults (before expiring sectors)
+	// Note that failed recoveries are included in both PreviouslyFaultyCount and DetectedFaultyCount,
+	// so TotalFaultyCount is not simply their sum.
 }
 
 // AdvanceDeadline advances the deadline. It:
@@ -1097,10 +1099,10 @@ type AdvanceDeadlineResult struct {
 // - Returns the changes to power & pledge, and faulty power (both declared and undeclared).
 func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*AdvanceDeadlineResult, error) {
 	pledgeDelta := abi.NewTokenAmount(0)
-	powerDelta := NewPowerPairZero()
+	activeCountDelta := int64(0)
 
-	var totalFaultyPower PowerPair
-	detectedFaultyPower := NewPowerPairZero()
+	totalFaultyCount := uint64(0)
+	detectedFaultyCount := uint64(0)
 
 	// Note: Use dlInfo.Last() rather than rt.CurrEpoch unless certain
 	// of the desired semantics. In the past, this method would sometimes be
@@ -1120,10 +1122,10 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	if !dlInfo.PeriodStarted() {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
-			powerDelta,
-			NewPowerPairZero(),
-			NewPowerPairZero(),
-			NewPowerPairZero(),
+			activeCountDelta,
+			0,
+			0,
+			0,
 		}, nil
 	}
 
@@ -1143,7 +1145,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		return nil, xerrors.Errorf("failed to load deadline %d: %w", dlInfo.Index, err)
 	}
 
-	previouslyFaultyPower := deadline.FaultyPower
+	previouslyFaultyCount := deadline.FaultySectors
 
 	// No live sectors in this deadline, nothing to do.
 	if live, err := deadline.IsLive(); err != nil {
@@ -1151,10 +1153,10 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	} else if !live {
 		return &AdvanceDeadlineResult{
 			pledgeDelta,
-			powerDelta,
-			previouslyFaultyPower,
-			detectedFaultyPower,
-			deadline.FaultyPower,
+			activeCountDelta,
+			previouslyFaultyCount,
+			detectedFaultyCount,
+			deadline.FaultySectors,
 		}, nil
 	}
 
@@ -1163,15 +1165,15 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 		// Detect and penalize missing proofs.
 		faultExpiration := dlInfo.Last() + FaultMaxAge
 
-		// detectedFaultyPower is new faults and failed recoveries
-		powerDelta, detectedFaultyPower, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration, st.Sectors)
+		// detectedFaultyCount is new faults and failed recoveries
+		activeCountDelta, detectedFaultyCount, err = deadline.ProcessDeadlineEnd(store, quant, faultExpiration, st.Sectors)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to process end of deadline %d: %w", dlInfo.Index, err)
 		}
 
 		// Capture deadline's faulty power after new faults have been detected, but before it is
 		// dropped along with faulty sectors expiring this round.
-		totalFaultyPower = deadline.FaultyPower
+		totalFaultyCount = deadline.FaultySectors
 	}
 	{
 		// Expire sectors that are due, either for on-time expiration or "early" faulty-for-too-long.
@@ -1190,7 +1192,7 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 
 		// Record reduction in power of the amount of expiring active power.
 		// Faulty power has already been lost, so the amount expiring can be excluded from the delta.
-		powerDelta = powerDelta.Sub(expired.ActivePower)
+		activeCountDelta = activeCountDelta - int64(expired.ActiveCount)
 
 		// Record deadlines with early terminations. While this
 		// bitfield is non-empty, the miner is locked until they
@@ -1219,10 +1221,10 @@ func (st *State) AdvanceDeadline(store adt.Store, currEpoch abi.ChainEpoch) (*Ad
 	// Be very careful when changing these as any changes can affect rounding.
 	return &AdvanceDeadlineResult{
 		PledgeDelta:           pledgeDelta,
-		PowerDelta:            powerDelta,
-		PreviouslyFaultyPower: previouslyFaultyPower,
-		DetectedFaultyPower:   detectedFaultyPower,
-		TotalFaultyPower:      totalFaultyPower,
+		ActiveCountDelta:      activeCountDelta,
+		PreviouslyFaultyCount: previouslyFaultyCount,
+		DetectedFaultyCount:   detectedFaultyCount,
+		TotalFaultyCount:      totalFaultyCount,
 	}, nil
 }
 

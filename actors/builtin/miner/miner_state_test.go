@@ -687,8 +687,7 @@ func TestSectorAssignment(t *testing.T) {
 	t.Run("assign sectors to deadlines", func(t *testing.T) {
 		harness := constructStateHarness(t, abi.ChainEpoch(0))
 
-		err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos,
-			partitionSectors, sectorSize)
+		err := harness.s.AssignSectorsToDeadlines(harness.store, 0, sectorInfos, partitionSectors)
 		require.NoError(t, err)
 
 		sectorArr := sectorsArr(t, harness.store, sectorInfos)
@@ -730,14 +729,14 @@ func TestSectorAssignment(t *testing.T) {
 			result, err := dl.RecordProvenSectors(harness.store, sectorArr, sectorSize, quantSpec, 0, postPartitions)
 			require.NoError(t, err)
 
-			expectedPowerDelta := miner.PowerForSectors(sectorSize, selectSectors(t, sectorInfos, allSectorBf))
+			expectedPowerDelta := miner.SectorsPower(sectorSize, len(allSectorNos))
 
 			assertBitfieldsEqual(t, allSectorBf, result.Sectors)
 			assertBitfieldEmpty(t, result.IgnoredSectors)
-			assert.True(t, result.NewFaultyPower.Equals(miner.NewPowerPairZero()))
-			assert.True(t, result.PowerDelta.Equals(expectedPowerDelta))
-			assert.True(t, result.RecoveredPower.Equals(miner.NewPowerPairZero()))
-			assert.True(t, result.RetractedRecoveryPower.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.NewFaultyCount.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.ActiveCountDelta.Equals(expectedPowerDelta))
+			assert.True(t, result.RecoveredCount.Equals(miner.NewPowerPairZero()))
+			assert.True(t, result.RetractedRecoveryCount.Equals(miner.NewPowerPairZero()))
 			return nil
 		}))
 
@@ -1011,8 +1010,6 @@ func newPreCommitOnChain(sectorNo abi.SectorNumber, sealed cid.Cid, deposit abi.
 		Info:               *info,
 		PreCommitDeposit:   deposit,
 		PreCommitEpoch:     epoch,
-		DealWeight:         big.Zero(),
-		VerifiedDealWeight: big.Zero(),
 	}
 }
 
@@ -1025,8 +1022,6 @@ func newSectorOnChainInfo(sectorNo abi.SectorNumber, sealed cid.Cid, weight big.
 		DealIDs:               nil,
 		Activation:            activation,
 		Expiration:            abi.ChainEpoch(1),
-		DealWeight:            weight,
-		VerifiedDealWeight:    weight,
 		InitialPledge:         abi.NewTokenAmount(0),
 		ExpectedDayReward:     abi.NewTokenAmount(0),
 		ExpectedStoragePledge: abi.NewTokenAmount(0),

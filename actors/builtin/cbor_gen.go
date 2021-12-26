@@ -158,8 +158,8 @@ func (t *ConfirmSectorProofsParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
-	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
+	// t.RawBytePowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.RawBytePowerSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -234,12 +234,12 @@ func (t *ConfirmSectorProofsParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	// t.RawBytePowerSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
-		if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed: %w", err)
+		if err := t.RawBytePowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePowerSmoothed: %w", err)
 		}
 
 	}
@@ -277,8 +277,8 @@ func (t *DeferredCronEventParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
-	if err := t.QualityAdjPowerSmoothed.MarshalCBOR(w); err != nil {
+	// t.RawBytePowerSmoothed (smoothing.FilterEstimate) (struct)
+	if err := t.RawBytePowerSmoothed.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
@@ -332,12 +332,12 @@ func (t *DeferredCronEventParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.QualityAdjPowerSmoothed (smoothing.FilterEstimate) (struct)
+	// t.RawBytePowerSmoothed (smoothing.FilterEstimate) (struct)
 
 	{
 
-		if err := t.QualityAdjPowerSmoothed.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.QualityAdjPowerSmoothed: %w", err)
+		if err := t.RawBytePowerSmoothed.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RawBytePowerSmoothed: %w", err)
 		}
 
 	}

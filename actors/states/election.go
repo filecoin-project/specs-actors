@@ -22,7 +22,7 @@ func MinerEligibleForElection(store adt.Store, mstate *miner.State, pstate *powe
 		return false, err
 	} else if !found {
 		return false, err
-	} else if claim.QualityAdjPower.LessThanEqual(big.Zero()) {
+	} else if claim.RawBytePower.LessThanEqual(big.Zero()) {
 		return false, err
 	}
 

@@ -48,15 +48,15 @@ var TokenPrecision = big.NewIntUnsigned(1_000_000_000_000_000_000)
 var TotalFilecoin = big.Mul(big.NewIntUnsigned(2_000_000_000), TokenPrecision)
 
 // Quality multiplier for committed capacity (no deals) in a sector
-var QualityBaseMultiplier = big.NewInt(10)
+//var QualityBaseMultiplier = big.NewInt(10)
 
 // Quality multiplier for unverified deals in a sector
-var DealWeightMultiplier = big.NewInt(10)
+//var DealWeightMultiplier = big.NewInt(10)
 
 // Quality multiplier for verified deals in a sector
-var VerifiedDealWeightMultiplier = big.NewInt(100)
+//var VerifiedDealWeightMultiplier = big.NewInt(100)
 
-// Precision used for making QA power calculations
+// Precision used for making power calculations
 const SectorQualityPrecision = 20
 
 // 1 NanoFIL

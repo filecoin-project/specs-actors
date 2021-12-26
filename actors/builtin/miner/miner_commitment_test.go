@@ -271,7 +271,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Deals too large for sector
-		dealWeight := big.Mul(big.NewIntUnsigned(32<<30), big.NewInt(int64(expiration-rt.Epoch())))
+		dealWeight := big.Mul(miner.SectorPower(32<<30), big.NewInt(int64(expiration-rt.Epoch())))
 		rt.ExpectAbortContainsMessage(exitcode.ErrIllegalArgument, "deals too large", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(0, challengeEpoch, expiration, []abi.DealID{1}), preCommitConf{
 				dealWeight:         dealWeight,
@@ -714,7 +714,7 @@ func TestProveCommit(t *testing.T) {
 		expectedPower := big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier))
 		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-rt.Epoch(), precommit.DealWeight, precommit.VerifiedDealWeight)
 		assert.Equal(t, expectedPower, qaPower)
-		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
+		sectorPower := miner.SectorPower(actor.sectorSize)
 
 		// expect deal weights to be transferred to on chain info
 		assert.Equal(t, precommit.DealWeight, sector.DealWeight)
@@ -755,8 +755,8 @@ func TestProveCommit(t *testing.T) {
 		assertBitfieldEquals(t, entry.OnTimeSectors, uint64(sectorNo))
 		assertEmptyBitfield(t, entry.EarlySectors)
 		assert.Equal(t, expectedInitialPledge, entry.OnTimePledge)
-		assert.Equal(t, sectorPower, entry.ActivePower)
-		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
+		assert.Equal(t, sectorPower, entry.ActiveCount)
+		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyCount)
 	})
 
 	t.Run("prove sectors from batch pre-commit", func(t *testing.T) {
@@ -1181,7 +1181,7 @@ func TestAggregateProveCommit(t *testing.T) {
 
 		}))
 
-		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
+		sectorPower := miner.SectorPower(actor.sectorSize)
 		tenSectorsPower := miner.NewPowerPair(big.Mul(big.NewInt(10), sectorPower.Raw), big.Mul(big.NewInt(10), sectorPower.QA))
 
 		dlIdx := uint64(0)
@@ -1213,8 +1213,8 @@ func TestAggregateProveCommit(t *testing.T) {
 		assert.Equal(t, entry.OnTimeSectors, sectorNosBf)
 		assertEmptyBitfield(t, entry.EarlySectors)
 		assert.Equal(t, tenSectorsInitialPledge, entry.OnTimePledge)
-		assert.Equal(t, tenSectorsPower, entry.ActivePower)
-		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyPower)
+		assert.Equal(t, tenSectorsPower, entry.ActiveCount)
+		assert.Equal(t, miner.NewPowerPairZero(), entry.FaultyCount)
 
 		// expect 10x locked initial pledge of sector to be the same as pledge requirement
 		assert.Equal(t, tenSectorsInitialPledge, st.InitialPledge)

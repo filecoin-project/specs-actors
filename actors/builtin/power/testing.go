@@ -31,18 +31,10 @@ func CheckStateInvariants(st *State, store adt.Store) (*StateSummary, *builtin.M
 
 	// basic invariants around recorded power
 	acc.Require(st.TotalRawBytePower.GreaterThanEqual(big.Zero()), "total raw power is negative %v", st.TotalRawBytePower)
-	acc.Require(st.TotalQualityAdjPower.GreaterThanEqual(big.Zero()), "total qa power is negative %v", st.TotalQualityAdjPower)
 	acc.Require(st.TotalBytesCommitted.GreaterThanEqual(big.Zero()), "total raw power committed is negative %v", st.TotalBytesCommitted)
-	acc.Require(st.TotalQABytesCommitted.GreaterThanEqual(big.Zero()), "total qa power committed is negative %v", st.TotalQABytesCommitted)
 
-	acc.Require(st.TotalRawBytePower.LessThanEqual(st.TotalQualityAdjPower),
-		"total raw power %v is greater than total quality adjusted power %v", st.TotalRawBytePower, st.TotalQualityAdjPower)
-	acc.Require(st.TotalBytesCommitted.LessThanEqual(st.TotalQABytesCommitted),
-		"committed raw power %v is greater than committed quality adjusted power %v", st.TotalBytesCommitted, st.TotalQABytesCommitted)
 	acc.Require(st.TotalRawBytePower.LessThanEqual(st.TotalBytesCommitted),
 		"total raw power %v is greater than raw power committed %v", st.TotalRawBytePower, st.TotalBytesCommitted)
-	acc.Require(st.TotalQualityAdjPower.LessThanEqual(st.TotalQABytesCommitted),
-		"total qa power %v is greater than qa power committed %v", st.TotalQualityAdjPower, st.TotalQABytesCommitted)
 
 	crons := CheckCronInvariants(st, store, acc)
 	claims := CheckClaimInvariants(st, store, acc)
@@ -98,9 +90,7 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 	}
 
 	committedRawPower := abi.NewStoragePower(0)
-	committedQAPower := abi.NewStoragePower(0)
 	rawPower := abi.NewStoragePower(0)
-	qaPower := abi.NewStoragePower(0)
 	claimsWithSufficientPowerCount := int64(0)
 	var claim Claim
 	err = claims.ForEach(&claim, func(key string) error {
@@ -110,7 +100,6 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		}
 		byAddress[addr] = claim
 		committedRawPower = big.Add(committedRawPower, claim.RawBytePower)
-		committedQAPower = big.Add(committedQAPower, claim.QualityAdjPower)
 
 		minPower, err := builtin.ConsensusMinerMinPower(claim.WindowPoStProofType)
 		acc.Require(err == nil, "could not get consensus miner min power for miner %v: %v", addr, err)
@@ -121,7 +110,6 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 		if claim.RawBytePower.GreaterThanEqual(minPower) {
 			claimsWithSufficientPowerCount += 1
 			rawPower = big.Add(rawPower, claim.RawBytePower)
-			qaPower = big.Add(qaPower, claim.QualityAdjPower)
 		}
 		return nil
 	})
@@ -130,9 +118,6 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 	acc.Require(committedRawPower.Equals(st.TotalBytesCommitted),
 		"sum of raw power in claims %v does not match recorded bytes committed %v",
 		committedRawPower, st.TotalBytesCommitted)
-	acc.Require(committedQAPower.Equals(st.TotalQABytesCommitted),
-		"sum of qa power in claims %v does not match recorded qa power committed %v",
-		committedQAPower, st.TotalQABytesCommitted)
 
 	acc.Require(claimsWithSufficientPowerCount == st.MinerAboveMinPowerCount,
 		"claims with sufficient power %d does not match MinerAboveMinPowerCount %d",
@@ -140,8 +125,6 @@ func CheckClaimInvariants(st *State, store adt.Store, acc *builtin.MessageAccumu
 
 	acc.Require(st.TotalRawBytePower.Equals(rawPower),
 		"recorded raw power %v does not match raw power in claims %v", st.TotalRawBytePower, rawPower)
-	acc.Require(st.TotalQualityAdjPower.Equals(qaPower),
-		"recorded qa power %v does not match qa power in claims %v", st.TotalQualityAdjPower, qaPower)
 
 	return byAddress
 }

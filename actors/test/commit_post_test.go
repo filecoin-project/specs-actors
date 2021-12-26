@@ -172,7 +172,7 @@ func TestCommitPoStFlow(t *testing.T) {
 			Index:   pIdx,
 			Skipped: bitfield.New(),
 		}}
-		sectorPower := miner.PowerForSector(sectorSize, sector)
+		sectorPower := miner.SectorPower(sectorSize)
 		submitWindowPoSt(t, tv, worker, minerAddrs.IDAddress, dlInfo, partitions, sectorPower)
 
 		// miner still has initial pledge
@@ -525,7 +525,7 @@ func TestBatchOnboarding(t *testing.T) {
 		Index:   pIdx,
 		Skipped: bitfield.New(),
 	}}
-	newPower := miner.PowerForSector(sectorSize, sector).Mul(big.NewInt(int64(provenCount)))
+	newPower := miner.SectorsPower(sectorSize, provenCount)
 	submitWindowPoSt(t, v, worker, minerAddrs.IDAddress, dlInfo, partitions, newPower)
 
 	// Miner has initial pledge

@@ -476,7 +476,7 @@ func GetMinerBalances(t *testing.T, vm *VM, minerIdAddr address.Address) MinerBa
 	}
 }
 
-func PowerForMinerSector(t *testing.T, vm *VM, minerIdAddr address.Address, sectorNumber abi.SectorNumber) miner.PowerPair {
+func PowerForMinerSector(t *testing.T, vm *VM, minerIdAddr address.Address, sectorNumber abi.SectorNumber) abi.StoragePower {
 	var state miner.State
 	err := vm.GetState(minerIdAddr, &state)
 	require.NoError(t, err)
@@ -487,7 +487,7 @@ func PowerForMinerSector(t *testing.T, vm *VM, minerIdAddr address.Address, sect
 
 	sectorSize, err := sector.SealProof.SectorSize()
 	require.NoError(t, err)
-	return miner.PowerForSector(sectorSize, sector)
+	return miner.SectorPower(sectorSize)
 }
 
 func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPair {
@@ -499,7 +499,7 @@ func MinerPower(t *testing.T, vm *VM, minerIdAddr address.Address) miner.PowerPa
 	require.NoError(t, err)
 	require.True(t, found)
 
-	return miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
+	return miner.NewPowerPair(claim.RawBytePower, big.Zero())
 }
 
 type NetworkStats struct {
@@ -539,11 +539,11 @@ func GetNetworkStats(t *testing.T, vm *VM) NetworkStats {
 	return NetworkStats{
 		TotalRawBytePower:             powerState.TotalRawBytePower,
 		TotalBytesCommitted:           powerState.TotalBytesCommitted,
-		TotalQualityAdjPower:          powerState.TotalQualityAdjPower,
-		TotalQABytesCommitted:         powerState.TotalQABytesCommitted,
+		TotalQualityAdjPower:          big.Zero(),
+		TotalQABytesCommitted:         big.Zero(),
 		TotalPledgeCollateral:         powerState.TotalPledgeCollateral,
 		ThisEpochRawBytePower:         powerState.ThisEpochRawBytePower,
-		ThisEpochQualityAdjPower:      powerState.ThisEpochQualityAdjPower,
+		ThisEpochQualityAdjPower:      big.Zero(),
 		ThisEpochPledgeCollateral:     powerState.ThisEpochPledgeCollateral,
 		MinerCount:                    powerState.MinerCount,
 		MinerAboveMinPowerCount:       powerState.MinerAboveMinPowerCount,

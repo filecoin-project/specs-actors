@@ -135,7 +135,7 @@ func TestPower(t *testing.T) {
 }
 
 func weight(size abi.SectorSize, duration abi.ChainEpoch) big.Int {
-	return big.Mul(big.NewIntUnsigned(uint64(size)), big.NewInt(int64(duration)))
+	return big.Mul(miner.SectorPower(size), big.NewInt(int64(duration)))
 }
 
 func assertEqual(t *testing.T, a, b big.Int) {
