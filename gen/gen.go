@@ -223,6 +223,10 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/verifreg/cbor_gen.go", "verifreg",
 		// actor state
 		verifreg.State{},
+
+		verifreg.RemoveDataCapProposal{},
+		verifreg.RemoveDataCapRequest{},
+
 		// method params and returns
 		//verifreg.AddVerifierParams{}, // Aliased from v0
 		//verifreg.AddVerifiedClientParams{}, // Aliased from v0
