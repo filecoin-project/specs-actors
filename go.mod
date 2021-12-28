@@ -7,7 +7,7 @@ require (
 	github.com/filecoin-project/go-amt-ipld/v4 v4.0.0
 	github.com/filecoin-project/go-bitfield v0.2.3
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
-	github.com/filecoin-project/go-state-types v0.1.1
+	github.com/filecoin-project/go-state-types v0.1.2-0.20211228161409-c21a632973ee
 	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/filecoin-project/specs-actors/v2 v2.3.5-0.20210114162132-5b58b773f4fb
 	github.com/filecoin-project/specs-actors/v3 v3.1.0
@@ -29,6 +29,7 @@ require (
 	golang.org/x/text v0.3.2
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )
+<<<<<<< HEAD
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -71,3 +72,5 @@ require (
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
+=======
+>>>>>>> 3149b40d (Add RemoveDataCapProposalIDs to verifreg State:)

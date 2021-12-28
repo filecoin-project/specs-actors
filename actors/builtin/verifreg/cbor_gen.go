@@ -12,7 +12,7 @@ import (
 
 var _ = xerrors.Errorf
 
-var lengthBufState = []byte{131}
+var lengthBufState = []byte{132}
 
 func (t *State) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -42,6 +42,12 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		return xerrors.Errorf("failed to write cid field t.VerifiedClients: %w", err)
 	}
 
+	// t.RemoveDataCapProposalIDs (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.RemoveDataCapProposalIDs); err != nil {
+		return xerrors.Errorf("failed to write cid field t.RemoveDataCapProposalIDs: %w", err)
+	}
+
 	return nil
 }
 
@@ -59,7 +65,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -96,10 +102,22 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 		t.VerifiedClients = c
 
 	}
+	// t.RemoveDataCapProposalIDs (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.RemoveDataCapProposalIDs: %w", err)
+		}
+
+		t.RemoveDataCapProposalIDs = c
+
+	}
 	return nil
 }
 
-var lengthBufRemoveDataCapProposal = []byte{131}
+var lengthBufRemoveDataCapProposal = []byte{132}
 
 func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -124,6 +142,11 @@ func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
 	if err := t.DataCapAmount.MarshalCBOR(w); err != nil {
 		return err
 	}
+
+	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
+	if err := t.RemovalProposalID.MarshalCBOR(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -141,7 +164,7 @@ func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 3 {
+	if extra != 4 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -169,6 +192,15 @@ func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
 
 		if err := t.DataCapAmount.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.DataCapAmount: %w", err)
+		}
+
+	}
+	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
+
+	{
+
+		if err := t.RemovalProposalID.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RemovalProposalID: %w", err)
 		}
 
 	}
@@ -234,5 +266,40 @@ func (t *RemoveDataCapRequest) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
+	return nil
+}
+
+var lengthBufRmDcProposalID = []byte{128}
+
+func (t *RmDcProposalID) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRmDcProposalID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *RmDcProposalID) UnmarshalCBOR(r io.Reader) error {
+	*t = RmDcProposalID{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 0 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
 	return nil
 }

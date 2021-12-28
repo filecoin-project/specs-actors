@@ -18,6 +18,10 @@ import (
 // We can introduce policy changes and replace this in the future.
 type DataCap = abi.StoragePower
 
+type RmDcProposalID struct {
+	proposalID  int64
+}
+
 type State struct {
 	// Root key holder multisig.
 	// Authorize and remove verifiers.
@@ -29,6 +33,10 @@ type State struct {
 
 	// VerifiedClients can add VerifiedClientData, up to DataCap.
 	VerifiedClients cid.Cid // HAMT[addr.Address]DataCap
+
+	// RemoveDataCapProposalIDs keeps the counters of the datacap removal proposal a verifier has submitted for a specifc client.
+	// AddrPairKey is constructed as <verifier address, client address>, both using ID addresses.
+	RemoveDataCapProposalIDs cid.Cid // HAMT[AddrPairKey]RmDcProposalID
 }
 
 var MinVerifiedDealSize = abi.NewStoragePower(1 << 20)
@@ -56,7 +64,9 @@ type RemoveDataCapProposal struct {
 	// The address must be an ID address
 	VerifiedClient addr.Address
 	// DataCapAmount is the amount of DataCap to be removed from the VerifiedClient address
-	DataCapAmount DataCap
+	DataCapAmount     DataCap
+	// RemovalProposalID is the counter of the proposal sent by the Verifier for the VerifiedClient
+	RemovalProposalID RmDcProposalID
 }
 
 
@@ -90,9 +100,10 @@ func isVerifier(rt runtime.Runtime, st State, address addr.Address) (bool, exitc
 ////////////////////////////////////////////////////////////////////////////////
 // State utility functions
 ////////////////////////////////////////////////////////////////////////////////
-func removeDataCapRequestIsValid(rt runtime.Runtime, request RemoveDataCapRequest, proposal RemoveDataCapProposal) (bool, exitcode.ExitCode, error) {
+func removeDataCapRequestIsValid(rt runtime.Runtime, request RemoveDataCapRequest, proposal RemoveDataCapProposal, id RmDcProposalID) (bool, exitcode.ExitCode, error) {
 	// get the expected RemoveDataCapProposal
 	proposal.Verifier = request.Verifier
+	proposal.RemovalProposalID = id
 	buf := bytes.Buffer{}
 	err := proposal.MarshalCBOR(&buf)
 

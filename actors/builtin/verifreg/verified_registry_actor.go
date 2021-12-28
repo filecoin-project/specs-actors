@@ -373,15 +373,36 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 			rt.Abortf(code, err.Error())
 		}
 
+		// get the remove datacap proposal IDs for  the verifiers
+		proposalIDs, err := adt.AsMap(adt.AsStore(rt), st.RemoveDataCapProposalIDs, builtin.DefaultHamtBitwidth)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load datacap removal proposal ids")
+
+		var verifier1ID RmDcProposalID
+		idExists, err := proposalIDs.Get(abi.NewAddrPairKey(verifier1, client), &verifier1ID)
+		if !idExists { //initialize with 0
+			verifier1ID = RmDcProposalID{proposalID: 0}
+			err = proposalIDs.Put(abi.NewAddrPairKey(verifier1, client), &verifier1ID)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add remove datacap proposal id for the verifier")
+		}
+
+
+		var verifier2ID RmDcProposalID
+		idExists, err = proposalIDs.Get(abi.NewAddrPairKey(verifier2, client), &verifier2ID)
+		if !idExists { //initialize with 0
+			verifier2ID = RmDcProposalID{proposalID: 0}
+			err = proposalIDs.Put(abi.NewAddrPairKey(verifier2, client), &verifier2ID)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add remove datacap proposal id for the verifier")
+		}
+
 		// verify verifier request signature
 		removalProposal := RemoveDataCapProposal{
 			VerifiedClient: client,
 			DataCapAmount:  params.DataCapAmountToRemove,
 		}
-		if verifierSignVerified, code, err := removeDataCapRequestIsValid(rt, params.VerifierRequest1, removalProposal); !verifierSignVerified {
+		if verifierSignVerified, code, err := removeDataCapRequestIsValid(rt, params.VerifierRequest1, removalProposal, verifier1ID); !verifierSignVerified {
 			rt.Abortf(code, err.Error())
 		}
-		if verifierSignVerified, code, err := removeDataCapRequestIsValid(rt, params.VerifierRequest2, removalProposal); !verifierSignVerified {
+		if verifierSignVerified, code, err := removeDataCapRequestIsValid(rt, params.VerifierRequest2, removalProposal, verifier2ID); !verifierSignVerified {
 			rt.Abortf(code, err.Error())
 		}
 
@@ -399,7 +420,17 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 				removedDataCapAmount = preDataCap
 			}
 		}
+
+		//increase the proposal id by 1
+		verifier1ID.proposalID += 1
+		err = proposalIDs.Put(abi.NewAddrPairKey(verifier1, client), &verifier1ID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update remove datacap proposal id for verifier %v", params.VerifierRequest1.Verifier)
+		verifier2ID.proposalID += 1
+		err = proposalIDs.Put(abi.NewAddrPairKey(verifier2, client), &verifier2ID)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update remove datacap proposal id for verifier %v", params.VerifierRequest2.Verifier)
+
 	})
+
 	return &RemoveDataCapReturn{
 		VerifiedClient: params.VerifiedClientToRemove,
 		DataCapRemoved: removedDataCapAmount,

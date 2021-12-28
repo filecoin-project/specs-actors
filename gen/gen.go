@@ -226,7 +226,7 @@ func main() {
 
 		verifreg.RemoveDataCapProposal{},
 		verifreg.RemoveDataCapRequest{},
-
+		verifreg.RmDcProposalID{},
 		// method params and returns
 		//verifreg.AddVerifierParams{}, // Aliased from v0
 		//verifreg.AddVerifiedClientParams{}, // Aliased from v0
