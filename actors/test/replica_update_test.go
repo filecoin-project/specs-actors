@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 	"strconv"
 	"testing"
 
@@ -27,138 +28,13 @@ import (
 
 // Tests that an active CC sector can be correctly upgraded, and the expected state changes occur
 func TestSimplePathSuccess(t *testing.T) {
-	ctx := context.Background()
-	blkStore := ipld.NewBlockStoreInMemory()
-	v := vm.NewVMWithSingletons(ctx, t, blkStore)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
-
-	// create miner
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-	ss, err := sealProof.SectorSize()
-	require.NoError(t, err)
-
-	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
-	require.NoError(t, err)
-	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
-
-	// advance vm so we can have seal randomness epoch in the past
-	v, err = v.WithEpoch(abi.ChainEpoch(200))
-	require.NoError(t, err)
-
-	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
-
-	// sanity checks about the sector created
-
-	oldSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 0, len(oldSectorInfo.DealIDs))
-	require.Nil(t, oldSectorInfo.SectorKeyCID)
-	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
-	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
-
-	// make some unverified deals
-	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
-
-	// replicaUpdate the sector
-
-	replicaUpdate := miner.ReplicaUpdate{
-		SectorID:           sectorNumber,
-		Deadline:           deadlineIndex,
-		Partition:          partitionIndex,
-		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
-		Deals:              dealIDs,
-		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
-	}
-
-	ret := vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
-		builtin.MethodsMiner.ProveReplicaUpdates,
-		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
-
-	updatedSectors := ret.(*bitfield.BitField)
-	count, err := updatedSectors.Count()
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), count)
-
-	isSet, err := updatedSectors.IsSet(uint64(sectorNumber))
-	require.NoError(t, err)
-	require.True(t, isSet)
-
-	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 1, len(newSectorInfo.DealIDs))
-	require.Equal(t, dealIDs[0], newSectorInfo.DealIDs[0])
-	require.Equal(t, oldSectorInfo.SealedCID, *newSectorInfo.SectorKeyCID)
-	require.Equal(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
-
-	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
-	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
+	createUpgradedSector(t)
 }
 
 // Tests a successful upgrade, followed by the sector going faulty and recovering
 func TestFullPathSuccess(t *testing.T) {
-	ctx := context.Background()
-	blkStore := ipld.NewBlockStoreInMemory()
-	v := vm.NewVMWithSingletons(ctx, t, blkStore)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
-
-	// create miner
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
-	ss, err := sealProof.SectorSize()
-	require.NoError(t, err)
-	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
-	require.NoError(t, err)
-	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
-
-	// advance vm so we can have seal randomness epoch in the past
-	v, err = v.WithEpoch(abi.ChainEpoch(200))
-	require.NoError(t, err)
-
-	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
-
-	// sanity checks about the sector created
-
-	oldSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 0, len(oldSectorInfo.DealIDs))
-	require.Nil(t, oldSectorInfo.SectorKeyCID)
-	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
-	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
-
-	// make some deals
-	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
-
-	// replicaUpdate the sector
-
-	replicaUpdate := miner.ReplicaUpdate{
-		SectorID:           sectorNumber,
-		Deadline:           deadlineIndex,
-		Partition:          partitionIndex,
-		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
-		Deals:              dealIDs,
-		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
-	}
-
-	ret := vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
-		builtin.MethodsMiner.ProveReplicaUpdates,
-		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
-
-	updatedSectors, ok := ret.(*bitfield.BitField)
-	require.True(t, ok)
-	count, err := updatedSectors.Count()
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), count)
-
-	isSet, err := updatedSectors.IsSet(uint64(sectorNumber))
-	require.NoError(t, err)
-	require.True(t, isSet)
-
-	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 1, len(newSectorInfo.DealIDs))
-	require.Equal(t, dealIDs[0], newSectorInfo.DealIDs[0])
-	require.Equal(t, oldSectorInfo.SealedCID, *newSectorInfo.SectorKeyCID)
-	require.Equal(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
-
-	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
-	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
+	v, sectorInfo, worker, minerAddrs, deadlineIndex, partitionIndex, ss := createUpgradedSector(t)
+	sectorNumber := sectorInfo.SectorNumber
 
 	// submit post successfully
 	deadlineInfo, _, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
@@ -174,7 +50,7 @@ func TestFullPathSuccess(t *testing.T) {
 	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
 	require.True(t, vm.CheckSectorFaulty(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
 
-	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
+	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
 	require.True(t, minerPower.IsZero())
 
 	// enter a deadline where recovery declaration is valid
@@ -188,7 +64,7 @@ func TestFullPathSuccess(t *testing.T) {
 	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
 	require.False(t, vm.CheckSectorFaulty(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
 	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
-	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
+	require.Equal(t, ss, minerPower.Raw.Uint64())
 }
 
 func TestUpgradeAndMissPoSt(t *testing.T) {
@@ -379,6 +255,67 @@ func TestBadBatchSizeFailure(t *testing.T) {
 		&miner.ProveReplicaUpdatesParams{Updates: updates}, exitcode.ErrIllegalArgument)
 }
 
+// Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
+func TestTerminateAfterUpgrade(t *testing.T) {
+	v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createUpgradedSector(t)
+	sectorNumber := sectorInfo.SectorNumber
+
+	// Terminate Sector
+	v, err := v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
+
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &miner.TerminateSectorsParams{
+		Terminations: []miner.TerminationDeclaration{{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+		}},
+	})
+
+	// expect power, market and miner to be in base state
+	minerBalances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.Equal(t, big.Zero(), minerBalances.InitialPledge)
+	assert.Equal(t, big.Zero(), minerBalances.PreCommitDeposit)
+
+	// expect network stats to reflect power has been removed from sector
+	stats := vm.GetNetworkStats(t, v)
+	assert.Equal(t, int64(0), stats.MinerAboveMinPowerCount)
+	assert.Equal(t, big.Zero(), stats.TotalRawBytePower)
+	assert.Equal(t, big.Zero(), stats.TotalQualityAdjPower)
+	assert.Equal(t, big.Zero(), stats.TotalBytesCommitted)
+	assert.Equal(t, big.Zero(), stats.TotalQABytesCommitted)
+	assert.Equal(t, big.Zero(), stats.TotalPledgeCollateral)
+}
+
+// Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
+func TestExtendAfterUpdgrade(t *testing.T) {
+    v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createUpgradedSector(t)
+
+	extensionParams := &miner.ExtendSectorExpirationParams{
+		Extensions: []miner.ExpirationExtension{{
+			Deadline:      dlIdx,
+			Partition:     pIdx,
+			Sectors:       bitfield.NewFromSet([]uint64{uint64(sectorInfo.SectorNumber)}),
+			NewExpiration: v.GetEpoch()+miner.MaxSectorExpirationExtension - 1,
+		}},
+	}
+
+	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ExtendSectorExpiration, extensionParams)
+
+	vm.ExpectInvocation{
+		To:     minerAddrs.IDAddress,
+		Method: builtin.MethodsMiner.ExtendSectorExpiration,
+		SubInvocations: nil,
+	}.Matches(t, v.LastInvocation())
+
+	var mStateFinal miner.State
+	require.NoError(t, v.GetState(minerAddrs.IDAddress, &mStateFinal))
+	infoFinal, found, err := mStateFinal.GetSector(v.Store(), sectorInfo.SectorNumber)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, abi.ChainEpoch(miner.MaxSectorExpirationExtension - 1), infoFinal.Expiration-infoFinal.Activation)
+}
+
 func createDeals(t *testing.T, numberOfDeals int, v *vm.VM, clientAddress address.Address, workerAddress address.Address, minerAddress address.Address, sealProof abi.RegisteredSealProof) []abi.DealID {
 	// add market collateral for client and miner
 	collateral := big.Mul(big.NewInt(int64(3*numberOfDeals)), vm.FIL)
@@ -447,4 +384,75 @@ func createSector(t *testing.T, v *vm.VM, workerAddress address.Address, minerAd
 	require.True(t, vm.CheckSectorActive(t, v, minerAddress, dlInfo.Index, pIdx, sectorNumber))
 
 	return v, dlInfo.Index, pIdx, sectorNumber
+}
+
+// This function contains the simple success path
+func createUpgradedSector(t *testing.T) (*vm.VM, *miner.SectorOnChainInfo, address.Address, *power.CreateMinerReturn, uint64, uint64, uint64) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	ss, err := sealProof.SectorSize()
+	require.NoError(t, err)
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+
+	// sanity checks about the sector created
+
+	oldSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
+	require.Equal(t, 0, len(oldSectorInfo.DealIDs))
+	require.Nil(t, oldSectorInfo.SectorKeyCID)
+	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
+	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
+
+	// make some unverified deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// replicaUpdate the sector
+
+	replicaUpdate := miner.ReplicaUpdate{
+		SectorID:           sectorNumber,
+		Deadline:           deadlineIndex,
+		Partition:          partitionIndex,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	ret := vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
+
+	updatedSectors, ok := ret.(*bitfield.BitField)
+	require.True(t, ok)
+	count, err := updatedSectors.Count()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), count)
+
+	isSet, err := updatedSectors.IsSet(uint64(sectorNumber))
+	require.NoError(t, err)
+	require.True(t, isSet)
+
+	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
+	require.Equal(t, 1, len(newSectorInfo.DealIDs))
+	require.Equal(t, dealIDs[0], newSectorInfo.DealIDs[0])
+	require.Equal(t, oldSectorInfo.SealedCID, *newSectorInfo.SectorKeyCID)
+	require.Equal(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
+
+	minerPower = vm.MinerPower(t, v, minerAddrs.IDAddress)
+	require.Equal(t, uint64(ss), minerPower.Raw.Uint64())
+
+	return v, newSectorInfo, worker, minerAddrs, deadlineIndex, partitionIndex, uint64(ss)
 }
