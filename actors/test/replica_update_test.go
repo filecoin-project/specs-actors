@@ -219,6 +219,47 @@ func TestUnhealthySectorFailure(t *testing.T) {
 		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}}, exitcode.ErrIllegalArgument)
 }
 
+func TestTerminatedSectorFailure(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	v, dlIdx, pIdx, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+
+	// make some deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// Terminate Sector
+	vm.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.TerminateSectors, &miner.TerminateSectorsParams{
+		Terminations: []miner.TerminationDeclaration{{
+			Deadline:  dlIdx,
+			Partition: pIdx,
+			Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
+		}},
+	})
+
+	replicaUpdate := miner.ReplicaUpdate{
+		SectorID:           sectorNumber,
+		Deadline:           dlIdx,
+		Partition:          pIdx,
+		NewSealedSectorCID: tutil.MakeCID("replica", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}}, exitcode.ErrIllegalArgument)
+}
+
 func TestBadBatchSizeFailure(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
@@ -253,6 +294,24 @@ func TestBadBatchSizeFailure(t *testing.T) {
 	vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
 		builtin.MethodsMiner.ProveReplicaUpdates,
 		&miner.ProveReplicaUpdatesParams{Updates: updates}, exitcode.ErrIllegalArgument)
+}
+
+func TestNoDisputeAfterUpgrade(t *testing.T) {
+	v, _, worker, minerAddrs, dlIdx, _, _ := createUpgradedSector(t)
+
+	disputeParams := &miner.DisputeWindowedPoStParams{
+		Deadline:  dlIdx,
+		PoStIndex: 0,
+	}
+
+	vm.ApplyCode(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams, exitcode.ErrIllegalArgument)
+
+	vm.ExpectInvocation{
+		To:     minerAddrs.IDAddress,
+		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		SubInvocations: nil,
+		Exitcode: exitcode.ErrIllegalArgument,
+	}.Matches(t, v.LastInvocation())
 }
 
 // Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
