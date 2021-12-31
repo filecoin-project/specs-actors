@@ -255,14 +255,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPublishStorageDealsReturn = []byte{130}
+var lengthBufPublishStorageDealsParams = []byte{129}
 
-func (t *PublishStorageDealsReturn) MarshalCBOR(w io.Writer) error {
+func (t *PublishStorageDealsParams) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write(lengthBufPublishStorageDealsReturn); err != nil {
+	if _, err := w.Write(lengthBufPublishStorageDealsParams); err != nil {
 		return err
 	}
 
@@ -298,11 +298,11 @@ func (t *PublishStorageDealsParams) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 2 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.IDs ([]abi.DealID) (slice)
+	// t.Deals ([]market.ClientDealProposal) (slice)
 
 	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {

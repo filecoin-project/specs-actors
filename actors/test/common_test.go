@@ -175,7 +175,7 @@ func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address
 		VerifiedDeal:         verifiedDeal,
 		Client:               dealClient,
 		Provider:             dealProvider,
-		Label:                dealLabel,
+		Label:                []byte(dealLabel),
 		StartEpoch:           dealStart,
 		EndEpoch:             dealStart + dealLifetime,
 		StoragePricePerEpoch: pricePerEpoch,

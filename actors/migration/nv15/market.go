@@ -1,4 +1,4 @@
-package nv14
+package nv15
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/filecoin-project/go-state-types/abi"
-	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
+	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
 type marketMigrator struct{}
@@ -21,7 +21,7 @@ func (m marketMigrator) migratedCodeCID() cid.Cid {
 }
 
 func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	var inState market5.State
+	var inState market6.State
 	if err := store.Get(ctx, in.head, &inState); err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 }
 
 func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (cid.Cid, error) {
-	oldProposals, err := adt.AsArray(store, proposalsRoot, market5.ProposalsAmtBitwidth)
+	oldProposals, err := adt.AsArray(store, proposalsRoot, market6.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -69,7 +69,7 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 		return cid.Undef, err
 	}
 
-	var dealprop5 market5.DealProposal
+	var dealprop5 market6.DealProposal
 
 	err = oldProposals.ForEach(&dealprop5, func(key int64) error {
 		dealprop6 := market.DealProposal{
@@ -103,12 +103,12 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 // a proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
 // Precondition proposalsRoot is new proposals as computed in MapProposals
 func CreateNewPendingProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, error) {
-	proposals, err := adt.AsArray(store, proposalsRoot, market5.ProposalsAmtBitwidth)
+	proposals, err := adt.AsArray(store, proposalsRoot, market6.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	states, err := adt.AsArray(store, statesRoot, market5.StatesAmtBitwidth)
+	states, err := adt.AsArray(store, statesRoot, market6.StatesAmtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}

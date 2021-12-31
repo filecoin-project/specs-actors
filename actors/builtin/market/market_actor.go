@@ -11,6 +11,8 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -141,10 +143,11 @@ type PublishStorageDealsParams struct {
 	Deals []ClientDealProposal
 }
 
-type PublishStorageDealsReturn struct {
-	IDs        []abi.DealID
-	ValidDeals bitfield.BitField
-}
+// type PublishStorageDealsReturn struct {
+// 	IDs        []abi.DealID
+// 	ValidDeals bitfield.BitField
+// }
+type PublishStorageDealsReturn = market6.PublishStorageDealsReturn
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {

@@ -15,44 +15,44 @@ import (
 	"golang.org/x/xerrors"
 
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
-	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
-	power5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/power"
-	vm5 "github.com/filecoin-project/specs-actors/v5/support/vm"
+	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
 
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/exported"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v6/actors/migration/nv14"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 
-	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
-	"github.com/filecoin-project/specs-actors/v6/support/vm"
+	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v7/support/vm"
 
 	addr "github.com/filecoin-project/go-address"
 )
 
 func TestDealLabelMigration(t *testing.T) {
 	ctx := context.Background()
-	log := nv14.TestLogger{TB: t}
+	log := nv15.TestLogger{TB: t}
 	bs := ipld2.NewSyncBlockStoreInMemory()
-	v := vm5.NewVMWithSingletons(ctx, t, bs)
+	v := vm6.NewVMWithSingletons(ctx, t, bs)
 
-	addrs := vm5.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
+	addrs := vm6.CreateAccounts(ctx, t, v, 2, big.Mul(big.NewInt(10_000), vm.FIL), 93837778)
 	worker, client := addrs[0], addrs[1]
 
 	minerBalance := big.Mul(big.NewInt(1_000), vm.FIL)
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 	// create miner
-	params := power5.CreateMinerParams{
+	params := power6.CreateMinerParams{
 		Owner:               worker,
 		Worker:              worker,
 		WindowPoStProofType: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		Peer:                abi.PeerID("not really a peer id"),
 	}
-	ret := vm5.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
+	ret := vm6.ApplyOk(t, v, addrs[0], builtin.StoragePowerActorAddr, minerBalance, builtin.MethodsPower.CreateMiner, &params)
 
 	minerAddrs, ok := ret.(*power.CreateMinerReturn)
 	require.True(t, ok)
@@ -63,17 +63,17 @@ func TestDealLabelMigration(t *testing.T) {
 
 	// add market collateral for clients and miner
 	collateral := big.Mul(big.NewInt(64), vm.FIL)
-	vm5.ApplyOk(t, v, client, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &client)
-	vm5.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
+	vm6.ApplyOk(t, v, client, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &client)
+	vm6.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
 	// create 3 deals
 	dealIDs := []abi.DealID{}
 	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
-	deals := publishDealv5(t, v, worker, client, minerAddrs.IDAddress, "deal1-activatedcronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	deals := publishDealv6(t, v, worker, client, minerAddrs.IDAddress, "deal1-activatedcronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDealv5(t, v, worker, client, minerAddrs.IDAddress, "deal2-activateduncronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	deals = publishDealv6(t, v, worker, client, minerAddrs.IDAddress, "deal2-activateduncronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDealv5(t, v, worker, client, minerAddrs.IDAddress, "deal3-unactivated", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	deals = publishDealv6(t, v, worker, client, minerAddrs.IDAddress, "deal3-unactivated", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 
 	deal1ID := dealIDs[0]
@@ -97,11 +97,11 @@ func TestDealLabelMigration(t *testing.T) {
 		DealIDs:       dealIDs[:2],
 		Expiration:    v.GetEpoch() + 400*builtin.EpochsInDay,
 	}
-	vm5.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
+	vm6.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
 
 	// advance time to max seal duration
 	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
-	v, _ = vm5.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	v, _ = vm6.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
 	// Prove commit sector after max seal duration- deal1 and deal2 get activated here
 	v, err := v.WithEpoch(proveTime)
@@ -109,27 +109,27 @@ func TestDealLabelMigration(t *testing.T) {
 	proveCommitParams := miner.ProveCommitSectorParams{
 		SectorNumber: sectorNumber,
 	}
-	vm5.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
+	vm6.ApplyOk(t, v, worker, minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommitParams)
 
 	// In the same epoch, trigger cron to validate prove commit
-	vm5.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// advance time to when deal1 will be cronned
 	v, err = v.WithEpoch(deal1CronTime)
 	require.NoError(t, err)
 	// run market cron to cron deal1, but not deal2 yet
-	vm5.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// now do some assertions about what's in pendingproposals/proposals
 	// getting various AMTs out of things
 	adtStore := adt.WrapStore(ctx, cbor.NewCborStore(bs))
-	var market5State market5.State
-	require.NoError(t, v.GetState(builtin.StorageMarketActorAddr, &market5State))
-	oldProposals, err := adt.AsArray(adtStore, market5State.Proposals, market5.ProposalsAmtBitwidth)
+	var market6State market6.State
+	require.NoError(t, v.GetState(builtin.StorageMarketActorAddr, &market6State))
+	oldProposals, err := adt.AsArray(adtStore, market6State.Proposals, market6.ProposalsAmtBitwidth)
 	require.NoError(t, err)
-	oldStates, err := adt.AsArray(adtStore, market5State.States, market5.StatesAmtBitwidth)
+	oldStates, err := adt.AsArray(adtStore, market6State.States, market6.StatesAmtBitwidth)
 	require.NoError(t, err)
-	oldPendingProposals, err := adt.AsSet(adtStore, market5State.PendingProposals, builtin.DefaultHamtBitwidth)
+	oldPendingProposals, err := adt.AsSet(adtStore, market6State.PendingProposals, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 	// deal1 will just be in states and proposals and not pendingproposals
 	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal1ID, true, true, false, false)
@@ -143,7 +143,7 @@ func TestDealLabelMigration(t *testing.T) {
 	require.True(t, found)
 
 	startRoot := v.StateRoot()
-	nextRoot, err := nv14.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv14.Config{MaxWorkers: 1}, log, nv14.NewMemMigrationCache())
+	nextRoot, err := nv15.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
 	require.NoError(t, err)
 
 	lookup := map[cid.Cid]rt.VMActor{}
@@ -151,13 +151,13 @@ func TestDealLabelMigration(t *testing.T) {
 		lookup[ba.Code()] = ba
 	}
 
-	v6, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
+	v7, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
 
 	// now do the assertions again about what's in pendingproposals/proposals
 	// getting various AMTs out of things
 	var marketState market.State
-	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &marketState))
+	require.NoError(t, v7.GetState(builtin.StorageMarketActorAddr, &marketState))
 	proposals, err := adt.AsArray(adtStore, marketState.Proposals, market.ProposalsAmtBitwidth)
 	require.NoError(t, err)
 	states, err := adt.AsArray(adtStore, marketState.States, market.StatesAmtBitwidth)
@@ -176,16 +176,16 @@ func TestDealLabelMigration(t *testing.T) {
 	require.NoError(t, checkSameLabel(oldProposals, proposals, deal2ID))
 	require.NoError(t, checkSameLabel(oldProposals, proposals, deal3ID))
 
-	var market6State market.State
-	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &market6State))
-	market.CheckStateInvariants(&market6State, v6.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
+	var market7State market.State
+	require.NoError(t, v7.GetState(builtin.StorageMarketActorAddr, &market7State))
+	market.CheckStateInvariants(&market7State, v7.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
 
 }
 
-func publishDealv5(t *testing.T, v *vm5.VM, provider, dealClient, minerID addr.Address, dealLabel string,
+func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID addr.Address, dealLabel string,
 	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
-) *market5.PublishStorageDealsReturn {
-	deal := market5.DealProposal{
+) *market6.PublishStorageDealsReturn {
+	deal := market6.DealProposal{
 		PieceCID:             tutil.MakeCID(dealLabel, &market.PieceCIDPrefix),
 		PieceSize:            pieceSize,
 		VerifiedDeal:         verifiedDeal,
@@ -199,32 +199,32 @@ func publishDealv5(t *testing.T, v *vm5.VM, provider, dealClient, minerID addr.A
 		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
 	}
 
-	publishDealParams := market5.PublishStorageDealsParams{
-		Deals: []market5.ClientDealProposal{{
+	publishDealParams := market6.PublishStorageDealsParams{
+		Deals: []market6.ClientDealProposal{{
 			Proposal: deal,
 			ClientSignature: crypto.Signature{
 				Type: crypto.SigTypeBLS,
 			},
 		}},
 	}
-	result := vm5.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	result := vm6.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
 	require.Equal(t, exitcode.Ok, result.Code)
 
-	expectedPublishSubinvocations := []vm5.ExpectInvocation{
-		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm5.ExpectInvocation{}},
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm5.ExpectInvocation{}},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm5.ExpectInvocation{}},
+	expectedPublishSubinvocations := []vm6.ExpectInvocation{
+		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm6.ExpectInvocation{}},
+		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm6.ExpectInvocation{}},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm6.ExpectInvocation{}},
 	}
 
 	if verifiedDeal {
-		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm5.ExpectInvocation{
+		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm6.ExpectInvocation{
 			To:             builtin.VerifiedRegistryActorAddr,
 			Method:         builtin.MethodsVerifiedRegistry.UseBytes,
-			SubInvocations: []vm5.ExpectInvocation{},
+			SubInvocations: []vm6.ExpectInvocation{},
 		})
 	}
 
-	vm5.ExpectInvocation{
+	vm6.ExpectInvocation{
 		To:             builtin.StorageMarketActorAddr,
 		Method:         builtin.MethodsMarket.PublishStorageDeals,
 		SubInvocations: expectedPublishSubinvocations,
@@ -236,7 +236,7 @@ func publishDealv5(t *testing.T, v *vm5.VM, provider, dealClient, minerID addr.A
 func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
 	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool, isv6 bool) {
 	var dealprop6 market.DealProposal
-	var dealprop5 market5.DealProposal
+	var dealprop5 market6.DealProposal
 	var found bool
 	var err error
 	if isv6 {
@@ -262,7 +262,7 @@ func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *ad
 }
 
 func checkSameLabel(v5Proposals *adt.Array, v6Proposals *adt.Array, dealID abi.DealID) error {
-	var dealprop5 market5.DealProposal
+	var dealprop5 market6.DealProposal
 	var dealprop6 market.DealProposal
 	found, err := v5Proposals.Get(uint64(dealID), &dealprop5)
 	if !found || err != nil {
