@@ -972,7 +972,7 @@ func (st *State) CheckBalanceInvariants(balance abi.TokenAmount) error {
 		return xerrors.Errorf("initial pledge is negative: %v", st.InitialPledge)
 	}
 	if st.FeeDebt.LessThan(big.Zero()) {
-		return xerrors.Errorf("fee debt is negative: %v", st.InitialPledge)
+		return xerrors.Errorf("fee debt is negative: %v", st.FeeDebt)
 	}
 	minBalance := big.Sum(st.PreCommitDeposits, st.LockedFunds, st.InitialPledge)
 	if balance.LessThan(minBalance) {
