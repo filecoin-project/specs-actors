@@ -42,6 +42,8 @@ const defaultGasLimit = 5_000_000_000
 // https://github.com/filecoin-project/test-vectors/blob/master/schema/schema_randomness.go#L76
 const RandString = "i_am_random_____i_am_random_____"
 
+const InvalidProof = "i_am_invalid_____i_am_invalid_____"
+
 // Context for an individual message invocation, including inter-actor sends.
 type invocationContext struct {
 	rt               *VM
@@ -579,7 +581,12 @@ func (s fakeSyscalls) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) e
 	return nil
 }
 
-func (s fakeSyscalls) VerifyPoSt(_ proof.WindowPoStVerifyInfo) error {
+func (s fakeSyscalls) VerifyPoSt(info proof.WindowPoStVerifyInfo) error {
+	for _, postProof := range info.Proofs {
+		if bytes.Equal(postProof.ProofBytes, []byte(InvalidProof)) {
+			return xerrors.New("invalid post")
+		}
+	}
 	return nil
 }
 

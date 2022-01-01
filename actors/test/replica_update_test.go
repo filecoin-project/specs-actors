@@ -28,12 +28,12 @@ import (
 
 // Tests that an active CC sector can be correctly upgraded, and the expected state changes occur
 func TestSimplePathSuccess(t *testing.T) {
-	createUpgradedSector(t)
+	createMinerAndUpgradeASector(t)
 }
 
 // Tests a successful upgrade, followed by the sector going faulty and recovering
 func TestFullPathSuccess(t *testing.T) {
-	v, sectorInfo, worker, minerAddrs, deadlineIndex, partitionIndex, ss := createUpgradedSector(t)
+	v, sectorInfo, worker, minerAddrs, deadlineIndex, partitionIndex, ss := createMinerAndUpgradeASector(t)
 	sectorNumber := sectorInfo.SectorNumber
 
 	// submit post successfully
@@ -245,6 +245,7 @@ func TestTerminatedSectorFailure(t *testing.T) {
 			Sectors:   bitfield.NewFromSet([]uint64{uint64(sectorNumber)}),
 		}},
 	})
+	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.RobustAddress, dlIdx, pIdx, sectorNumber))
 
 	replicaUpdate := miner.ReplicaUpdate{
 		SectorID:           sectorNumber,
@@ -296,8 +297,8 @@ func TestBadBatchSizeFailure(t *testing.T) {
 		&miner.ProveReplicaUpdatesParams{Updates: updates}, exitcode.ErrIllegalArgument)
 }
 
-func TestNoDisputeAfterUpgrade(t *testing.T) {
-	v, _, worker, minerAddrs, dlIdx, _, _ := createUpgradedSector(t)
+func TestNoDisputeuteAfterUpgrade(t *testing.T) {
+	v, _, worker, minerAddrs, dlIdx, _, _ := createMinerAndUpgradeASector(t)
 
 	disputeParams := &miner.DisputeWindowedPoStParams{
 		Deadline:  dlIdx,
@@ -314,9 +315,102 @@ func TestNoDisputeAfterUpgrade(t *testing.T) {
 	}.Matches(t, v.LastInvocation())
 }
 
+func TestUpgradeBadPostDispute(t *testing.T) {
+	v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createMinerAndUpgradeASector(t)
+
+	deadlineInfo, _, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorInfo.SectorNumber)
+
+	vm.SubmitInvalidPoSt(t, v, minerAddrs.IDAddress, worker, deadlineInfo, pIdx)
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStChallengeWindow*2)
+
+	disputeParams := &miner.DisputeWindowedPoStParams{
+		Deadline:  dlIdx,
+		PoStIndex: 0,
+	}
+
+	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams)
+
+	vm.ExpectInvocation{
+		To:     minerAddrs.IDAddress,
+		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		SubInvocations: nil,
+		Exitcode: 0,
+	}.Matches(t, v.LastInvocation())
+}
+
+func TestBadPostUpgradeDispute(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	_, err := sealProof.SectorSize()
+	require.NoError(t, err)
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	v, dlIdx, pIdx, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+
+	deadlineInfo, _, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber)
+
+	vm.SubmitInvalidPoSt(t, v, minerAddrs.IDAddress, worker, deadlineInfo, pIdx)
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStChallengeWindow*2)
+
+	// make some unverified deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// replicaUpdate the sector
+
+	replicaUpdate := miner.ReplicaUpdate{
+		SectorID:           sectorNumber,
+		Deadline:           dlIdx,
+		Partition:          pIdx,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	ret := vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
+
+	updatedSectors, ok := ret.(*bitfield.BitField)
+	require.True(t, ok)
+	count, err := updatedSectors.Count()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), count)
+
+	isSet, err := updatedSectors.IsSet(uint64(sectorNumber))
+	require.NoError(t, err)
+	require.True(t, isSet)
+
+	disputeParams := &miner.DisputeWindowedPoStParams{
+		Deadline:  dlIdx,
+		PoStIndex: 0,
+	}
+
+	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams)
+
+	vm.ExpectInvocation{
+		To:     minerAddrs.IDAddress,
+		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		SubInvocations: nil,
+		Exitcode: 0,
+	}.Matches(t, v.LastInvocation())
+}
+
 // Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
 func TestTerminateAfterUpgrade(t *testing.T) {
-	v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createUpgradedSector(t)
+	v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createMinerAndUpgradeASector(t)
 	sectorNumber := sectorInfo.SectorNumber
 
 	// Terminate Sector
@@ -348,7 +442,7 @@ func TestTerminateAfterUpgrade(t *testing.T) {
 
 // Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
 func TestExtendAfterUpdgrade(t *testing.T) {
-    v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createUpgradedSector(t)
+    v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createMinerAndUpgradeASector(t)
 
 	extensionParams := &miner.ExtendSectorExpirationParams{
 		Extensions: []miner.ExpirationExtension{{
@@ -446,7 +540,7 @@ func createSector(t *testing.T, v *vm.VM, workerAddress address.Address, minerAd
 }
 
 // This function contains the simple success path
-func createUpgradedSector(t *testing.T) (*vm.VM, *miner.SectorOnChainInfo, address.Address, *power.CreateMinerReturn, uint64, uint64, uint64) {
+func createMinerAndUpgradeASector(t *testing.T) (*vm.VM, *miner.SectorOnChainInfo, address.Address, *power.CreateMinerReturn, uint64, uint64, uint64) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
 	v := vm.NewVMWithSingletons(ctx, t, blkStore)
