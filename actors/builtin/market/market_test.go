@@ -2415,7 +2415,7 @@ func TestMarketActorDeals(t *testing.T) {
 		rt.Verify()
 	}
 
-	dealProposal.Label = "foo"
+	dealProposal.Label = []byte("foo")
 
 	// Same deal with a different label should work
 	{
@@ -2443,7 +2443,7 @@ func TestMaxDealLabelSize(t *testing.T) {
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
-	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize))
+	dealProposal.Label = make([]byte, market.DealMaxLabelSize)
 	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
 
 	// Label at max size should work.
@@ -2452,7 +2452,7 @@ func TestMaxDealLabelSize(t *testing.T) {
 		actor.publishDeals(rt, minerAddrs, publishDealReq{deal: dealProposal})
 	}
 
-	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize+1))
+	dealProposal.Label = make([]byte, market.DealMaxLabelSize+1)
 
 	// Label greater than max size should fail.
 	{
@@ -3266,7 +3266,7 @@ func (h *marketActorTestHarness) generateAndPublishDealForPiece(rt *mock.Runtime
 	clientCollateral := big.NewInt(10)
 	providerCollateral := big.NewInt(10)
 
-	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: "label", StartEpoch: startEpoch,
+	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: []byte("label"), StartEpoch: startEpoch,
 		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
 
 	// add funds
@@ -3318,7 +3318,7 @@ func generateDealProposalWithCollateral(client, provider address.Address, provid
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
 
-	return market.DealProposal{PieceCID: pieceCid, PieceSize: pieceSize, Client: client, Provider: provider, Label: "label", StartEpoch: startEpoch,
+	return market.DealProposal{PieceCID: pieceCid, PieceSize: pieceSize, Client: client, Provider: provider, Label: []byte("label"), StartEpoch: startEpoch,
 		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
 }
 
