@@ -2,6 +2,8 @@ package verifreg
 
 import (
 	"bytes"
+
+	"github.com/filecoin-project/go-address"
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/crypto"
@@ -19,7 +21,7 @@ import (
 type DataCap = abi.StoragePower
 
 type RmDcProposalID struct {
-	proposalID  int64
+	proposalID uint64
 }
 
 type State struct {
@@ -57,24 +59,20 @@ func ConstructState(store adt.Store, rootKeyAddress addr.Address) (*State, error
 
 // A verifier who wants to send/agree to a RemoveDataCapRequest should sign a RemoveDataCapProposal and send the signed proposal to the root key holder.
 type RemoveDataCapProposal struct {
-	// Verifier is the verifier address that signs the proposal
-	// The address can be address.SECP256K1 or address.BLS
-	Verifier addr.Address
 	// VerifiedClient is the client address to remove the DataCap from
 	// The address must be an ID address
 	VerifiedClient addr.Address
 	// DataCapAmount is the amount of DataCap to be removed from the VerifiedClient address
-	DataCapAmount     DataCap
+	DataCapAmount DataCap
 	// RemovalProposalID is the counter of the proposal sent by the Verifier for the VerifiedClient
 	RemovalProposalID RmDcProposalID
 }
-
 
 // A verifier who wants to submit a request should send their RemoveDataCapRequest to the RKH.
 type RemoveDataCapRequest struct {
 	// Verifier is the verifier address used for VerifierSignature.
 	// The address can be address.SECP256K1 or address.BLS
-	Verifier           addr.Address
+	Verifier addr.Address
 	// VerifierSignature is the Verifier's signature over a RemoveDataCapProposal
 	VerifierSignature crypto.Signature
 }
@@ -100,20 +98,30 @@ func isVerifier(rt runtime.Runtime, st State, address addr.Address) (bool, exitc
 ////////////////////////////////////////////////////////////////////////////////
 // State utility functions
 ////////////////////////////////////////////////////////////////////////////////
-func removeDataCapRequestIsValid(rt runtime.Runtime, request RemoveDataCapRequest, proposal RemoveDataCapProposal, id RmDcProposalID) (bool, exitcode.ExitCode, error) {
-	// get the expected RemoveDataCapProposal
-	proposal.Verifier = request.Verifier
-	proposal.RemovalProposalID = id
+func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCapRequest, id RmDcProposalID, toRemove DataCap, clientRemoved address.Address) {
+	proposal := RemoveDataCapProposal{
+		RemovalProposalID: id,
+		DataCapAmount:     toRemove,
+		VerifiedClient:    clientRemoved,
+	}
 	buf := bytes.Buffer{}
-	err := proposal.MarshalCBOR(&buf)
-
-	if err != nil {
-		return false, exitcode.ErrSerialization, xerrors.Errorf("remove datacap request signature validation failed to marshal request: %w", err)
+	if err := proposal.MarshalCBOR(&buf); err != nil {
+		rt.Abortf(exitcode.ErrSerialization, "remove datacap request signature validation failed to marshal request: %s", err)
 	}
 
-	err = rt.VerifySignature(request.VerifierSignature, request.Verifier, buf.Bytes())
-	if err != nil {
-		return false, exitcode.SysErrorIllegalArgument, xerrors.Errorf("remove datacap request signature is invalid: %w", err)
+	if err := rt.VerifySignature(request.VerifierSignature, request.Verifier, buf.Bytes()); err != nil {
+		rt.Abortf(exitcode.SysErrorIllegalArgument, "remove datacap request signature is invalid: %s", err)
 	}
-	return true, 0, nil
+}
+
+func useProposalID(rt runtime.Runtime, proposalIDs *adt.Map, verifier, client address.Address) RmDcProposalID {
+	var id RmDcProposalID
+	idExists, err := proposalIDs.Get(abi.NewAddrPairKey(verifier, client), &id)
+	if !idExists { //initialize with 0
+		id = RmDcProposalID{proposalID: 0}
+	}
+	next := RmDcProposalID{proposalID: id.proposalID + 1}
+	err = proposalIDs.Put(abi.NewAddrPairKey(verifier, client), &next)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update remove datacap proposal id for verifier,client %s,%s", verifier, client)
+	return id
 }

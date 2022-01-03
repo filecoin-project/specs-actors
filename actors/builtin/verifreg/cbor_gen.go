@@ -128,11 +128,6 @@ func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Verifier (address.Address) (struct)
-	if err := t.Verifier.MarshalCBOR(w); err != nil {
-		return err
-	}
-
 	// t.VerifiedClient (address.Address) (struct)
 	if err := t.VerifiedClient.MarshalCBOR(w); err != nil {
 		return err
@@ -168,15 +163,6 @@ func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
-	// t.Verifier (address.Address) (struct)
-
-	{
-
-		if err := t.Verifier.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Verifier: %w", err)
-		}
-
-	}
 	// t.VerifiedClient (address.Address) (struct)
 
 	{
