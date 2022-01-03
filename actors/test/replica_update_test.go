@@ -488,6 +488,7 @@ func TestWrongDeadlineIndexFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+	oldSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
 
 	// make some unverified deals
 	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
@@ -512,7 +513,7 @@ func TestWrongDeadlineIndexFailure(t *testing.T) {
 	require.False(t, ok)
 
 	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 0, len(newSectorInfo.DealIDs))
+	require.Equal(t, *oldSectorInfo, *newSectorInfo)
 	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
 }
 
@@ -535,6 +536,7 @@ func TestWrongPartitionIndexFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+	oldSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
 
 	// make some unverified deals
 	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
@@ -559,11 +561,10 @@ func TestWrongPartitionIndexFailure(t *testing.T) {
 	require.False(t, ok)
 
 	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
-	require.Equal(t, 0, len(newSectorInfo.DealIDs))
+	require.Equal(t, *oldSectorInfo, *newSectorInfo)
 	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
 }
 
-// This function contains the simple success path
 func TestDealIncludedInMultipleSectors(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
@@ -679,6 +680,10 @@ func TestDealIncludedInMultipleSectors(t *testing.T) {
 	require.Equal(t, 1, len(newSectorInfo.DealIDs))
 	require.Equal(t, dealIDs[0], newSectorInfo.DealIDs[0])
 	require.Equal(t, replicaUpdate1.NewSealedSectorCID, newSectorInfo.SealedCID)
+
+	newSectorInfo2 := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber2)
+	require.Equal(t, 0, len(newSectorInfo2.DealIDs))
+	require.NotEqual(t, replicaUpdate2.NewSealedSectorCID, newSectorInfo2.SealedCID)
 }
 
 func createDeals(t *testing.T, numberOfDeals int, v *vm.VM, clientAddress address.Address, workerAddress address.Address, minerAddress address.Address, sealProof abi.RegisteredSealProof) []abi.DealID {
@@ -729,7 +734,7 @@ func createSector(t *testing.T, v *vm.VM, workerAddress address.Address, minerAd
 		SectorNumber: sectorNumber,
 	}
 
-	_ = vm.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommit)
+	vm.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommit)
 
 	// In the same epoch, trigger cron to validate prove commit
 	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
