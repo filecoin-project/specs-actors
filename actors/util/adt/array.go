@@ -3,7 +3,7 @@ package adt
 import (
 	"bytes"
 
-	amt "github.com/filecoin-project/go-amt-ipld/v3"
+	amt "github.com/filecoin-project/go-amt-ipld/v4"
 
 	"github.com/filecoin-project/go-state-types/cbor"
 	cid "github.com/ipfs/go-cid"
