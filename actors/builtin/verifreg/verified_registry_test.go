@@ -1,8 +1,6 @@
 package verifreg_test
 
 import (
-	"bytes"
-	"github.com/filecoin-project/go-state-types/crypto"
 	"strings"
 	"testing"
 
@@ -751,117 +749,113 @@ func TestRestoreBytes(t *testing.T) {
 	})
 }
 
-func TestRemoveVerifiedClientDataCap(t *testing.T) {
-	rootKey := tutil.NewIDAddr(t, 101)
-	allowanceSmall := verifreg.MinVerifiedDealSize
-	allowanceLarge := big.Mul(allowanceSmall, big.NewInt(2))
-	allowanceTotal := big.Add(allowanceLarge, allowanceSmall)
-	allowanceToRemove := allowanceSmall
+//func TestRemoveVerifiedClientDataCap(t *testing.T) {
+// rootKey := tutil.NewIDAddr(t, 101)
+// allowanceSmall := verifreg.MinVerifiedDealSize
+// allowanceLarge := big.Mul(allowanceSmall, big.NewInt(2))
+// allowanceTotal := big.Add(allowanceLarge, allowanceSmall)
+// allowanceToRemove := allowanceSmall
 
-	clientAddr := tutil.NewIDAddr(t, 201)
-	clientAddr2 := tutil.NewIDAddr(t, 202)
-	clientAllowance := allowanceLarge
+// clientAddr := tutil.NewIDAddr(t, 201)
+// clientAddr2 := tutil.NewIDAddr(t, 202)
+// clientAllowance := allowanceLarge
 
-	verifierAddr := tutil.NewIDAddr(t, 301)
-	verifierAddr2 := tutil.NewIDAddr(t, 302)
+// verifierAddr := tutil.NewIDAddr(t, 301)
+// verifierAddr2 := tutil.NewIDAddr(t, 302)
 
+// t.Run("successfully remove partial datacap from a verified client", func(t *testing.T) {
+// 	rt, ac := basicVerifRegSetup(t, rootKey)
 
-	t.Run("successfully remove partial datacap from a verified client", func(t *testing.T) {
-		rt, ac := basicVerifRegSetup(t, rootKey)
+// 	//// add verifier 1
+// 	//verifier := mkVerifierParams(verifierAddr, allowanceSmall)
+// 	//ac.addNewVerifier(rt, verifier.Address, verifier.Allowance)
+// 	//
+// 	//// add verifier 2
+// 	//verifier2 := mkVerifierParams(verifierAddr2, allowanceLarge)
+// 	//ac.addNewVerifier(rt, verifier2.Address, verifier2.Allowance)
+// 	//
+// 	//// add client 1
+// 	//c1 := mkClientParams(clientAddr, clientAllowance)
+// 	//ac.addVerifiedClient(rt, verifier2.Address, c1.Address, c1.Allowance, allowanceTotal)
 
-		//// add verifier 1
-		//verifier := mkVerifierParams(verifierAddr, allowanceSmall)
-		//ac.addNewVerifier(rt, verifier.Address, verifier.Allowance)
-		//
-		//// add verifier 2
-		//verifier2 := mkVerifierParams(verifierAddr2, allowanceLarge)
-		//ac.addNewVerifier(rt, verifier2.Address, verifier2.Allowance)
-		//
-		//// add client 1
-		//c1 := mkClientParams(clientAddr, clientAllowance)
-		//ac.addVerifiedClient(rt, verifier2.Address, c1.Address, c1.Allowance, allowanceTotal)
+// 	// ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientAddr, allowanceTotal, clientAllowance)
+// 	// ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr2, clientAddr2, allowanceTotal, clientAllowance)
 
-		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr, clientAddr, allowanceTotal, clientAllowance)
-		ac.generateAndAddVerifierAndVerifiedClient(rt, verifierAddr2, clientAddr2, allowanceTotal, clientAllowance)
+// 	// // create datacap removal proposals and request
+// 	// verifier1Proposal := createRemoveDataCapProposal(verifierAddr, clientAddr, allowanceToRemove)
+// 	// buf := bytes.Buffer{}
+// 	// require.NoError(t,verifier1Proposal.MarshalCBOR(&buf), "failed to marshal remove datacap proposal")
+// 	// sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("idc")}
+// 	// verifier2Proposal := createRemoveDataCapProposal(verifierAddr, clientAddr, allowanceToRemove)
+// 	// rt.ExpectVerifySignature(sig, verifier2Proposal.Verifier, buf.Bytes(), nil)
+// 	// require.NoError(t,verifier1Proposal.MarshalCBOR(&buf), "failed to marshal remove datacap proposal")
+// 	// sig = crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("idc")}
+// 	// rt.ExpectVerifySignature(sig, verifier2Proposal.Verifier, buf.Bytes(), nil)
+// 	// verifier1Request := verifreg.RemoveDataCapRequest{Request: verifier1Proposal, VerifierSignature: sig}
+// 	// verifier2Request := verifreg.RemoveDataCapRequest{Request: verifier2Proposal, VerifierSignature: sig}
 
-		// create datacap removal proposals and request
-		verifier1Proposal := createRemoveDataCapProposal(verifierAddr, clientAddr, allowanceToRemove)
-		buf := bytes.Buffer{}
-		require.NoError(t,verifier1Proposal.MarshalCBOR(&buf), "failed to marshal remove datacap proposal")
-		sig := crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("idc")}
-		verifier2Proposal := createRemoveDataCapProposal(verifierAddr, clientAddr, allowanceToRemove)
-		rt.ExpectVerifySignature(sig, verifier2Proposal.Verifier, buf.Bytes(), nil)
-		require.NoError(t,verifier1Proposal.MarshalCBOR(&buf), "failed to marshal remove datacap proposal")
-		sig = crypto.Signature{Type: crypto.SigTypeBLS, Data: []byte("idc")}
-		rt.ExpectVerifySignature(sig, verifier2Proposal.Verifier, buf.Bytes(), nil)
-		verifier1Request := verifreg.RemoveDataCapRequest{Request: verifier1Proposal, VerifierSignature: sig}
-		verifier2Request := verifreg.RemoveDataCapRequest{Request: verifier2Proposal, VerifierSignature: sig}
+// 	// // make call
 
-		// make call
+// })
 
-	})
+// 	t.Run("successfully remove exact remaining datacap from a verified client and remove verified client status", func(t *testing.T) {
 
-	t.Run("successfully remove exact remaining datacap from a verified client and remove verified client status", func(t *testing.T) {
+// 	})
 
-	})
+// 	t.Run("successfully remove datacap that exceeds verified client's balance", func(t *testing.T) {
 
-	t.Run("successfully remove datacap that exceeds verified client's balance", func(t *testing.T) {
+// 	})
 
-	})
-	
-	t.Run("fails when client addresses do not match", func(t *testing.T) {
-		
-	})
+// 	t.Run("fails when client addresses do not match", func(t *testing.T) {
 
-	t.Run("fails when client is not a verified client", func(t *testing.T) {
-		
-	})
-	
-	t.Run("fails when requested datacap removal amount do not match", func(t *testing.T) {
-		
-	})
+// 	})
 
-	t.Run("fails when caller is not the root key", func(t *testing.T) {
+// 	t.Run("fails when client is not a verified client", func(t *testing.T) {
 
-	})
+// 	})
 
-	t.Run("fails when one or more verifiers does not exist", func(t *testing.T) {
+// 	t.Run("fails when requested datacap removal amount do not match", func(t *testing.T) {
 
-	})
+// 	})
 
-	t.Run("fails when first verifier request signature is invalid", func(t *testing.T) {
+// 	t.Run("fails when caller is not the root key", func(t *testing.T) {
 
-	})
+// 	})
 
-	t.Run("fails when the first verifier request signature is valid but the second is invalid", func(t *testing.T) {
+// 	t.Run("fails when one or more verifiers does not exist", func(t *testing.T) {
 
-	})
+// 	})
 
-}
+// 	t.Run("fails when first verifier request signature is invalid", func(t *testing.T) {
 
+// 	})
 
+// 	t.Run("fails when the first verifier request signature is valid but the second is invalid", func(t *testing.T) {
 
-func createRemoveDataCapProposal(verifier address.Address, client address.Address, datacap verifreg.DataCap) verifreg.RemoveDataCapProposal {
-	return verifreg.RemoveDataCapProposal{
-		Verifier: verifier,
-		VerifiedClient: client,
-		DataCapAmount: datacap,
-	}
-}
+// 	})
 
-func (h *verifRegActorTestHarness) removeDataCapRequest(rt *mock.Runtime, rootkey address.Address, client address.Address, datacap verifreg.DataCap, request1 verifreg.RemoveDataCapRequest, request2 verifreg.RemoveDataCapRequest) {
-	rt.SetCaller(rootkey, builtin.VerifiedRegistryActorCodeID)
-	rt.ExpectValidateCallerAddr(h.rootkey)
+// }
 
-	params := &verifreg.RemoveDataCapParams{
-		VerifiedClientToRemove: client,
-		DataCapAmountToRemove:  datacap,
-		VerifierRequest1:       request1,
-		VerifierRequest2:       request2,
-	}
-	rt.Call(h.rootkey, params)
-	rt.Verify()
-}
+// func createRemoveDataCapProposal(client address.Address, datacap verifreg.DataCap) verifreg.RemoveDataCapProposal {
+// 	return verifreg.RemoveDataCapProposal{
+// 		VerifiedClient: client,
+// 		DataCapAmount:  datacap,
+// 	}
+// }
+
+// func (h *verifRegActorTestHarness) removeDataCapRequest(rt *mock.Runtime, rootkey address.Address, client address.Address, datacap verifreg.DataCap, request1 verifreg.RemoveDataCapRequest, request2 verifreg.RemoveDataCapRequest) {
+// 	rt.SetCaller(rootkey, builtin.VerifiedRegistryActorCodeID)
+// 	rt.ExpectValidateCallerAddr(h.rootkey)
+
+// 	params := &verifreg.RemoveDataCapParams{
+// 		VerifiedClientToRemove: client,
+// 		DataCapAmountToRemove:  datacap,
+// 		VerifierRequest1:       request1,
+// 		VerifierRequest2:       request2,
+// 	}
+// 	rt.Call(h.rootkey, params)
+// 	rt.Verify()
+// }
 
 type verifRegActorTestHarness struct {
 	rootkey address.Address

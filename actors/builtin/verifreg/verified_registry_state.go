@@ -117,6 +117,7 @@ func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCa
 func useProposalID(rt runtime.Runtime, proposalIDs *adt.Map, verifier, client address.Address) RmDcProposalID {
 	var id RmDcProposalID
 	idExists, err := proposalIDs.Get(abi.NewAddrPairKey(verifier, client), &id)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed getting proposal id for verifier,client %s,%s", verifier, client)
 	if !idExists { //initialize with 0
 		id = RmDcProposalID{proposalID: 0}
 	}
