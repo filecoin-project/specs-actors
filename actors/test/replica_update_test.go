@@ -469,6 +469,218 @@ func TestExtendAfterUpdgrade(t *testing.T) {
 	assert.Equal(t, abi.ChainEpoch(miner.MaxSectorExpirationExtension - 1), infoFinal.Expiration-infoFinal.Activation)
 }
 
+func TestWrongDeadlineIndexFailure(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+
+	// make some unverified deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// replicaUpdate the sector
+
+	replicaUpdate := miner.ReplicaUpdate{
+		SectorID:           sectorNumber,
+		Deadline:           deadlineIndex + 1,
+		Partition:          partitionIndex,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	ret := vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}},
+		exitcode.ErrIllegalArgument)
+
+	_, ok := ret.(*bitfield.BitField)
+	require.False(t, ok)
+
+	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
+	require.Equal(t, 0, len(newSectorInfo.DealIDs))
+	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
+}
+
+func TestWrongPartitionIndexFailure(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	v, deadlineIndex, partitionIndex, sectorNumber := createSector(t, v, worker, minerAddrs.IDAddress, 100, sealProof)
+
+	// make some unverified deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// replicaUpdate the sector
+
+	replicaUpdate := miner.ReplicaUpdate{
+		SectorID:           sectorNumber,
+		Deadline:           deadlineIndex,
+		Partition:          partitionIndex + 1,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	ret := vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}},
+		exitcode.ErrNotFound)
+
+	_, ok := ret.(*bitfield.BitField)
+	require.False(t, ok)
+
+	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber)
+	require.Equal(t, 0, len(newSectorInfo.DealIDs))
+	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
+}
+
+// This function contains the simple success path
+func TestDealIncludedInMultipleSectors(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+
+	// create miner
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	_, err := sealProof.SectorSize()
+	require.NoError(t, err)
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	// advance vm so we can have seal randomness epoch in the past
+	v, err = v.WithEpoch(abi.ChainEpoch(200))
+	require.NoError(t, err)
+
+	//
+	// preCommit two sectors
+	//
+	precommit := preCommitSectors(t, v, 2, miner.PreCommitSectorBatchMaxSize, worker, minerAddrs.IDAddress, sealProof, 100, true, v.GetEpoch()+miner.MaxSectorExpirationExtension)
+
+	assert.Equal(t, len(precommit), 2)
+	balances := vm.GetMinerBalances(t, v, minerAddrs.IDAddress)
+	assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
+
+	// advance time to max seal duration
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+
+	// proveCommit the sector
+	sectorNumber1 := precommit[0].Info.SectorNumber
+	sectorNumber2 := precommit[1].Info.SectorNumber
+
+	v, err = v.WithEpoch(proveTime)
+	require.NoError(t, err)
+
+	proveCommit1 := miner.ProveCommitSectorParams{
+		SectorNumber: sectorNumber1,
+	}
+	proveCommit2 := miner.ProveCommitSectorParams{
+		SectorNumber: sectorNumber2,
+	}
+
+	_ = vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommit1)
+	_ = vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ProveCommitSector, &proveCommit2)
+
+	// In the same epoch, trigger cron to validate prove commit
+	vm.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	// advance to proving period and submit post
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, sectorNumber1)
+	dlIdx := dlInfo.Index
+
+	// sector shouldn't be active until PoSt
+	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, sectorNumber1))
+	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, sectorNumber2))
+	vm.SubmitPoSt(t, v, minerAddrs.IDAddress, worker, dlInfo, pIdx)
+
+	// move into the next deadline so that the created sector is mutable
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStChallengeWindow)
+	v = vm.AdvanceOneEpochWithCron(t, v)
+
+	// hooray, sector is now active
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, sectorNumber1))
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, sectorNumber2))
+
+	// make some unverified deals
+	dealIDs := createDeals(t, 1, v, worker, worker, minerAddrs.IDAddress, sealProof)
+
+	// replicaUpdate the sector
+
+	replicaUpdate1 := miner.ReplicaUpdate{
+		SectorID:           sectorNumber1,
+		Deadline:           dlIdx,
+		Partition:          pIdx,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	replicaUpdate2 := miner.ReplicaUpdate{
+		SectorID:           sectorNumber2,
+		Deadline:           dlIdx,
+		Partition:          pIdx,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs,
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	ret := vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate1, replicaUpdate2}},
+		0)
+
+	updatedSectors, ok := ret.(*bitfield.BitField)
+	require.True(t, ok)
+	count, err := updatedSectors.Count()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), count)
+
+	isSet, err := updatedSectors.IsSet(uint64(sectorNumber1))
+	require.NoError(t, err)
+	require.True(t, isSet)
+	isSet, err = updatedSectors.IsSet(uint64(sectorNumber2))
+	require.NoError(t, err)
+	require.False(t, isSet)
+
+	newSectorInfo := vm.SectorInfo(t, v, minerAddrs.RobustAddress, sectorNumber1)
+	require.Equal(t, 1, len(newSectorInfo.DealIDs))
+	require.Equal(t, dealIDs[0], newSectorInfo.DealIDs[0])
+	require.Equal(t, replicaUpdate1.NewSealedSectorCID, newSectorInfo.SealedCID)
+}
+
 func createDeals(t *testing.T, numberOfDeals int, v *vm.VM, clientAddress address.Address, workerAddress address.Address, minerAddress address.Address, sealProof abi.RegisteredSealProof) []abi.DealID {
 	// add market collateral for client and miner
 	collateral := big.Mul(big.NewInt(int64(3*numberOfDeals)), vm.FIL)
