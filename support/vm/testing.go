@@ -394,6 +394,24 @@ func SubmitPoSt(t *testing.T, v *VM, minerAddress, workerAddress address.Address
 	ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
 
+func SubmitInvalidPoSt(t *testing.T, v *VM, minerAddress, workerAddress address.Address, dlInfo *dline.Info, partitionIndex uint64) {
+	submitParams := miner.SubmitWindowedPoStParams{
+		Deadline: dlInfo.Index,
+		Partitions: []miner.PoStPartition{{
+			Index:   partitionIndex,
+			Skipped: bitfield.New(),
+		}},
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			ProofBytes: []byte(InvalidProof),
+		}},
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte(RandString),
+	}
+
+	ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+}
+
 // find the proving deadline and partition index of a miner's sector
 func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (uint64, uint64) {
 	var minerState miner.State
