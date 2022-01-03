@@ -51,9 +51,10 @@ func ConstructState(store adt.Store, rootKeyAddress addr.Address) (*State, error
 	}
 
 	return &State{
-		RootKey:         rootKeyAddress,
-		Verifiers:       emptyMapCid,
-		VerifiedClients: emptyMapCid,
+		RootKey:                  rootKeyAddress,
+		Verifiers:                emptyMapCid,
+		VerifiedClients:          emptyMapCid,
+		RemoveDataCapProposalIDs: emptyMapCid,
 	}, nil
 }
 

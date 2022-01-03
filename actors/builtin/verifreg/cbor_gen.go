@@ -117,7 +117,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufRemoveDataCapProposal = []byte{132}
+var lengthBufRemoveDataCapProposal = []byte{131}
 
 func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -159,7 +159,7 @@ func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -287,5 +287,157 @@ func (t *RmDcProposalID) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	return nil
+}
+
+var lengthBufRemoveDataCapParams = []byte{132}
+
+func (t *RemoveDataCapParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRemoveDataCapParams); err != nil {
+		return err
+	}
+
+	// t.VerifiedClientToRemove (address.Address) (struct)
+	if err := t.VerifiedClientToRemove.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.DataCapAmountToRemove (big.Int) (struct)
+	if err := t.DataCapAmountToRemove.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.VerifierRequest1 (verifreg.RemoveDataCapRequest) (struct)
+	if err := t.VerifierRequest1.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.VerifierRequest2 (verifreg.RemoveDataCapRequest) (struct)
+	if err := t.VerifierRequest2.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *RemoveDataCapParams) UnmarshalCBOR(r io.Reader) error {
+	*t = RemoveDataCapParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 4 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.VerifiedClientToRemove (address.Address) (struct)
+
+	{
+
+		if err := t.VerifiedClientToRemove.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifiedClientToRemove: %w", err)
+		}
+
+	}
+	// t.DataCapAmountToRemove (big.Int) (struct)
+
+	{
+
+		if err := t.DataCapAmountToRemove.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.DataCapAmountToRemove: %w", err)
+		}
+
+	}
+	// t.VerifierRequest1 (verifreg.RemoveDataCapRequest) (struct)
+
+	{
+
+		if err := t.VerifierRequest1.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifierRequest1: %w", err)
+		}
+
+	}
+	// t.VerifierRequest2 (verifreg.RemoveDataCapRequest) (struct)
+
+	{
+
+		if err := t.VerifierRequest2.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifierRequest2: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufRemoveDataCapReturn = []byte{130}
+
+func (t *RemoveDataCapReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRemoveDataCapReturn); err != nil {
+		return err
+	}
+
+	// t.VerifiedClient (address.Address) (struct)
+	if err := t.VerifiedClient.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.DataCapRemoved (big.Int) (struct)
+	if err := t.DataCapRemoved.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *RemoveDataCapReturn) UnmarshalCBOR(r io.Reader) error {
+	*t = RemoveDataCapReturn{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.VerifiedClient (address.Address) (struct)
+
+	{
+
+		if err := t.VerifiedClient.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifiedClient: %w", err)
+		}
+
+	}
+	// t.DataCapRemoved (big.Int) (struct)
+
+	{
+
+		if err := t.DataCapRemoved.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.DataCapRemoved: %w", err)
+		}
+
+	}
 	return nil
 }
