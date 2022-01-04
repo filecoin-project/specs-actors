@@ -112,7 +112,7 @@ func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCa
 	}
 
 	if err := rt.VerifySignature(request.VerifierSignature, request.Verifier, buf.Bytes()); err != nil {
-		rt.Abortf(exitcode.SysErrorIllegalArgument, "remove datacap request signature is invalid: %s", err)
+		rt.Abortf(exitcode.ErrIllegalArgument, "remove datacap request signature is invalid: %s", err)
 	}
 }
 
