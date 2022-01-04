@@ -387,7 +387,7 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 		} else {
 			// update the DataCap amount after the removal
 			err = verifiedClients.Put(abi.AddrKey(client), &newDataCap)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update datacap to %v for verified client %s ", newDataCap, params.VerifiedClientToRemove, newDataCap)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update datacap to %v for verified client %s ", newDataCap, params.VerifiedClientToRemove)
 		}
 
 	})
