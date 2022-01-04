@@ -36,7 +36,8 @@ type State struct {
 	// VerifiedClients can add VerifiedClientData, up to DataCap.
 	VerifiedClients cid.Cid // HAMT[addr.Address]DataCap
 
-	// RemoveDataCapProposalIDs keeps the counters of the datacap removal proposal a verifier has submitted for a specifc client.
+	// RemoveDataCapProposalIDs keeps the counters of the datacap removal proposal a verifier has submitted for a
+	//specific client. Unique proposal ids ensure that removal proposals cannot be replayed.√
 	// AddrPairKey is constructed as <verifier address, client address>, both using ID addresses.
 	RemoveDataCapProposalIDs cid.Cid // HAMT[AddrPairKey]RmDcProposalID
 }
@@ -79,17 +80,17 @@ type RemoveDataCapRequest struct {
 }
 
 func isVerifier(rt runtime.Runtime, st State, address addr.Address) (bool, exitcode.ExitCode, error) {
-	var verifiers *adt.Map
-	var err error
-	if verifiers, err = adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth); err != nil {
+
+	verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth);
+	if err != nil {
 		return false, exitcode.ErrIllegalState, xerrors.Errorf("failed to load verifiers.")
 	}
 
-	var isVerifier bool
-	if isVerifier, err = verifiers.Get(abi.AddrKey(address), nil); err != nil {
+	nina, err := verifiers.Get(abi.AddrKey(address), nil)
+	if err != nil {
 		return false, exitcode.ErrIllegalState, xerrors.Errorf("failed to load verifier %v.", address)
 	}
-	if !isVerifier {
+	if !nina {
 		rt.Abortf(exitcode.ErrNotFound, "%v is not a verifier", address)
 	}
 

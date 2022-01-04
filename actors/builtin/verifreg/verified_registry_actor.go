@@ -337,14 +337,14 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 
 	// resolve client and verifier addresses in RemoveDataCapParams
 	client, err := builtin.ResolveToIDAddr(rt, params.VerifiedClientToRemove)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve client address %v to ID address", params.VerifiedClientToRemove)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve client address %s to ID address", params.VerifiedClientToRemove)
 	verifier1, err := builtin.ResolveToIDAddr(rt, params.VerifierRequest1.Verifier)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %v to ID address", params.VerifierRequest1.Verifier)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %s to ID address", params.VerifierRequest1.Verifier)
 	verifier2, err := builtin.ResolveToIDAddr(rt, params.VerifierRequest2.Verifier)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %v to ID address", params.VerifierRequest2.Verifier)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %s to ID address", params.VerifierRequest2.Verifier)
 
 	if verifier1 == verifier2 {
-		rt.Abortf(exitcode.ErrIllegalArgument, "need two different verifiers to send remove datacap request got %v and %v that are the same accounts", params.VerifierRequest1.Verifier,
+		rt.Abortf(exitcode.ErrIllegalArgument, "need two different verifiers to send remove datacap request got %s and %s that are the same accounts", params.VerifierRequest1.Verifier,
 			params.VerifierRequest2.Verifier)
 	}
 
@@ -358,9 +358,9 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 		var preDataCap DataCap // amount of datacap the client currently holds
 		isVerifiedClient, err := verifiedClients.Get(abi.AddrKey(client), &preDataCap)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.VerifiedClientToRemove)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %s", params.VerifiedClientToRemove)
 		if !isVerifiedClient {
-			rt.Abortf(exitcode.ErrNotFound, "%v is not a verified client", params.VerifiedClientToRemove)
+			rt.Abortf(exitcode.ErrNotFound, "%s is not a verified client", params.VerifiedClientToRemove)
 		}
 		if isVerifier, code, err := isVerifier(rt, st, verifier1); !isVerifier {
 			rt.Abortf(code, err.Error())
@@ -382,12 +382,12 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 		if newDataCap.LessThanEqual(big.NewInt(0)) { // no DataCap remaining
 			// delete verified client
 			err = verifiedClients.Delete(abi.AddrKey(client))
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", params.VerifiedClientToRemove)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %s", params.VerifiedClientToRemove)
 			removedDataCapAmount = preDataCap
 		} else {
 			// update the DataCap amount after the removal
 			err = verifiedClients.Put(abi.AddrKey(client), &newDataCap)
-			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update verified client %v to %v DataCap %v", params.VerifiedClientToRemove, newDataCap)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update datacap to %v for verified client %s ", newDataCap, params.VerifiedClientToRemove, newDataCap)
 		}
 
 	})
