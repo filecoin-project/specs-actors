@@ -2,8 +2,6 @@ package nv15
 
 import (
 	"context"
-	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
-
 	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 	"golang.org/x/xerrors"
@@ -50,7 +48,7 @@ func (m verifregMigrator) migratedCodeCID() cid.Cid {
 func migrateProposalIds(ctx context.Context, store cbor.IpldStore) (cid.Cid, error) {
 	ctxStore := adt.WrapStore(ctx, store)
 
-	outArray, err := adt.MakeEmptyMap(ctxStore, miner7.SectorsAmtBitwidth)
+	outArray, err := adt.MakeEmptyMap(ctxStore, builtin7.DefaultHamtBitwidth)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to construct new remove datacap proposal id map %w", err)
 	}
