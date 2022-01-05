@@ -29,18 +29,11 @@ require (
 	golang.org/x/text v0.3.2
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 94c2878a (go mod tidy)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
-<<<<<<< HEAD
 	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0 // indirect
-=======
->>>>>>> 94c2878a (go mod tidy)
 	github.com/filecoin-project/go-hamt-ipld v0.1.5 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
@@ -78,8 +71,3 @@ require (
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
-<<<<<<< HEAD
-=======
->>>>>>> 3149b40d (Add RemoveDataCapProposalIDs to verifreg State:)
-=======
->>>>>>> 94c2878a (go mod tidy)

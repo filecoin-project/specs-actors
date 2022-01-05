@@ -76,7 +76,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin6.StorageMinerActorCodeID:     minerMigrator{},
 		builtin6.StoragePowerActorCodeID:     nilMigrator{builtin7.StoragePowerActorCodeID},
 		builtin6.SystemActorCodeID:           nilMigrator{builtin7.SystemActorCodeID},
-		builtin6.VerifiedRegistryActorCodeID: nilMigrator{builtin7.VerifiedRegistryActorCodeID},
+		builtin6.VerifiedRegistryActorCodeID: verifregMigrator{},
 	}
 
 	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.

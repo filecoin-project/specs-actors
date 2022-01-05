@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"math/bits"
 	"math/rand"
@@ -169,9 +170,17 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 		ClientCollateral:     big.Zero(),
 	}
 
+	paramBuf := new(bytes.Buffer)
+	err = proposal.MarshalCBOR(paramBuf)
+	if err != nil {
+		return err
+	}
+
 	provider.CreateDeal(market.ClientDealProposal{
-		Proposal:        proposal,
-		ClientSignature: crypto.Signature{Type: crypto.SigTypeBLS},
+		Proposal: proposal,
+		ClientSignature: crypto.Signature{
+			Type: crypto.SigTypeBLS,
+			Data: paramBuf.Bytes()},
 	})
 	dca.DealCount++
 	return nil

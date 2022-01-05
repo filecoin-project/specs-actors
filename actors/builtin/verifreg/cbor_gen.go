@@ -255,7 +255,7 @@ func (t *RemoveDataCapRequest) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufRmDcProposalID = []byte{128}
+var lengthBufRmDcProposalID = []byte{129}
 
 func (t *RmDcProposalID) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -263,6 +263,14 @@ func (t *RmDcProposalID) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 	if _, err := w.Write(lengthBufRmDcProposalID); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.ProposalID (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ProposalID)); err != nil {
 		return err
 	}
 
@@ -283,10 +291,24 @@ func (t *RmDcProposalID) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 0 {
+	if extra != 1 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
+	// t.ProposalID (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.ProposalID = uint64(extra)
+
+	}
 	return nil
 }
 

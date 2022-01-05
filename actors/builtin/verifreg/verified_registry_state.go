@@ -21,7 +21,7 @@ import (
 type DataCap = abi.StoragePower
 
 type RmDcProposalID struct {
-	proposalID uint64
+	ProposalID uint64
 }
 
 type State struct {
@@ -79,36 +79,28 @@ type RemoveDataCapRequest struct {
 	VerifierSignature crypto.Signature
 }
 
-func isVerifier(rt runtime.Runtime, st State, address addr.Address) (bool, exitcode.ExitCode, error) {
+func isVerifier(rt runtime.Runtime, st State, address addr.Address) bool {
+	verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
-	verifiers, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth);
-	if err != nil {
-		return false, exitcode.ErrIllegalState, xerrors.Errorf("failed to load verifiers.")
-	}
+	ok, err := verifiers.Get(abi.AddrKey(address), nil)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifier")
 
-	nina, err := verifiers.Get(abi.AddrKey(address), nil)
-	if err != nil {
-		return false, exitcode.ErrIllegalState, xerrors.Errorf("failed to load verifier %v.", address)
-	}
-	if !nina {
-		rt.Abortf(exitcode.ErrNotFound, "%v is not a verifier", address)
-	}
-
-	return true, 0, nil
+	return ok
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // State utility functions
 ////////////////////////////////////////////////////////////////////////////////
-func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCapRequest, id RmDcProposalID, toRemove DataCap, clientRemoved address.Address) {
+func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCapRequest, id RmDcProposalID, toRemove DataCap, client address.Address) {
 	proposal := RemoveDataCapProposal{
 		RemovalProposalID: id,
 		DataCapAmount:     toRemove,
-		VerifiedClient:    clientRemoved,
+		VerifiedClient:    client,
 	}
 	buf := bytes.Buffer{}
 	if err := proposal.MarshalCBOR(&buf); err != nil {
-		rt.Abortf(exitcode.ErrSerialization, "remove datacap request signature validation failed to marshal request: %s", err)
+		rt.Abortf(exitcode.ErrSerialization, "remove datacap request failed to marshal request: %s", err)
 	}
 
 	if err := rt.VerifySignature(request.VerifierSignature, request.Verifier, buf.Bytes()); err != nil {
@@ -121,9 +113,9 @@ func useProposalID(rt runtime.Runtime, proposalIDs *adt.Map, verifier, client ad
 	idExists, err := proposalIDs.Get(abi.NewAddrPairKey(verifier, client), &id)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed getting proposal id for verifier,client %s,%s", verifier, client)
 	if !idExists { //initialize with 0
-		id = RmDcProposalID{proposalID: 0}
+		id = RmDcProposalID{ProposalID: 0}
 	}
-	next := RmDcProposalID{proposalID: id.proposalID + 1}
+	next := RmDcProposalID{ProposalID: id.ProposalID + 1}
 	err = proposalIDs.Put(abi.NewAddrPairKey(verifier, client), &next)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update remove datacap proposal id for verifier,client %s,%s", verifier, client)
 	return id

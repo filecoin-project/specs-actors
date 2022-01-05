@@ -314,7 +314,7 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put verified client %v with %v", client, newVcCap)
 
 		st.VerifiedClients, err = verifiedClients.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
 	})
 
 	return nil
@@ -348,13 +348,13 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 			params.VerifierRequest2.Verifier)
 	}
 
-	var removedDataCapAmount = params.DataCapAmountToRemove // amount of datacap removed
+	var removedDataCapAmount DataCap
 	var st State
 
 	rt.StateTransaction(&st, func() {
 		rt.ValidateImmediateCallerIs(st.RootKey)
 		// validate client and verifiers exist
-		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.Verifiers, builtin.DefaultHamtBitwidth)
+		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients, builtin.DefaultHamtBitwidth)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
 		var preDataCap DataCap // amount of datacap the client currently holds
 		isVerifiedClient, err := verifiedClients.Get(abi.AddrKey(client), &preDataCap)
@@ -362,11 +362,13 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 		if !isVerifiedClient {
 			rt.Abortf(exitcode.ErrNotFound, "%s is not a verified client", params.VerifiedClientToRemove)
 		}
-		if isVerifier, code, err := isVerifier(rt, st, verifier1); !isVerifier {
-			rt.Abortf(code, err.Error())
+
+		if !isVerifier(rt, st, verifier1) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s is not a verifier", params.VerifierRequest1)
 		}
-		if isVerifier, code, err := isVerifier(rt, st, verifier2); !isVerifier {
-			rt.Abortf(code, err.Error())
+
+		if !isVerifier(rt, st, verifier2) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s is not a verifier", params.VerifierRequest2)
 		}
 
 		// validate signatures
@@ -388,8 +390,14 @@ func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDat
 			// update the DataCap amount after the removal
 			err = verifiedClients.Put(abi.AddrKey(client), &newDataCap)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update datacap to %v for verified client %s ", newDataCap, params.VerifiedClientToRemove)
+			removedDataCapAmount = params.DataCapAmountToRemove
 		}
 
+		st.RemoveDataCapProposalIDs, err = proposalIDs.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proposal ids")
+
+		st.VerifiedClients, err = verifiedClients.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
 	})
 
 	return &RemoveDataCapReturn{

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -121,11 +122,16 @@ func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Addr
 		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
 	}
 
+	paramBuf := new(bytes.Buffer)
+	err := deal.MarshalCBOR(paramBuf)
+	require.NoError(t, err)
+
 	publishDealParams := market.PublishStorageDealsParams{
 		Deals: []market.ClientDealProposal{{
 			Proposal: deal,
 			ClientSignature: crypto.Signature{
 				Type: crypto.SigTypeBLS,
+				Data: paramBuf.Bytes(),
 			},
 		}},
 	}
@@ -189,10 +195,15 @@ func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address
 func (db *dealBatcher) publishOK(t *testing.T, sender addr.Address) *market.PublishStorageDealsReturn {
 	publishDealParams := market.PublishStorageDealsParams{}
 	for _, deal := range db.deals {
+		paramBuf := new(bytes.Buffer)
+		err := deal.MarshalCBOR(paramBuf)
+		require.NoError(t, err)
+
 		publishDealParams.Deals = append(publishDealParams.Deals, market.ClientDealProposal{
 			Proposal: deal,
 			ClientSignature: crypto.Signature{
 				Type: crypto.SigTypeBLS,
+				Data: paramBuf.Bytes(),
 			},
 		})
 	}

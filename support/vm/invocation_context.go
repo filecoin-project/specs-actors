@@ -536,7 +536,11 @@ type fakeSyscalls struct {
 	epoch    abi.ChainEpoch
 }
 
-func (s fakeSyscalls) VerifySignature(_ crypto.Signature, _ address.Address, _ []byte) error {
+func (s fakeSyscalls) VerifySignature(sig crypto.Signature, _ address.Address, msg []byte) error {
+	if !bytes.Equal(sig.Data, msg) {
+		return xerrors.New("invalid sig: message should be equal to sig bytes")
+	}
+
 	return nil
 }
 
