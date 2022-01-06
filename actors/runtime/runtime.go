@@ -175,7 +175,7 @@ type Syscalls interface {
 	// Verifies that a signature is valid for an address and plaintext.
 	// If the address is a public-key type address, it is used directly.
 	// If it's an ID-address, the actor is looked up in state. It must be an account actor, and the
-	// public key is obtained from it's state.
+	// public key is obtained from its state.
 	VerifySignature(signature crypto.Signature, signer addr.Address, plaintext []byte) error
 	// Hashes input data using blake2b with 256 bit output.
 	HashBlake2b(data []byte) [32]byte

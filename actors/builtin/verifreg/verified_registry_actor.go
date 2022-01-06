@@ -25,6 +25,7 @@ func (a Actor) Exports() []interface{} {
 		4:                         a.AddVerifiedClient,
 		5:                         a.UseBytes,
 		6:                         a.RestoreBytes,
+		7:                         a.RemoveVerifiedClientDataCap,
 	}
 }
 
@@ -313,8 +314,94 @@ func (a Actor) RestoreBytes(rt runtime.Runtime, params *RestoreBytesParams) *abi
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put verified client %v with %v", client, newVcCap)
 
 		st.VerifiedClients, err = verifiedClients.Root()
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
 	})
 
 	return nil
+}
+
+type RemoveDataCapParams struct {
+	VerifiedClientToRemove addr.Address
+	DataCapAmountToRemove  DataCap
+	VerifierRequest1       RemoveDataCapRequest
+	VerifierRequest2       RemoveDataCapRequest
+}
+
+type RemoveDataCapReturn struct {
+	VerifiedClient addr.Address
+	DataCapRemoved DataCap
+}
+
+// sender must be the VRK, and message must include proof that 2 verifiers signed the proposal
+func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDataCapParams) *RemoveDataCapReturn {
+
+	// resolve client and verifier addresses in RemoveDataCapParams
+	client, err := builtin.ResolveToIDAddr(rt, params.VerifiedClientToRemove)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve client address %s to ID address", params.VerifiedClientToRemove)
+	verifier1, err := builtin.ResolveToIDAddr(rt, params.VerifierRequest1.Verifier)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %s to ID address", params.VerifierRequest1.Verifier)
+	verifier2, err := builtin.ResolveToIDAddr(rt, params.VerifierRequest2.Verifier)
+	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to resolve verifier address %s to ID address", params.VerifierRequest2.Verifier)
+
+	if verifier1 == verifier2 {
+		rt.Abortf(exitcode.ErrIllegalArgument, "need two different verifiers to send remove datacap request got %s and %s that are the same accounts", params.VerifierRequest1.Verifier,
+			params.VerifierRequest2.Verifier)
+	}
+
+	var removedDataCapAmount DataCap
+	var st State
+
+	rt.StateTransaction(&st, func() {
+		rt.ValidateImmediateCallerIs(st.RootKey)
+		// validate client and verifiers exist
+		verifiedClients, err := adt.AsMap(adt.AsStore(rt), st.VerifiedClients, builtin.DefaultHamtBitwidth)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified clients")
+		var preDataCap DataCap // amount of datacap the client currently holds
+		isVerifiedClient, err := verifiedClients.Get(abi.AddrKey(client), &preDataCap)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %s", params.VerifiedClientToRemove)
+		if !isVerifiedClient {
+			rt.Abortf(exitcode.ErrNotFound, "%s is not a verified client", params.VerifiedClientToRemove)
+		}
+
+		if !isVerifier(rt, st, verifier1) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s is not a verifier", params.VerifierRequest1)
+		}
+
+		if !isVerifier(rt, st, verifier2) {
+			rt.Abortf(exitcode.ErrIllegalArgument, "%s is not a verifier", params.VerifierRequest2)
+		}
+
+		// validate signatures
+		proposalIDs, err := adt.AsMap(adt.AsStore(rt), st.RemoveDataCapProposalIDs, builtin.DefaultHamtBitwidth)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load datacap removal proposal ids")
+		verifier1ID := useProposalID(rt, proposalIDs, verifier1, client)
+		verifier2ID := useProposalID(rt, proposalIDs, verifier2, client)
+		removeDataCapRequestIsValidOrAbort(rt, params.VerifierRequest1, verifier1ID, params.DataCapAmountToRemove, client)
+		removeDataCapRequestIsValidOrAbort(rt, params.VerifierRequest2, verifier2ID, params.DataCapAmountToRemove, client)
+
+		// execute the datacap removal
+		newDataCap := big.Sub(preDataCap, params.DataCapAmountToRemove)
+		if newDataCap.LessThanEqual(big.NewInt(0)) { // no DataCap remaining
+			// delete verified client
+			err = verifiedClients.Delete(abi.AddrKey(client))
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %s", params.VerifiedClientToRemove)
+			removedDataCapAmount = preDataCap
+		} else {
+			// update the DataCap amount after the removal
+			err = verifiedClients.Put(abi.AddrKey(client), &newDataCap)
+			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to update datacap to %v for verified client %s ", newDataCap, params.VerifiedClientToRemove)
+			removedDataCapAmount = params.DataCapAmountToRemove
+		}
+
+		st.RemoveDataCapProposalIDs, err = proposalIDs.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush proposal ids")
+
+		st.VerifiedClients, err = verifiedClients.Root()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush verified clients")
+	})
+
+	return &RemoveDataCapReturn{
+		VerifiedClient: params.VerifiedClientToRemove,
+		DataCapRemoved: removedDataCapAmount,
+	}
 }
