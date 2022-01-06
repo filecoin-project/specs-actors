@@ -54,7 +54,7 @@ type MigrationCache interface {
 }
 
 func ActorHeadKey(addr address.Address, head cid.Cid) string {
-	return addr.String() + "-h-" + head.String()
+	return abi.AddrKey(addr).Key() + "-h-" + head.String()
 }
 
 func SectorsAmtKey(sectorsAmt cid.Cid) string {
@@ -63,16 +63,6 @@ func SectorsAmtKey(sectorsAmt cid.Cid) string {
 
 func DeadlineKey(dl cid.Cid) string {
 	return "d-" + dl.String()
-}
-
-func MinerPrevSectorsInKey(m address.Address) string {
-	// "i" for "in"
-	return "i-" + m.String()
-}
-
-func MinerPrevSectorsOutKey(m address.Address) string {
-	// "o" for "out"
-	return "o-" + m.String()
 }
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
