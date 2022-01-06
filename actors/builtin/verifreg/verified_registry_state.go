@@ -20,6 +20,8 @@ import (
 // We can introduce policy changes and replace this in the future.
 type DataCap = abi.StoragePower
 
+const SignatureDomainSeparation_RemoveDataCap = "fil_removedatacap:"
+
 type RmDcProposalID struct {
 	ProposalID uint64
 }
@@ -99,6 +101,7 @@ func removeDataCapRequestIsValidOrAbort(rt runtime.Runtime, request RemoveDataCa
 		VerifiedClient:    client,
 	}
 	buf := bytes.Buffer{}
+	buf.WriteString(SignatureDomainSeparation_RemoveDataCap)
 	if err := proposal.MarshalCBOR(&buf); err != nil {
 		rt.Abortf(exitcode.ErrSerialization, "remove datacap request failed to marshal request: %s", err)
 	}

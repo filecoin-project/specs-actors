@@ -87,10 +87,12 @@ func TestRemoveDataCapSimpleSuccessfulPath(t *testing.T) {
 	}
 
 	paramBuf1 := new(bytes.Buffer)
+	paramBuf1.WriteString(verifreg.SignatureDomainSeparation_RemoveDataCap)
 	err = ver1Proposal.MarshalCBOR(paramBuf1)
 	require.NoError(t, err)
 
 	paramBuf2 := new(bytes.Buffer)
+	paramBuf2.WriteString(verifreg.SignatureDomainSeparation_RemoveDataCap)
 	err = ver2Proposal.MarshalCBOR(paramBuf2)
 	require.NoError(t, err)
 
@@ -155,10 +157,12 @@ func TestRemoveDataCapSimpleSuccessfulPath(t *testing.T) {
 	}
 
 	paramBuf1 = new(bytes.Buffer)
+	paramBuf1.WriteString(verifreg.SignatureDomainSeparation_RemoveDataCap)
 	err = ver1Proposal.MarshalCBOR(paramBuf1)
 	require.NoError(t, err)
 
 	paramBuf2 = new(bytes.Buffer)
+	paramBuf2.WriteString(verifreg.SignatureDomainSeparation_RemoveDataCap)
 	err = ver2Proposal.MarshalCBOR(paramBuf2)
 	require.NoError(t, err)
 

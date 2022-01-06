@@ -332,7 +332,7 @@ type RemoveDataCapReturn struct {
 	DataCapRemoved DataCap
 }
 
-// According to unassigned FIP https://github.com/filecoin-project/specs-actors/pull/1546/files, RemoveVerifiedClientDataCap message's sender must be the State.RootKey, and must have two distinct verifiers' signature
+// sender must be the VRK, and message must include proof that 2 verifiers signed the proposal
 func (a Actor) RemoveVerifiedClientDataCap(rt runtime.Runtime, params *RemoveDataCapParams) *RemoveDataCapReturn {
 
 	// resolve client and verifier addresses in RemoveDataCapParams
