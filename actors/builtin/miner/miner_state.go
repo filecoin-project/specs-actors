@@ -703,6 +703,52 @@ func (st *State) PopEarlyTerminations(store adt.Store, maxPartitions, maxSectors
 	return result, !noEarlyTerminations, nil
 }
 
+// Returns an error if the target sector cannot be found, or some other bad state is reached.
+// Returns false if the target sector is faulty, terminated, or unproven
+// Returns true otherwise
+func (st *State) CheckSectorActive(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber, requireProven bool) (bool, error) {
+	dls, err := st.LoadDeadlines(store)
+	if err != nil {
+		return false, err
+	}
+
+	dl, err := dls.LoadDeadline(store, dlIdx)
+	if err != nil {
+		return false, err
+	}
+
+	partition, err := dl.LoadPartition(store, pIdx)
+	if err != nil {
+		return false, err
+	}
+
+	if exists, err := partition.Sectors.IsSet(uint64(sector)); err != nil {
+		return false, xc.ErrIllegalState.Wrapf("failed to decode sectors bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if !exists {
+		return false, xc.ErrNotFound.Wrapf("sector %d not a member of partition %d, deadline %d", sector, pIdx, dlIdx)
+	}
+
+	if faulty, err := partition.Faults.IsSet(uint64(sector)); err != nil {
+		return false, xc.ErrIllegalState.Wrapf("failed to decode faults bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if faulty {
+		return false, nil
+	}
+
+	if terminated, err := partition.Terminated.IsSet(uint64(sector)); err != nil {
+		return false, xc.ErrIllegalState.Wrapf("failed to decode terminated bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if terminated {
+		return false, nil
+	}
+
+	if unproven, err := partition.Unproven.IsSet(uint64(sector)); err != nil {
+		return false, xc.ErrIllegalState.Wrapf("failed to decode unproven bitfield (deadline %d, partition %d): %w", dlIdx, pIdx, err)
+	} else if unproven && requireProven {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // Returns an error if the target sector cannot be found and/or is faulty/terminated.
 func (st *State) CheckSectorHealth(store adt.Store, dlIdx, pIdx uint64, sector abi.SectorNumber) error {
 	dls, err := st.LoadDeadlines(store)
