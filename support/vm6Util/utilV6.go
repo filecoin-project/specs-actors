@@ -16,7 +16,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
 	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -99,7 +98,7 @@ func SubmitPoSt(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Add
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte(vm.RandString),
+		ChainCommitRand:  []byte(vm6.RandString),
 	}
 
 	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
