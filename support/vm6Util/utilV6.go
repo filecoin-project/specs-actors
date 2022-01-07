@@ -231,3 +231,54 @@ func CheckMinerSectorActive(st *miner.State, store adt.Store, dlIdx, pIdx uint64
 
 	return true, nil
 }
+
+// Returns a bitfield of the sector numbers from a collection pre-committed sectors.
+func PrecommitSectorNumbers(precommits []*miner.SectorPreCommitOnChainInfo) bitfield.BitField {
+	intSectorNumbers := make([]uint64, len(precommits))
+	for i := range precommits {
+		intSectorNumbers[i] = uint64(precommits[i].Info.SectorNumber)
+	}
+	return bitfield.NewFromSet(intSectorNumbers)
+}
+
+// Proves pre-committed sectors as batches of aggSize.
+func ProveCommitSectors(t *testing.T, v *vm6.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, aggSize int) {
+	for len(precommits) > 0 {
+		batchSize := min(aggSize, len(precommits))
+		toProve := precommits[:batchSize]
+		precommits = precommits[batchSize:]
+
+		sectorNosBf := PrecommitSectorNumbers(toProve)
+		proveCommitAggregateParams := miner.ProveCommitAggregateParams{
+			SectorNumbers: sectorNosBf,
+		}
+		vm6.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
+		vm6.ExpectInvocation{
+			To:     actor,
+			Method: builtin.MethodsMiner.ProveCommitAggregate,
+			Params: vm6.ExpectObject(&proveCommitAggregateParams),
+			SubInvocations: []vm6.ExpectInvocation{
+				{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.ComputeDataCommitment},
+				{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
+				{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.UpdatePledgeTotal},
+				{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend},
+			},
+		}.Matches(t, v.LastInvocation())
+	}
+}
+
+func min(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
+
+func MinerDLInfo(t *testing.T, v *vm6.VM, minerIDAddr address.Address) *dline.Info {
+	var minerState miner.State
+	err := v.GetState(minerIDAddr, &minerState)
+	require.NoError(t, err)
+
+	return miner.NewDeadlineInfoFromOffsetAndEpoch(minerState.ProvingPeriodStart, v.GetEpoch())
+}
