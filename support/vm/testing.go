@@ -582,6 +582,7 @@ func ApplyOk(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmoun
 
 func ApplyCode(t *testing.T, v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, code exitcode.ExitCode) cbor.Marshaler {
 	result := RequireApplyMessage(t, v, from, to, value, method, params, t.Name())
+	fmt.Println(v.logs)
 	require.Equal(t, code, result.Code, "unexpected exit code")
 	return result.Ret
 }
