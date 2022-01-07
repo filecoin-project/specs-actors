@@ -72,7 +72,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		builtin6.MultisigActorCodeID:         nilMigrator{builtin7.MultisigActorCodeID},
 		builtin6.PaymentChannelActorCodeID:   nilMigrator{builtin7.PaymentChannelActorCodeID},
 		builtin6.RewardActorCodeID:           nilMigrator{builtin7.RewardActorCodeID},
-		builtin6.StorageMarketActorCodeID:    cachedMigration(cache, marketMigrator{}),
+		builtin6.StorageMarketActorCodeID:    nilMigrator{builtin7.StorageMarketActorCodeID},
 		builtin6.StorageMinerActorCodeID:     minerMigrator{},
 		builtin6.StoragePowerActorCodeID:     nilMigrator{builtin7.StoragePowerActorCodeID},
 		builtin6.SystemActorCodeID:           nilMigrator{builtin7.SystemActorCodeID},
@@ -295,33 +295,4 @@ func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorM
 
 func (n nilMigrator) migratedCodeCID() cid.Cid {
 	return n.OutCodeCID
-}
-
-type cachedMigrator struct {
-	cache MigrationCache
-	actorMigration
-}
-
-func (c cachedMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	newHead, err := c.cache.Load(ActorHeadKey(in.address, in.head), func() (cid.Cid, error) {
-		result, err := c.actorMigration.migrateState(ctx, store, in)
-		if err != nil {
-			return cid.Undef, err
-		}
-		return result.newHead, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &actorMigrationResult{
-		newCodeCID: c.migratedCodeCID(),
-		newHead:    newHead,
-	}, nil
-}
-
-func cachedMigration(cache MigrationCache, m actorMigration) actorMigration {
-	return cachedMigrator{
-		actorMigration: m,
-		cache:          cache,
-	}
 }

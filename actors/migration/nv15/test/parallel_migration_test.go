@@ -8,8 +8,8 @@ import (
 
 	"github.com/filecoin-project/go-state-types/abi"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
+	adt5 "github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/ipfs/go-cid"
@@ -26,7 +26,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 	vm := vm6.NewVMWithSingletons(ctx, t, bs)
 
 	// Run migration
-	adtStore := adt.WrapStore(ctx, cbor.NewCborStore(bs))
+	adtStore := adt5.WrapStore(ctx, cbor.NewCborStore(bs))
 	startRoot := vm.StateRoot()
 	endRootSerial, err := nv15.MigrateStateTree(ctx, adtStore, startRoot, abi.ChainEpoch(0), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
 	require.NoError(t, err)
