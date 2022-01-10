@@ -156,8 +156,6 @@ func main() {
 		// market.PublishStorageDealsParams{}, // Aliased from v0
 		market.PublishStorageDealsReturn{},
 		//market.ActivateDealsParams{}, // Aliased from v0
-		market.VerifyDealsForActivationParams{},
-		market.VerifyDealsForActivationReturn{},
 		market.SectorDataSpec{},
 		market.ComputeDataCommitmentParams{},
 		market.ComputeDataCommitmentReturn{},
@@ -165,8 +163,6 @@ func main() {
 		// other types
 		//market.DealProposal{}, // Aliased from v0
 		//market.ClientDealProposal{},
-		market.SectorDeals{},
-		market.SectorWeights{},
 		market.DealState{},
 	); err != nil {
 		panic(err)

@@ -33,7 +33,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AddBalance,
 		3:                         a.WithdrawBalance,
 		4:                         a.PublishStorageDeals,
-		5:                         a.VerifyDealsForActivation,
+		5:                         nil, // Deprecated
 		6:                         a.ActivateDeals,
 		7:                         a.OnMinerSectorsTerminate,
 		8:                         a.ComputeDataCommitment,
@@ -295,6 +295,8 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		"%d valid deals but validDealCount=%d", len(validDeals), validDealCount)
 	builtin.RequireParam(rt, validDealCount > 0, "All deal proposals invalid")
 
+	// FIXME add verified deal pledge
+
 	var newDealIds []abi.DealID
 	rt.StateTransaction(&st, func() {
 		msm, err := st.mutator(adt.AsStore(rt)).withPendingProposals(WritePermission).
@@ -337,68 +339,6 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 }
 
-// Changed since v2:
-// - Array of sectors rather than just one
-// - Removed SectorStart (which is unknown at call time)
-type VerifyDealsForActivationParams struct {
-	Sectors []SectorDeals
-}
-
-type SectorDeals struct {
-	SectorExpiry abi.ChainEpoch
-	DealIDs      []abi.DealID
-}
-
-// Changed since v2:
-// - Array of sectors weights
-type VerifyDealsForActivationReturn struct {
-	Sectors []SectorWeights
-}
-
-type SectorWeights struct {
-	DealSpace          uint64         // Total space in bytes of submitted deals.
-	DealWeight         abi.DealWeight // Total space*time of submitted deals.
-	VerifiedDealWeight abi.DealWeight // Total space*time of submitted verified deals.
-}
-
-// Computes the weight of deals proposed for inclusion in a number of sectors.
-// Deal weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
-//
-// This method performs some light validation on the way in order to fail early if deals can be
-// determined to be invalid for the proposed sector properties.
-// Full deal validation is deferred to deal activation since it depends on the activation epoch.
-func (a Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActivationParams) *VerifyDealsForActivationReturn {
-	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)
-	minerAddr := rt.Caller()
-	currEpoch := rt.CurrEpoch()
-
-	var st State
-	rt.StateReadonly(&st)
-	store := adt.AsStore(rt)
-
-	proposals, err := AsDealProposalArray(store, st.Proposals)
-	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal proposals")
-
-	weights := make([]SectorWeights, len(params.Sectors))
-	for i, sector := range params.Sectors {
-		// Pass the current epoch as the activation epoch for validation.
-		// The sector activation epoch isn't yet known, but it's still more helpful to fail now if the deal
-		// is so late that a sector activating now couldn't include it.
-		dealWeight, verifiedWeight, dealSpace, err := validateAndComputeDealWeight(proposals, sector.DealIDs, minerAddr, sector.SectorExpiry, currEpoch)
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate deal proposals for activation")
-
-		weights[i] = SectorWeights{
-			DealSpace:          dealSpace,
-			DealWeight:         dealWeight,
-			VerifiedDealWeight: verifiedWeight,
-		}
-	}
-
-	return &VerifyDealsForActivationReturn{
-		Sectors: weights,
-	}
-}
-
 //type ActivateDealsParams struct {
 //	DealIDs      []abi.DealID
 //	SectorExpiry abi.ChainEpoch
@@ -417,11 +357,12 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 
 	// Update deal dealStates.
 	rt.StateTransaction(&st, func() {
-		_, _, _, err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
+		err := ValidateDealsForActivation(&st, store, params.DealIDs, minerAddr, params.SectorExpiry, currEpoch)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to validate dealProposals for activation")
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
-			withPendingProposals(ReadOnlyPermission).withDealProposals(ReadOnlyPermission).build()
+			withPendingProposals(ReadOnlyPermission).withDealProposals(ReadOnlyPermission).
+			withVerifiedRewards(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
 		for _, dealID := range params.DealIDs {
@@ -452,6 +393,24 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 				SlashEpoch:       epochUndefined,
 			})
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %d", dealID)
+
+			// Schedule verified space activation/deactivation events for the deal's nominal lifespan.
+			if proposal.VerifiedDeal {
+				verifiedSpace := big.NewIntUnsigned(uint64(proposal.PieceSize))
+				// Schedule delta to total verified space at deal activation.
+				err = msm.totalVerifiedSpaceDeltas.Add(proposal.StartEpoch, verifiedSpace)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified space delta %v at %d", verifiedSpace, proposal.StartEpoch)
+				// Schedule inverse delta to total verified space at deal expiration.
+				err = msm.totalVerifiedSpaceDeltas.Add(proposal.EndEpoch, verifiedSpace.Neg())
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified space delta %v at %d", verifiedSpace.Neg(), proposal.EndEpoch)
+
+				// Schedule deltas to the provider's claim.
+				// TODO: consider a method that adds both of these in one go, avoid a storage write
+				err = msm.providerVerifiedClaims.Add(store, proposal.Provider, proposal.StartEpoch, verifiedSpace)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enqueue verified claim activation for %d", dealID)
+				err = msm.providerVerifiedClaims.Add(store, proposal.Provider, proposal.EndEpoch, verifiedSpace.Neg())
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enqueue verified claim termination for %d", dealID)
+			}
 		}
 
 		err = msm.commitState()
@@ -516,9 +475,10 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 	minerAddr := rt.Caller()
 
 	var st State
+	store := adt.AsStore(rt)
 	rt.StateTransaction(&st, func() {
-		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
-			withDealProposals(ReadOnlyPermission).build()
+		msm, err := st.mutator(store).withDealStates(WritePermission).
+			withDealProposals(ReadOnlyPermission).withVerifiedRewards(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deal state")
 
 		for _, dealID := range params.DealIDs {
@@ -557,6 +517,28 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			// actual releasing of locked funds for the client and slashing of provider collateral happens in CronTick.
 			state.SlashEpoch = params.Epoch
 
+			// Bring forward the termination of verified power.
+			// FIXME: apply a penalty to verified deal pledge
+			if deal.VerifiedDeal {
+				// The provided nominal termination epoch is ignored because that verified space total has already been
+				// calculated and used for reward distribution. The best we can do is subtract the power from the
+				// current epoch.
+				currentEpoch := rt.CurrEpoch()
+				verifiedSpace := big.NewIntUnsigned(uint64(deal.PieceSize))
+				// Subtract the verified space from the current epoch.
+				err = msm.totalVerifiedSpaceDeltas.Add(currentEpoch, verifiedSpace.Neg())
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to subtract verified space delta %v at %d", verifiedSpace.Neg(), currentEpoch)
+				// Add back the verified space from the epoch where the deal expiration was originally scheduled.
+				err = msm.totalVerifiedSpaceDeltas.Add(deal.EndEpoch, verifiedSpace)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to add verified space delta %v at %d", verifiedSpace, currentEpoch)
+
+				// Similarly, bring forward termination of the provider's verified claim.
+				err = msm.providerVerifiedClaims.Add(store, deal.Provider, currentEpoch, verifiedSpace.Neg())
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enqueue verified claim activation for %d", dealID)
+				err = msm.providerVerifiedClaims.Add(store, deal.Provider, deal.EndEpoch, verifiedSpace)
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to enqueue verified claim termination for %d", dealID)
+			}
+
 			err = msm.dealStates.Set(dealID, state)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %v", dealID)
 		}
@@ -573,16 +555,21 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 
 	var timedOutVerifiedDeals []*DealProposal
 
+	currEpoch := rt.CurrEpoch()
+	prevTotalVerifiedSpace := big.Zero()
+	newTotalVerifiedSpace := big.Zero()
 	var st State
 	rt.StateTransaction(&st, func() {
 		updatesNeeded := make(map[abi.ChainEpoch][]abi.DealID)
 
 		msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
 			withLockedTable(WritePermission).withEscrowTable(WritePermission).withDealsByEpoch(WritePermission).
-			withDealProposals(WritePermission).withPendingProposals(WritePermission).build()
+			withDealProposals(WritePermission).withPendingProposals(WritePermission).
+			withVerifiedRewards(WritePermission).build()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
 
-		for i := st.LastCron + 1; i <= rt.CurrEpoch(); i++ {
+		for i := st.LastCron + 1; i <= currEpoch; i++ {
+			// Process incremental deal payments.
 			err = msm.dealsByEpoch.ForEach(i, func(dealID abi.DealID) error {
 				deal, err := getDealProposal(msm.dealProposals, dealID)
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get dealId %d", dealID)
@@ -596,7 +583,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 				// deal has been published but not activated yet -> terminate it as it has timed out
 				if !found {
 					// Not yet appeared in proven sector; check for timeout.
-					builtin.RequireState(rt, rt.CurrEpoch() >= deal.StartEpoch, "deal %d processed before start epoch %d",
+					builtin.RequireState(rt, currEpoch >= deal.StartEpoch, "deal %d processed before start epoch %d",
 						dealID, deal.StartEpoch)
 
 					slashed := msm.processDealInitTimedOut(rt, deal)
@@ -622,7 +609,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal %v", dcid)
 				}
 
-				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, rt.CurrEpoch())
+				slashAmount, nextEpoch, removeDeal := msm.updatePendingDealState(rt, state, deal, currEpoch)
 				builtin.RequireState(rt, slashAmount.GreaterThanEqual(big.Zero()), "computed negative slash amount %v for deal %d", slashAmount, dealID)
 
 				if removeDeal {
@@ -635,11 +622,11 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 					err = msm.dealProposals.Delete(dealID)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete deal proposal %d", dealID)
 				} else {
-					builtin.RequireState(rt, nextEpoch > rt.CurrEpoch(), "continuing deal %d next epoch %d should be in future", dealID, nextEpoch)
+					builtin.RequireState(rt, nextEpoch > currEpoch, "continuing deal %d next epoch %d should be in future", dealID, nextEpoch)
 					builtin.RequireState(rt, slashAmount.IsZero(), "continuing deal %d should not be slashed", dealID)
 
 					// Update deal's LastUpdatedEpoch in DealStates
-					state.LastUpdatedEpoch = rt.CurrEpoch()
+					state.LastUpdatedEpoch = currEpoch
 					err = msm.dealStates.Set(dealID, state)
 					builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state")
 
@@ -669,7 +656,45 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to reinsert deal IDs for epoch %v", epoch)
 		}
 
-		st.LastCron = rt.CurrEpoch()
+		// Compute total verified space for this epoch by popping the queue entry for this epoch and adding to
+		// the running total.
+		// NOTE: this assumes that st.LastCron == current epoch. Code above, which does not, is
+		// a hangover from when cron was not executed for empty tipsets.
+		prevTotalVerifiedSpace = msm.totalVerifiedSpace
+		verifiedSpaceDelta := big.Zero()
+		_, err = msm.totalVerifiedSpaceDeltas.Pop(uint64(currEpoch), &verifiedSpaceDelta)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verified space deltas at %d", currEpoch)
+		newTotalVerifiedSpace = big.Add(msm.totalVerifiedSpace, verifiedSpaceDelta)
+		builtin.RequireState(rt, newTotalVerifiedSpace.GreaterThanEqual(big.Zero()),
+			"total verified space went negative %v at %d", msm.totalVerifiedSpace, currEpoch)
+		msm.totalVerifiedSpace = newTotalVerifiedSpace
+
+		st.LastCron = currEpoch
+		err = msm.commitState()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
+	})
+
+	// Claim verified deal reward for this past epoch (which is based on the total verified space at the
+	// end of the prior one), and advice the reward actor of the new total verified space for the next
+	// epoch's reward.
+	var thisEpochReward big.Int
+	code := rt.Send(
+		builtin.RewardActorAddr,
+		builtin.MethodsReward.ClaimVerifiedDealReward,
+		&newTotalVerifiedSpace,
+		abi.NewTokenAmount(0),
+		&thisEpochReward)
+	if !code.IsSuccess() {
+		rt.Log(rtt.ERROR, "failed to claim verified deal reward, got code %v", code)
+	}
+
+	rt.StateTransaction(&st, func() {
+		msm, err := st.mutator(adt.AsStore(rt)).withVerifiedRewards(WritePermission).build()
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+
+		// FIXME purge history beyond some window
+		err = msm.verifiedRewardHistory.Set(currEpoch, prevTotalVerifiedSpace, thisEpochReward)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set verified reward history for %d as space %v, reward %v", currEpoch, newTotalVerifiedSpace, thisEpochReward)
 
 		err = msm.commitState()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush state")
@@ -701,6 +726,22 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
+//// Computes and returns the total verified space at the end of this epoch.
+//// This is expected to be called exactly once each epoch
+//func (a Actor) TotalVerifiedSpace(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
+//	rt.ValidateImmediateCallerIs(builtin.RewardActorAddr)
+//
+//	msm, err := st.mutator(adt.AsStore(rt)).withDealStates(WritePermission).
+//		withLockedTable(WritePermission).withEscrowTable(WritePermission).withDealsByEpoch(WritePermission).
+//		withDealProposals(WritePermission).withPendingProposals(WritePermission).build()
+//	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load state")
+//
+//}
+
+//
+// Exported functions
+//
+
 func GenRandNextEpoch(startEpoch abi.ChainEpoch, dealID abi.DealID) abi.ChainEpoch {
 	offset := abi.ChainEpoch(uint64(dealID) % uint64(DealUpdatesInterval))
 	q := builtin.NewQuantSpec(DealUpdatesInterval, 0)
@@ -712,76 +753,44 @@ func GenRandNextEpoch(startEpoch abi.ChainEpoch, dealID abi.DealID) abi.ChainEpo
 	return nextDay + offset
 }
 
-//
-// Exported functions
-//
-
-// Validates a collection of deal dealProposals for activation, and returns their combined weight,
-// split into regular deal weight and verified deal weight.
-func ValidateDealsForActivation(
-	st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address, sectorExpiry, currEpoch abi.ChainEpoch,
-) (big.Int, big.Int, uint64, error) {
+// Validates a collection of deal proposals for activation.
+func ValidateDealsForActivation(st *State, store adt.Store, dealIDs []abi.DealID, minerAddr addr.Address, sectorExpiration, currEpoch abi.ChainEpoch) error {
 	proposals, err := AsDealProposalArray(store, st.Proposals)
 	if err != nil {
-		return big.Int{}, big.Int{}, 0, xerrors.Errorf("failed to load dealProposals: %w", err)
+		return xerrors.Errorf("failed to load dealProposals: %w", err)
 	}
 
-	return validateAndComputeDealWeight(proposals, dealIDs, minerAddr, sectorExpiry, currEpoch)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Checks
-////////////////////////////////////////////////////////////////////////////////
-
-func validateAndComputeDealWeight(proposals *DealArray, dealIDs []abi.DealID, minerAddr addr.Address,
-	sectorExpiry abi.ChainEpoch, sectorActivation abi.ChainEpoch) (big.Int, big.Int, uint64, error) {
-
 	seenDealIDs := make(map[abi.DealID]struct{}, len(dealIDs))
-	totalDealSpace := uint64(0)
-	totalDealSpaceTime := big.Zero()
-	totalVerifiedSpaceTime := big.Zero()
 	for _, dealID := range dealIDs {
 		// Make sure we don't double-count deals.
 		if _, seen := seenDealIDs[dealID]; seen {
-			return big.Int{}, big.Int{}, 0, exitcode.ErrIllegalArgument.Wrapf("deal ID %d present multiple times", dealID)
+			return exitcode.ErrIllegalArgument.Wrapf("deal ID %d present multiple times", dealID)
 		}
 		seenDealIDs[dealID] = struct{}{}
 
 		proposal, found, err := proposals.Get(dealID)
 		if err != nil {
-			return big.Int{}, big.Int{}, 0, xerrors.Errorf("failed to load deal %d: %w", dealID, err)
+			return xerrors.Errorf("failed to load deal %d: %w", dealID, err)
 		}
 		if !found {
-			return big.Int{}, big.Int{}, 0, exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
+			return exitcode.ErrNotFound.Wrapf("no such deal %d", dealID)
 		}
-		if err = validateDealCanActivate(proposal, minerAddr, sectorExpiry, sectorActivation); err != nil {
-			return big.Int{}, big.Int{}, 0, xerrors.Errorf("cannot activate deal %d: %w", dealID, err)
+		if proposal.Provider != minerAddr {
+			return exitcode.ErrForbidden.Wrapf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
 		}
-
-		// Compute deal weight
-		totalDealSpace += uint64(proposal.PieceSize)
-		dealSpaceTime := DealWeight(proposal)
-		if proposal.VerifiedDeal {
-			totalVerifiedSpaceTime = big.Add(totalVerifiedSpaceTime, dealSpaceTime)
-		} else {
-			totalDealSpaceTime = big.Add(totalDealSpaceTime, dealSpaceTime)
+		if currEpoch > proposal.StartEpoch {
+			return exitcode.ErrIllegalArgument.Wrapf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, currEpoch)
 		}
-	}
-	return totalDealSpaceTime, totalVerifiedSpaceTime, totalDealSpace, nil
-}
-
-func validateDealCanActivate(proposal *DealProposal, minerAddr addr.Address, sectorExpiration, sectorActivation abi.ChainEpoch) error {
-	if proposal.Provider != minerAddr {
-		return exitcode.ErrForbidden.Wrapf("proposal has provider %v, must be %v", proposal.Provider, minerAddr)
-	}
-	if sectorActivation > proposal.StartEpoch {
-		return exitcode.ErrIllegalArgument.Wrapf("proposal start epoch %d has already elapsed at %d", proposal.StartEpoch, sectorActivation)
-	}
-	if proposal.EndEpoch > sectorExpiration {
-		return exitcode.ErrIllegalArgument.Wrapf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)
+		if proposal.EndEpoch > sectorExpiration {
+			return exitcode.ErrIllegalArgument.Wrapf("proposal expiration %d exceeds sector expiration %d", proposal.EndEpoch, sectorExpiration)
+		}
 	}
 	return nil
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Checks
+////////////////////////////////////////////////////////////////////////////////
 
 func validateDeal(rt Runtime, deal ClientDealProposal, networkRawPower, networkQAPower, baselinePower abi.StoragePower) error {
 	if err := dealProposalIsInternallyValid(rt, deal); err != nil {

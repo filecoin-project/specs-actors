@@ -27,6 +27,9 @@ const (
 // Bitwidth of AMTs determined empirically from mutation patterns and projections of mainnet data.
 const ProposalsAmtBitwidth = 5
 const StatesAmtBitwidth = 6
+const VerifiedRewardsHistoryAmtBitwidth = 5  // FIXME calibrate this
+const ProviderVerifiedClaimsHamtBitwidth = 5 // FIXME calibrate this
+const StoragePowerDeltaQueueAmtBitwidth = 5  // FIXME calibrate this
 
 type State struct {
 	// Proposals are deals that have been proposed and not yet cleaned up after expiry or termination.
@@ -60,6 +63,16 @@ type State struct {
 	TotalProviderLockedCollateral abi.TokenAmount
 	// Total storage fee that is locked in escrow -> unlocked when payments are made
 	TotalClientStorageFee abi.TokenAmount
+
+	// Sum of space occupied by active verified deals at end of last epoch.
+	TotalVerifiedSpace abi.StoragePower
+	// Queue of deltas to total verified space in the current or future epochs.
+	// The sum of TotalVerifiedSpace plus all deltas should equal zero, never dipping below zero in the interim.
+	TotalVerifiedSpaceDeltas cid.Cid // AMT[epoch]big.Int
+	// Recent history of past total verified space and verified reward received
+	VerifiedRewardsHistory cid.Cid // AMT[epoch]VerifiedDealTotals
+	// Provider verified deal claims
+	ProviderVerifiedClaims cid.Cid // HAMT[actorID]{...}
 }
 
 func ConstructState(store adt.Store) (*State, error) {
@@ -85,6 +98,19 @@ func ConstructState(store adt.Store) (*State, error) {
 		return nil, xerrors.Errorf("failed to create empty balance table: %w", err)
 	}
 
+	emptyStoragePowerDeltaQueueCid, err := adt.StoreEmptyArray(store, StoragePowerDeltaQueueAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty array: %w", err)
+	}
+	emptyVerifiedRewardsHistoryCid, err := adt.StoreEmptyArray(store, VerifiedRewardsHistoryAmtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty array: %w", err)
+	}
+	emptyProviderVerifiedClaimsCid, err := adt.StoreEmptyMap(store, builtin.DefaultHamtBitwidth)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create empty map: %w", err)
+	}
+
 	return &State{
 		Proposals:        emptyProposalsArrayCid,
 		States:           emptyStatesArrayCid,
@@ -98,6 +124,11 @@ func ConstructState(store adt.Store) (*State, error) {
 		TotalClientLockedCollateral:   abi.NewTokenAmount(0),
 		TotalProviderLockedCollateral: abi.NewTokenAmount(0),
 		TotalClientStorageFee:         abi.NewTokenAmount(0),
+
+		TotalVerifiedSpace:       big.Zero(),
+		TotalVerifiedSpaceDeltas: emptyStoragePowerDeltaQueueCid,
+		VerifiedRewardsHistory:   emptyVerifiedRewardsHistoryCid,
+		ProviderVerifiedClaims:   emptyProviderVerifiedClaimsCid,
 	}, nil
 }
 
@@ -297,6 +328,12 @@ type marketStateMutation struct {
 	totalClientStorageFee         abi.TokenAmount
 
 	nextDealId abi.DealID
+
+	verifiedPermit            MarketStateMutationPermission
+	totalVerifiedSpace        abi.StoragePower
+	totalVerifiedSpaceDeltas *StoragePowerDeltaQueue
+	verifiedRewardHistory    *VerifiedRewardHistory
+	providerVerifiedClaims   *ProviderVerifiedClaims
 }
 
 func (s *State) mutator(store adt.Store) *marketStateMutation {
@@ -355,6 +392,27 @@ func (m *marketStateMutation) build() (*marketStateMutation, error) {
 		m.dealsByEpoch = dbe
 	}
 
+	if m.verifiedPermit != Invalid {
+		m.totalVerifiedSpace = m.st.TotalVerifiedSpace
+		tvsq, err := AsStoragePowerDeltaQueue(m.store, m.st.TotalVerifiedSpaceDeltas)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to load verified space deltas: %w", err)
+		}
+		m.totalVerifiedSpaceDeltas = tvsq
+
+		hvr, err := AsVerifiedRewardHistory(m.store, m.st.VerifiedRewardsHistory)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to load historical verified rewards: %w", err)
+		}
+		m.verifiedRewardHistory = hvr
+
+		pvc, err := AsProviderVerifiedClaims(m.store, m.st.ProviderVerifiedClaims)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to load provider verified claims: %w", err)
+		}
+		m.providerVerifiedClaims = pvc
+	}
+
 	m.nextDealId = m.st.NextID
 
 	return m, nil
@@ -387,6 +445,11 @@ func (m *marketStateMutation) withPendingProposals(permit MarketStateMutationPer
 
 func (m *marketStateMutation) withDealsByEpoch(permit MarketStateMutationPermission) *marketStateMutation {
 	m.dpePermit = permit
+	return m
+}
+
+func (m *marketStateMutation) withVerifiedRewards(permit MarketStateMutationPermission) *marketStateMutation {
+	m.verifiedPermit = permit
 	return m
 }
 
@@ -428,6 +491,19 @@ func (m *marketStateMutation) commitState() error {
 	if m.dpePermit == WritePermission {
 		if m.st.DealOpsByEpoch, err = m.dealsByEpoch.Root(); err != nil {
 			return xerrors.Errorf("failed to flush deals by epoch: %w", err)
+		}
+	}
+
+	if m.verifiedPermit == WritePermission {
+		m.st.TotalVerifiedSpace = m.totalVerifiedSpace
+		if m.st.TotalVerifiedSpaceDeltas, err = m.totalVerifiedSpaceDeltas.Root(); err != nil {
+			return xerrors.Errorf("failed to flush verified space deltas: %w", err)
+		}
+		if m.st.VerifiedRewardsHistory, err = m.verifiedRewardHistory.Root(); err != nil {
+			return xerrors.Errorf("failed to flush historical verified rewards: %w", err)
+		}
+		if m.st.ProviderVerifiedClaims, err = m.providerVerifiedClaims.Root(); err != nil {
+			return xerrors.Errorf("failed to flush provider verified claims: %w", err)
 		}
 	}
 

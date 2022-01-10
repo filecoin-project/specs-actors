@@ -25,6 +25,7 @@ func (a Actor) Exports() []interface{} {
 		2:                         a.AwardBlockReward,
 		3:                         a.ThisEpochReward,
 		4:                         a.UpdateNetworkKPI,
+		5:                         a.ClaimVerifiedDealReward,
 	}
 }
 
@@ -175,6 +176,21 @@ func (a Actor) UpdateNetworkKPI(rt runtime.Runtime, currRealizedPower *abi.Stora
 		st.updateToNextEpochWithReward(*currRealizedPower)
 		// only update smoothed estimates after updating reward and epoch
 		st.updateSmoothedEstimates(st.Epoch - prev)
+	})
+	return nil
+}
+
+func (a Actor) ClaimVerifiedDealReward(rt runtime.Runtime, currTotalVerifiedSpace *abi.StoragePower) *abi.TokenAmount {
+	// Note: this should be opened up to a whitelist after the FVM supports alternative markets.
+	rt.ValidateImmediateCallerIs(builtin.StorageMarketActorAddr)
+	if currTotalVerifiedSpace == nil {
+		rt.Abortf(exitcode.ErrIllegalArgument, "argument should not be nil")
+	}
+
+	var st State
+	rt.StateTransaction(&st, func() {
+		// FIXME send the verified deal reward for the elapsed epoch and record the current total verified space
+		// for calculation of the next one
 	})
 	return nil
 }

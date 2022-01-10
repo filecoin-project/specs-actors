@@ -26,11 +26,12 @@ var MethodsCron = struct {
 }{MethodConstructor, 2}
 
 var MethodsReward = struct {
-	Constructor      abi.MethodNum
-	AwardBlockReward abi.MethodNum
-	ThisEpochReward  abi.MethodNum
-	UpdateNetworkKPI abi.MethodNum
-}{MethodConstructor, 2, 3, 4}
+	Constructor             abi.MethodNum
+	AwardBlockReward        abi.MethodNum
+	ThisEpochReward         abi.MethodNum
+	UpdateNetworkKPI        abi.MethodNum
+	ClaimVerifiedDealReward abi.MethodNum
+}{MethodConstructor, 2, 3, 4, 5}
 
 var MethodsMultisig = struct {
 	Constructor                 abi.MethodNum
@@ -52,15 +53,15 @@ var MethodsPaych = struct {
 }{MethodConstructor, 2, 3, 4}
 
 var MethodsMarket = struct {
-	Constructor              abi.MethodNum
-	AddBalance               abi.MethodNum
-	WithdrawBalance          abi.MethodNum
-	PublishStorageDeals      abi.MethodNum
-	VerifyDealsForActivation abi.MethodNum
-	ActivateDeals            abi.MethodNum
-	OnMinerSectorsTerminate  abi.MethodNum
-	ComputeDataCommitment    abi.MethodNum
-	CronTick                 abi.MethodNum
+	Constructor             abi.MethodNum
+	AddBalance              abi.MethodNum
+	WithdrawBalance         abi.MethodNum
+	PublishStorageDeals     abi.MethodNum
+	Deprecated1             abi.MethodNum
+	ActivateDeals           abi.MethodNum
+	OnMinerSectorsTerminate abi.MethodNum
+	ComputeDataCommitment   abi.MethodNum
+	CronTick                abi.MethodNum
 }{MethodConstructor, 2, 3, 4, 5, 6, 7, 8, 9}
 
 var MethodsPower = struct {

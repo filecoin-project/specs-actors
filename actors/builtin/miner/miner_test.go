@@ -3927,7 +3927,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.PreCommit
 				VerifiedDealWeight: conf.verifiedDealWeight,
 			}},
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.Deprecated1, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	} else {
 		// Ensure the deal IDs and configured deal weight returns are consistent.
 		require.Equal(h.t, abi.SectorSize(0), conf.dealSpace, "no deals but positive deal space configured")
@@ -3996,7 +3996,7 @@ func (h *actorHarness) preCommitSectorBatch(rt *mock.Runtime, params *miner.PreC
 		vdReturn := market.VerifyDealsForActivationReturn{
 			Sectors: sectorWeights,
 		}
-		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.VerifyDealsForActivation, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
+		rt.ExpectSend(builtin.StorageMarketActorAddr, builtin.MethodsMarket.Deprecated1, &vdParams, big.Zero(), &vdReturn, exitcode.Ok)
 	}
 	st := getState(rt)
 	// burn networkFee
