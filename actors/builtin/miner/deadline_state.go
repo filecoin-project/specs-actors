@@ -1292,9 +1292,6 @@ func (d *Deadline) IsLive() (bool, error) {
 		return true, nil
 	}
 
-	// TODO: Should we also return true here if the SectorsSnapshot is non-empty?
-	// I don't think that can happen (without meeting an earlier return condition), but if it does it should get cleaned up?
-
 	// Otherwise, the deadline is definitely dead.
 	return false, nil
 }

@@ -225,18 +225,12 @@ func (m minerMigrator) migrateDeadlines(ctx context.Context, store adt.Store, de
 				return cid.Undef, err
 			}
 
-			outDeadline := miner7.Deadline{
-				Partitions:                        inDeadline.Partitions,
-				ExpirationsEpochs:                 inDeadline.ExpirationsEpochs,
-				PartitionsPoSted:                  inDeadline.PartitionsPoSted,
-				EarlyTerminations:                 inDeadline.EarlyTerminations,
-				LiveSectors:                       inDeadline.LiveSectors,
-				TotalSectors:                      inDeadline.TotalSectors,
-				FaultyPower:                       miner7.PowerPair(inDeadline.FaultyPower),
-				OptimisticPoStSubmissions:         inDeadline.OptimisticPoStSubmissions,
-				SectorsSnapshot:                   sectors,
-				PartitionsSnapshot:                inDeadline.PartitionsSnapshot,
-				OptimisticPoStSubmissionsSnapshot: inDeadline.OptimisticPoStSubmissionsSnapshot,
+			outDeadline := fromv6Deadline(inDeadline)
+			if inDeadline.OptimisticPoStSubmissions != inDeadline.OptimisticPoStSubmissionsSnapshot {
+				// there's a proof that could be disputed, snapshot the sectors
+				outDeadline.SectorsSnapshot = sectors
+			} else {
+				outDeadline.SectorsSnapshot = m.emptySectorsV7
 			}
 
 			outDlCid, err := store.Put(ctx, &outDeadline)
@@ -286,5 +280,21 @@ func fromv6State(inState miner6.State) miner7.State {
 		CurrentDeadline:            inState.CurrentDeadline,
 		EarlyTerminations:          inState.EarlyTerminations,
 		DeadlineCronActive:         inState.DeadlineCronActive,
+	}
+}
+
+// copies over all fields except SectorsSnapshot
+func fromv6Deadline(inDeadline miner6.Deadline) miner7.Deadline {
+	return miner7.Deadline{
+		Partitions:                        inDeadline.Partitions,
+		ExpirationsEpochs:                 inDeadline.ExpirationsEpochs,
+		PartitionsPoSted:                  inDeadline.PartitionsPoSted,
+		EarlyTerminations:                 inDeadline.EarlyTerminations,
+		LiveSectors:                       inDeadline.LiveSectors,
+		TotalSectors:                      inDeadline.TotalSectors,
+		FaultyPower:                       miner7.PowerPair(inDeadline.FaultyPower),
+		OptimisticPoStSubmissions:         inDeadline.OptimisticPoStSubmissions,
+		PartitionsSnapshot:                inDeadline.PartitionsSnapshot,
+		OptimisticPoStSubmissionsSnapshot: inDeadline.OptimisticPoStSubmissionsSnapshot,
 	}
 }
