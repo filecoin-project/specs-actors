@@ -91,6 +91,41 @@ func SubmitPoSt(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Add
 	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
 
+func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAddress, workerAddress address.Address) {
+	dlInfo := MinerDLInfo(t, v, minerAddress)
+	var minerState miner.State
+	err := v.GetState(minerAddress, &minerState)
+	require.NoError(t, err)
+	deadlines, err := minerState.LoadDeadlines(ctxStore)
+	require.NoError(t, err)
+	deadline, err := deadlines.LoadDeadline(ctxStore, dlInfo.Index)
+	require.NoError(t, err)
+	if deadline.LiveSectors == 0 {
+		return
+	}
+	partitionArray, err := deadline.PartitionsArray(ctxStore)
+	require.NoError(t, err)
+	var partitions []miner.PoStPartition
+	for i := uint64(0); i < partitionArray.Length(); i++ {
+		partitions = append(partitions, miner.PoStPartition{
+			Index:   i,
+			Skipped: bitfield.New(),
+		})
+	}
+
+	submitParams := miner.SubmitWindowedPoStParams{
+		Deadline: dlInfo.Index,
+		Partitions: partitions,
+		Proofs: []proof.PoStProof{{
+			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+		}},
+		ChainCommitEpoch: dlInfo.Challenge,
+		ChainCommitRand:  []byte(vm6.RandString),
+	}
+
+	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+}
+
 func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch) []*miner.SectorPreCommitOnChainInfo {
 	invocsCommon := []vm6.ExpectInvocation{
 		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
@@ -217,9 +252,9 @@ func PrecommitSectorNumbers(precommits []*miner.SectorPreCommitOnChainInfo) bitf
 }
 
 // Proves pre-committed sectors as batches of aggSize.
-func ProveCommitSectors(t *testing.T, v *vm6.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, aggSize int) {
+func ProveCommitSectors(t *testing.T, v *vm6.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo) {
 	for len(precommits) > 0 {
-		batchSize := min(aggSize, len(precommits))
+		batchSize := min(819, len(precommits)) // 819 is max aggregation size
 		toProve := precommits[:batchSize]
 		precommits = precommits[batchSize:]
 
@@ -267,60 +302,38 @@ func AdvanceOneEpochWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
 	return v
 }
 
-type advanceDeadlinePredicate func(dlInfo *dline.Info) bool
-// AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
-// miner state up-to-date by running a cron at the end of each deadline period.
-func AdvanceByDeadline(t *testing.T, v *vm6.VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*vm6.VM, *dline.Info) {
-	dlInfo := MinerDLInfo(t, v, minerIDAddr)
-	var err error
-	for predicate(dlInfo) {
-		v, err = v.WithEpoch(dlInfo.Last())
-		require.NoError(t, err)
-
-		vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
-
-		dlInfo = vm6.NextMinerDLInfo(t, v, minerIDAddr)
-	}
-	return v, dlInfo
-}
-
 // Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
 // The VM returned will be set to the last deadline close, not at e.
-func AdvanceByDeadlineTillEpoch(t *testing.T, v *vm6.VM, minerIDAddr address.Address, e abi.ChainEpoch) (*vm6.VM, *dline.Info) {
-	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
-		return dlInfo.Close <= e
-	})
-}
-
-// Advances by deadline until the deadline index matches the given index.
-// The vm returned will be set to the close epoch of the previous deadline.
-func AdvanceByDeadlineTillIndex(t *testing.T, v *vm6.VM, minerIDAddr address.Address, i uint64) (*vm6.VM, *dline.Info) {
-	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
-		return dlInfo.Index != i
-	})
-}
-
-// Advance to the epoch when the sector is due to be proven.
-// Returns the deadline info for proving deadline for sector, partition index of sector, and a VM at the opening of
-// the deadline (ready for SubmitWindowedPoSt).
-func AdvanceTillProvingDeadline(t *testing.T, v *vm6.VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*dline.Info, uint64, *vm6.VM) {
-	dlIdx, pIdx := vm6.SectorDeadline(t, v, minerIDAddress, sectorNumber)
-
-	// advance time to next proving period
-	v, dlInfo := AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlIdx)
-	v, err := v.WithEpoch(dlInfo.Open)
-	require.NoError(t, err)
-	return dlInfo, pIdx, v
-}
-
-func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *vm6.VM, minerIDAddress address.Address, workerAddress address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *vm6.VM {
-	var dlInfo *dline.Info
-	var pIdx uint64
+func AdvanceToEpochWithCron(t *testing.T, v *vm6.VM, e abi.ChainEpoch) *vm6.VM {
 	for v.GetEpoch() < e {
-		dlInfo, pIdx, v = AdvanceTillProvingDeadline(t, v, minerIDAddress, sectorNumber)
-		SubmitPoSt(t, v, minerIDAddress, workerAddress, dlInfo, pIdx)
-		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
+		v = AdvanceOneEpochWithCron(t, v)
 	}
-
 	return v
+}
+
+func AdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
+	for i := abi.ChainEpoch(0); i < miner.WPoStChallengeWindow; i++ {
+		vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+		v = AdvanceOneEpochWithCron(t, v)
+	}
+	return v
+}
+
+func ProveThenAdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm6.VM {
+	for _, minerInfo := range minerInfos {
+		SubmitPoStForDeadline(t, v, ctxStore, minerInfo.MinerAddress, minerInfo.WorkerAddress)
+	}
+	return AdvanceOneDeadlineWithCron(t , v)
+}
+
+func AdvanceOneDayWhileProving(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm6.VM {
+	for i := uint64(0); i < miner.WPoStPeriodDeadlines; i++ {
+		v = ProveThenAdvanceOneDeadlineWithCron(t, v, ctxStore, minerInfos)
+	}
+	return v
+}
+
+type MinerInfo struct{
+	WorkerAddress address.Address
+	MinerAddress  address.Address
 }

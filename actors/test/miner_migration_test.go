@@ -2,8 +2,8 @@ package test
 
 import (
 	"context"
-	"fmt"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
+	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	"github.com/stretchr/testify/assert"
 	"testing"
 
@@ -23,11 +23,13 @@ import (
 	tutil6 "github.com/filecoin-project/specs-actors/v6/support/testing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm6Util"
 
-	addr "github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-address"
 )
 
+const sealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
-func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID addr.Address, dealLabel string,
+
+func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID address.Address, dealLabel string,
 	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
 ) *market6.PublishStorageDealsReturn {
 	deal := market6.DealProposal{
@@ -78,86 +80,73 @@ func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID addr.A
 	return result.Ret.(*market6.PublishStorageDealsReturn)
 }
 
-func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int) (*vm6.VM, [][]abi.SectorNumber) {
-	workerAddrs := vm6.CreateAccounts(ctx, t, v, numMiners, big.Mul(big.NewInt(200_000), big.NewInt(1e18)), 93837778)
-
-	// create miner
-	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) []vm6Util.MinerInfo {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
 
-	var minerAddresses []addr.Address
-	for _, address := range workerAddrs {
+	workerAddresses := vm6.CreateAccounts(ctx, t, v, numMiners, big.Mul(big.NewInt(200_000_000), vm6.FIL), 93837778)
+	assert.Equal(t, len(workerAddresses), numMiners)
+
+	var minerInfos []vm6Util.MinerInfo
+	for _, workerAddress := range workerAddresses {
 		params := power6.CreateMinerParams{
-			Owner:               address,
-			Worker:              address,
+			Owner:               workerAddress,
+			Worker:              workerAddress,
 			WindowPoStProofType: wPoStProof,
 			Peer:                abi.PeerID("not really a peer id"),
 		}
-		ret := vm6.ApplyOk(t, v, address, builtin6.StoragePowerActorAddr, big.Mul(big.NewInt(100_000), vm6.FIL), builtin6.MethodsPower.CreateMiner, &params)
+		ret := vm6.ApplyOk(t, v, workerAddress, builtin6.StoragePowerActorAddr, big.Mul(big.NewInt(100_000_000), vm6.FIL), builtin6.MethodsPower.CreateMiner, &params)
 		minerAddress, ok := ret.(*power6.CreateMinerReturn)
 		require.True(t, ok)
-		minerAddresses = append(minerAddresses, minerAddress.IDAddress)
+		minerInfos = append(minerInfos, vm6Util.MinerInfo{ WorkerAddress: workerAddress, MinerAddress: minerAddress.IDAddress })
 	}
-	assert.Equal(t, len(minerAddresses), numMiners)
+	assert.Equal(t, len(minerInfos), numMiners)
+	return minerInfos
+}
 
-	var sectorNumbers [][]abi.SectorNumber
-	for i, minerAddress := range minerAddresses {
-		worker := workerAddrs[i]
-		fmt.Printf("MINER %d\n", i)
-		fmt.Printf("EPOCH %d\n", v.GetEpoch())
-		fmt.Printf("MINER POWER %d\n", vm6.GetNetworkStats(t, v).State.TotalRawBytePower)
-		fmt.Printf("BALANCE %d\n", vm6.GetMinerBalances(t, v, minerAddress).AvailableBalance)
-		precommits := vm6Util.PreCommitSectors(t, v, numSectors, miner6.PreCommitSectorBatchMaxSize, workerAddrs[i], minerAddress, sealProof, abi.SectorNumber(firstSectorNo + i * numSectors), true, v.GetEpoch()+miner6.MaxSectorExpirationExtension)
-		fmt.Printf("BALANCE %d\n", vm6.GetMinerBalances(t, v, minerAddress).AvailableBalance)
+func precommits(t *testing.T, v *vm6.VM, firstSectorNo int, numSectors int, minerInfos []vm6Util.MinerInfo) [][]*miner6.SectorPreCommitOnChainInfo {
+	var precommitInfo [][]*miner6.SectorPreCommitOnChainInfo
+	for _, minerInfo := range minerInfos {
+
+		precommits := vm6Util.PreCommitSectors(t, v, numSectors, miner6.PreCommitSectorBatchMaxSize, minerInfo.WorkerAddress, minerInfo.MinerAddress, sealProof, abi.SectorNumber(firstSectorNo), true, v.GetEpoch()+miner6.MaxSectorExpirationExtension)
 
 		assert.Equal(t, len(precommits), numSectors)
-		balances := vm6.GetMinerBalances(t, v, minerAddress)
+		balances := vm6.GetMinerBalances(t, v, minerInfo.MinerAddress)
 		assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
-
-		// advance time to when we can prove-commit
-		proveTime := v.GetEpoch() + miner6.PreCommitChallengeDelay + 1
-		v, _ = vm6.AdvanceByDeadlineTillEpoch(t, v, minerAddress, proveTime)
-
-		v, err = v.WithEpoch(proveTime)
-		require.NoError(t, err)
-
-		vm6Util.ProveCommitSectors(t, v, worker, minerAddress, precommits, 256)
-		// proveCommit the sector
-		var sectorNums []abi.SectorNumber
-		for i, _ := range precommits {
-			sectorNums = append(sectorNums, precommits[i].Info.SectorNumber)
-			sectorNumber := sectorNums[i]
-
-			// In the same epoch, trigger cron to validate prove commit
-			vm6.ApplyOk(t, v, builtin6.SystemActorAddr, builtin6.CronActorAddr, big.Zero(), builtin6.MethodsCron.EpochTick, nil)
-
-			// advance to proving period and submit post
-			dlInfo, pIdx, v := vm6.AdvanceTillProvingDeadline(t, v, minerAddress, sectorNumber)
-
-			// sector shouldn't be active until PoSt
-			require.False(t, vm6Util.CheckSectorActive(t, v, minerAddress, dlInfo.Index, pIdx, sectorNumber))
-			vm6Util.SubmitPoSt(t, v, minerAddress, worker, dlInfo, pIdx)
-
-			// move into the next deadline so that the created sector is mutable
-			v, _ = vm6.AdvanceByDeadlineTillEpoch(t, v, minerAddress, v.GetEpoch()+miner6.WPoStChallengeWindow)
-			v = vm6.AdvanceOneEpochWithCron(t, v)
-
-			// hooray, sector is now active
-			require.True(t, vm6Util.CheckSectorActive(t, v, minerAddress, dlInfo.Index, pIdx, sectorNumber))
-		}
-		assert.Equal(t, len(sectorNums), numSectors)
-		sectorNumbers = append(sectorNumbers, sectorNums)
+		precommitInfo = append(precommitInfo, precommits)
 	}
-	assert.Equal(t, len(sectorNumbers), numMiners)
+	return precommitInfo
+}
 
-	return v, sectorNumbers
+func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int) []vm6Util.MinerInfo {
+	minerInfos := createMiners(t, ctx, v, numMiners)
+
+	precommitInfo := precommits(t, v , firstSectorNo, numSectors, minerInfos)
+
+	// advance time to when we can prove-commit
+	proveTime := v.GetEpoch() + miner6.PreCommitChallengeDelay + 1
+	v, err := v.WithEpoch(proveTime)
+	require.NoError(t, err)
+
+	for i, minerInfo := range minerInfos {
+		vm6Util.ProveCommitSectors(t, v, minerInfo.WorkerAddress, minerInfo.MinerAddress, precommitInfo[i])
+	}
+	v = vm6Util.AdvanceOneEpochWithCron(t, v)
+
+	//networkStats := vm6.GetNetworkStats(t, v)
+	//fmt.Printf("BYTES COMMITTED %s\n", networkStats.TotalBytesCommitted)
+	return minerInfos
 }
 
 func TestCreateMiners(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
+	ctxStore := adt.WrapBlockStore(ctx, bs)
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
 
-	createMinersAndSectorsV6(t, ctx, v, 100, 10, 300)
+	v = vm6Util.AdvanceToEpochWithCron(t, v, 200)
+	minerInfos := createMinersAndSectorsV6(t, ctx, v, 100, 11, 10_000)
+
+	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
+	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
 }
