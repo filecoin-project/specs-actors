@@ -973,12 +973,23 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec,
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
-	dl.SectorsSnapshot = sectors
 	dl.OptimisticPoStSubmissionsSnapshot = dl.OptimisticPoStSubmissions
 	dl.OptimisticPoStSubmissions, err = adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 	}
+	// only snapshot sectors if there's a proof that might be disputed (this is equivalent to asking if the OptimisticPoStSubmissionsSnapshot is empty)
+	if dl.OptimisticPoStSubmissions != dl.OptimisticPoStSubmissionsSnapshot {
+		dl.SectorsSnapshot = sectors
+	} else {
+		emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+		if err != nil {
+			return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to zero out the sectors snapshot: %w", err)
+		}
+
+		dl.SectorsSnapshot = emptySectorsSnapshotArrayCid
+	}
+
 	return powerDelta, penalizedPower, nil
 }
 
@@ -1280,6 +1291,9 @@ func (d *Deadline) IsLive() (bool, error) {
 	if d.OptimisticPoStSubmissions != d.OptimisticPoStSubmissionsSnapshot {
 		return true, nil
 	}
+
+	// TODO: Should we also return true here if the SectorsSnapshot is non-empty?
+	// I don't think that can happen (without meeting an earlier return condition), but if it does it should get cleaned up?
 
 	// Otherwise, the deadline is definitely dead.
 	return false, nil

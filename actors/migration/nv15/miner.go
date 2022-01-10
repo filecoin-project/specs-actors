@@ -216,7 +216,8 @@ func (m minerMigrator) migrateDeadlines(ctx context.Context, store adt.Store, de
 
 	var outDeadlines miner7.Deadlines
 	for i, c := range inDeadlines.Due {
-		if c == m.emptyDeadlineV6 && sectors == m.emptySectorsV7 {
+		if c == m.emptyDeadlineV6 {
+			// empty deadlines don't get sectors snapshots
 			outDeadlines.Due[i] = m.emptyDeadlineV7
 		} else {
 			var inDeadline miner6.Deadline
