@@ -2,9 +2,12 @@ package test
 
 import (
 	"context"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 	"strconv"
 	"testing"
+
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 
 	"github.com/filecoin-project/go-address"
 
@@ -106,10 +109,20 @@ func TestUpgradeAndMissPoSt(t *testing.T) {
 		builtin.MethodsMiner.ProveReplicaUpdates,
 		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate}})
 
+	powerAfterUpdate := vm.MinerPower(t, v, minerAddrs.IDAddress)
+	require.False(t, powerAfterUpdate.Raw.IsZero())
+
 	// immediately miss post, lose power, become faulty
 	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStProvingPeriod)
 	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
 	require.True(t, vm.CheckSectorFaulty(t, v, minerAddrs.IDAddress, deadlineIndex, partitionIndex, sectorNumber))
+
+	dl := vm.DeadlineState(t, v, minerAddrs.IDAddress, deadlineIndex)
+	require.Equal(t, dl.FaultyPower.Raw, powerAfterUpdate.Raw)
+
+	emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(v.Store(), miner.SectorsAmtBitwidth)
+	require.NoError(t, err)
+	require.Equal(t, dl.SectorsSnapshot, emptySectorsSnapshotArrayCid)
 
 	minerPower := vm.MinerPower(t, v, minerAddrs.IDAddress)
 	require.True(t, minerPower.IsZero())
@@ -308,10 +321,10 @@ func TestNoDisputeuteAfterUpgrade(t *testing.T) {
 	vm.ApplyCode(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams, exitcode.ErrIllegalArgument)
 
 	vm.ExpectInvocation{
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		To:             minerAddrs.IDAddress,
+		Method:         builtin.MethodsMiner.DisputeWindowedPoSt,
 		SubInvocations: nil,
-		Exitcode: exitcode.ErrIllegalArgument,
+		Exitcode:       exitcode.ErrIllegalArgument,
 	}.Matches(t, v.LastInvocation())
 }
 
@@ -331,10 +344,10 @@ func TestUpgradeBadPostDispute(t *testing.T) {
 	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams)
 
 	vm.ExpectInvocation{
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		To:             minerAddrs.IDAddress,
+		Method:         builtin.MethodsMiner.DisputeWindowedPoSt,
 		SubInvocations: nil,
-		Exitcode: 0,
+		Exitcode:       0,
 	}.Matches(t, v.LastInvocation())
 }
 
@@ -401,10 +414,10 @@ func TestBadPostUpgradeDispute(t *testing.T) {
 	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.DisputeWindowedPoSt, disputeParams)
 
 	vm.ExpectInvocation{
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.DisputeWindowedPoSt,
+		To:             minerAddrs.IDAddress,
+		Method:         builtin.MethodsMiner.DisputeWindowedPoSt,
 		SubInvocations: nil,
-		Exitcode: 0,
+		Exitcode:       0,
 	}.Matches(t, v.LastInvocation())
 }
 
@@ -442,22 +455,22 @@ func TestTerminateAfterUpgrade(t *testing.T) {
 
 // Tests that an active CC sector can be correctly upgraded, and then the sector can be terminated
 func TestExtendAfterUpdgrade(t *testing.T) {
-    v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createMinerAndUpgradeASector(t)
+	v, sectorInfo, worker, minerAddrs, dlIdx, pIdx, _ := createMinerAndUpgradeASector(t)
 
 	extensionParams := &miner.ExtendSectorExpirationParams{
 		Extensions: []miner.ExpirationExtension{{
 			Deadline:      dlIdx,
 			Partition:     pIdx,
 			Sectors:       bitfield.NewFromSet([]uint64{uint64(sectorInfo.SectorNumber)}),
-			NewExpiration: v.GetEpoch()+miner.MaxSectorExpirationExtension - 1,
+			NewExpiration: v.GetEpoch() + miner.MaxSectorExpirationExtension - 1,
 		}},
 	}
 
 	vm.ApplyOk(t, v, worker, minerAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ExtendSectorExpiration, extensionParams)
 
 	vm.ExpectInvocation{
-		To:     minerAddrs.IDAddress,
-		Method: builtin.MethodsMiner.ExtendSectorExpiration,
+		To:             minerAddrs.IDAddress,
+		Method:         builtin.MethodsMiner.ExtendSectorExpiration,
 		SubInvocations: nil,
 	}.Matches(t, v.LastInvocation())
 
@@ -466,7 +479,7 @@ func TestExtendAfterUpdgrade(t *testing.T) {
 	infoFinal, found, err := mStateFinal.GetSector(v.Store(), sectorInfo.SectorNumber)
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, abi.ChainEpoch(miner.MaxSectorExpirationExtension - 1), infoFinal.Expiration-infoFinal.Activation)
+	assert.Equal(t, abi.ChainEpoch(miner.MaxSectorExpirationExtension-1), infoFinal.Expiration-infoFinal.Activation)
 }
 
 func TestWrongDeadlineIndexFailure(t *testing.T) {

@@ -973,12 +973,23 @@ func (dl *Deadline) ProcessDeadlineEnd(store adt.Store, quant builtin.QuantSpec,
 	// Reset PoSt submissions, snapshot proofs.
 	dl.PartitionsPoSted = bitfield.New()
 	dl.PartitionsSnapshot = dl.Partitions
-	dl.SectorsSnapshot = sectors
 	dl.OptimisticPoStSubmissionsSnapshot = dl.OptimisticPoStSubmissions
 	dl.OptimisticPoStSubmissions, err = adt.StoreEmptyArray(store, DeadlineOptimisticPoStSubmissionsAmtBitwidth)
 	if err != nil {
 		return powerDelta, penalizedPower, xerrors.Errorf("failed to clear pending proofs array: %w", err)
 	}
+	// only snapshot sectors if there's a proof that might be disputed (this is equivalent to asking if the OptimisticPoStSubmissionsSnapshot is empty)
+	if dl.OptimisticPoStSubmissions != dl.OptimisticPoStSubmissionsSnapshot {
+		dl.SectorsSnapshot = sectors
+	} else {
+		emptySectorsSnapshotArrayCid, err := adt.StoreEmptyArray(store, SectorsAmtBitwidth)
+		if err != nil {
+			return powerDelta, penalizedPower, xc.ErrIllegalState.Wrapf("failed to zero out the sectors snapshot: %w", err)
+		}
+
+		dl.SectorsSnapshot = emptySectorsSnapshotArrayCid
+	}
+
 	return powerDelta, penalizedPower, nil
 }
 

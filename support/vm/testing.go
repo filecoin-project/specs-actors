@@ -402,7 +402,7 @@ func SubmitInvalidPoSt(t *testing.T, v *VM, minerAddress, workerAddress address.
 			Skipped: bitfield.New(),
 		}},
 		Proofs: []proof.PoStProof{{
-			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
+			PoStProof:  abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 			ProofBytes: []byte(InvalidProof),
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
@@ -421,6 +421,21 @@ func SectorDeadline(t *testing.T, v *VM, minerIDAddress address.Address, sectorN
 	dlIdx, pIdx, err := minerState.FindSector(v.Store(), sectorNumber)
 	require.NoError(t, err)
 	return dlIdx, pIdx
+}
+
+// find the proving deadline and partition index of a miner's sector
+func DeadlineState(t *testing.T, v *VM, minerIDAddress address.Address, dlIndex uint64) *miner.Deadline {
+	var minerState miner.State
+	err := v.GetState(minerIDAddress, &minerState)
+	require.NoError(t, err)
+
+	dls, err := minerState.LoadDeadlines(v.store)
+	require.NoError(t, err)
+
+	dl, err := dls.LoadDeadline(v.store, dlIndex)
+	require.NoError(t, err)
+
+	return dl
 }
 
 // find the sector info for the given id
