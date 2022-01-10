@@ -204,7 +204,7 @@ func migrateSectors(ctx context.Context, store adt.Store, cache MigrationCache, 
 }
 
 func (m minerMigrator) migrateDeadlines(ctx context.Context, store adt.Store, deadlines cid.Cid, sectors cid.Cid) (cid.Cid, error) {
-	if deadlines == m.emptyDeadlinesV6 && sectors == m.emptySectorsV7 {
+	if deadlines == m.emptyDeadlinesV6 {
 		return m.emptyDeadlinesV7, nil
 	}
 
