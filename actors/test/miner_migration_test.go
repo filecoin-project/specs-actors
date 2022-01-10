@@ -105,6 +105,8 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firs
 	for i, minerAddress := range minerAddresses {
 		worker := workerAddrs[i]
 		fmt.Printf("MINER %d\n", i)
+		fmt.Printf("EPOCH %d\n", v.GetEpoch())
+		fmt.Printf("MINER POWER %d\n", vm6.GetNetworkStats(t, v).State.TotalRawBytePower)
 		fmt.Printf("BALANCE %d\n", vm6.GetMinerBalances(t, v, minerAddress).AvailableBalance)
 		precommits := vm6Util.PreCommitSectors(t, v, numSectors, miner6.PreCommitSectorBatchMaxSize, workerAddrs[i], minerAddress, sealProof, abi.SectorNumber(firstSectorNo + i * numSectors), true, v.GetEpoch()+miner6.MaxSectorExpirationExtension)
 		fmt.Printf("BALANCE %d\n", vm6.GetMinerBalances(t, v, minerAddress).AvailableBalance)
@@ -113,17 +115,16 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firs
 		balances := vm6.GetMinerBalances(t, v, minerAddress)
 		assert.True(t, balances.PreCommitDeposit.GreaterThan(big.Zero()))
 
-		// advance time to max seal duration
-		proveTime := v.GetEpoch() + miner6.MaxProveCommitDuration[sealProof]
+		// advance time to when we can prove-commit
+		proveTime := v.GetEpoch() + miner6.PreCommitChallengeDelay + 1
 		v, _ = vm6.AdvanceByDeadlineTillEpoch(t, v, minerAddress, proveTime)
 
 		v, err = v.WithEpoch(proveTime)
 		require.NoError(t, err)
 
-		var sectorNums []abi.SectorNumber
-
 		vm6Util.ProveCommitSectors(t, v, worker, minerAddress, precommits, 256)
 		// proveCommit the sector
+		var sectorNums []abi.SectorNumber
 		for i, _ := range precommits {
 			sectorNums = append(sectorNums, precommits[i].Info.SectorNumber)
 			sectorNumber := sectorNums[i]
@@ -140,7 +141,7 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firs
 
 			// move into the next deadline so that the created sector is mutable
 			v, _ = vm6.AdvanceByDeadlineTillEpoch(t, v, minerAddress, v.GetEpoch()+miner6.WPoStChallengeWindow)
-			v = vm6Util.AdvanceOneEpochWithCron(t, v)
+			v = vm6.AdvanceOneEpochWithCron(t, v)
 
 			// hooray, sector is now active
 			require.True(t, vm6Util.CheckSectorActive(t, v, minerAddress, dlInfo.Index, pIdx, sectorNumber))
@@ -158,5 +159,5 @@ func TestCreateMiners(t *testing.T) {
 	bs := ipld2.NewSyncBlockStoreInMemory()
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
 
-	createMinersAndSectorsV6(t, ctx, v, 100, 10, 100)
+	createMinersAndSectorsV6(t, ctx, v, 100, 10, 300)
 }

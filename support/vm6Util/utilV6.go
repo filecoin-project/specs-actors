@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/dline"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	xc "github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -63,18 +62,6 @@ func CheckSectorFaulty(t *testing.T, v *vm6.VM, minerIDAddress address.Address, 
 	return isFaulty
 }
 
-func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *vm6.VM, minerIDAddress address.Address, workerAddress address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *vm6.VM {
-	var dlInfo *dline.Info
-	var pIdx uint64
-	for v.GetEpoch() < e {
-		dlInfo, pIdx, v = vm6.AdvanceTillProvingDeadline(t, v, minerIDAddress, sectorNumber)
-		SubmitPoSt(t, v, minerIDAddress, workerAddress, dlInfo, pIdx)
-		v, _ = vm6.AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
-	}
-
-	return v
-}
-
 func DeclareRecovery(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumber abi.SectorNumber) {
 	recoverParams := miner.RecoveryDeclaration{
 		Deadline:  deadlineIndex,
@@ -103,18 +90,6 @@ func SubmitPoSt(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Add
 
 	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
-
-
-// Advances to the next epoch, running cron.
-func AdvanceOneEpochWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
-	result := vm6.RequireApplyMessage(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil, t.Name())
-
-	require.Equal(t, exitcode.Ok, result.Code)
-	v, err := v.WithEpoch(v.GetEpoch() + 1)
-	require.NoError(t, err)
-	return v
-}
-
 
 func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch) []*miner.SectorPreCommitOnChainInfo {
 	invocsCommon := []vm6.ExpectInvocation{
@@ -281,4 +256,71 @@ func MinerDLInfo(t *testing.T, v *vm6.VM, minerIDAddr address.Address) *dline.In
 	require.NoError(t, err)
 
 	return miner.NewDeadlineInfoFromOffsetAndEpoch(minerState.ProvingPeriodStart, v.GetEpoch())
+}
+
+// Advances to the next epoch, running cron.
+func AdvanceOneEpochWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
+	vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+	v, err := v.WithEpoch(v.GetEpoch() + 1)
+	require.NoError(t, err)
+	return v
+}
+
+type advanceDeadlinePredicate func(dlInfo *dline.Info) bool
+// AdvanceByDeadline creates a new VM advanced to an epoch specified by the predicate while keeping the
+// miner state up-to-date by running a cron at the end of each deadline period.
+func AdvanceByDeadline(t *testing.T, v *vm6.VM, minerIDAddr address.Address, predicate advanceDeadlinePredicate) (*vm6.VM, *dline.Info) {
+	dlInfo := MinerDLInfo(t, v, minerIDAddr)
+	var err error
+	for predicate(dlInfo) {
+		v, err = v.WithEpoch(dlInfo.Last())
+		require.NoError(t, err)
+
+		vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+
+		dlInfo = vm6.NextMinerDLInfo(t, v, minerIDAddr)
+	}
+	return v, dlInfo
+}
+
+// Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
+// The VM returned will be set to the last deadline close, not at e.
+func AdvanceByDeadlineTillEpoch(t *testing.T, v *vm6.VM, minerIDAddr address.Address, e abi.ChainEpoch) (*vm6.VM, *dline.Info) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
+		return dlInfo.Close <= e
+	})
+}
+
+// Advances by deadline until the deadline index matches the given index.
+// The vm returned will be set to the close epoch of the previous deadline.
+func AdvanceByDeadlineTillIndex(t *testing.T, v *vm6.VM, minerIDAddr address.Address, i uint64) (*vm6.VM, *dline.Info) {
+	return AdvanceByDeadline(t, v, minerIDAddr, func(dlInfo *dline.Info) bool {
+		return dlInfo.Index != i
+	})
+}
+
+// Advance to the epoch when the sector is due to be proven.
+// Returns the deadline info for proving deadline for sector, partition index of sector, and a VM at the opening of
+// the deadline (ready for SubmitWindowedPoSt).
+func AdvanceTillProvingDeadline(t *testing.T, v *vm6.VM, minerIDAddress address.Address, sectorNumber abi.SectorNumber) (*dline.Info, uint64, *vm6.VM) {
+	dlIdx, pIdx := vm6.SectorDeadline(t, v, minerIDAddress, sectorNumber)
+
+	// advance time to next proving period
+	v, dlInfo := AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlIdx)
+	v, err := v.WithEpoch(dlInfo.Open)
+	require.NoError(t, err)
+	return dlInfo, pIdx, v
+}
+
+func AdvanceByDeadlineTillEpochWhileProving(t *testing.T, v *vm6.VM, minerIDAddress address.Address, workerAddress address.Address, sectorNumber abi.SectorNumber, e abi.ChainEpoch) *vm6.VM {
+	var dlInfo *dline.Info
+	var pIdx uint64
+	for v.GetEpoch() < e {
+		dlInfo, pIdx, v = AdvanceTillProvingDeadline(t, v, minerIDAddress, sectorNumber)
+		SubmitPoSt(t, v, minerIDAddress, workerAddress, dlInfo, pIdx)
+		v, _ = AdvanceByDeadlineTillIndex(t, v, minerIDAddress, dlInfo.Index+2%miner.WPoStPeriodDeadlines)
+	}
+
+	return v
 }
