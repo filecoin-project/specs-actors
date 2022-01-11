@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	"github.com/stretchr/testify/assert"
@@ -104,11 +105,14 @@ func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) [
 	return minerInfos
 }
 
-func precommits(t *testing.T, v *vm6.VM, firstSectorNo int, numSectors int, minerInfos []vm6Util.MinerInfo) [][]*miner6.SectorPreCommitOnChainInfo {
+func precommits(t *testing.T, v *vm6.VM, firstSectorNo int, numSectors int, minerInfos []vm6Util.MinerInfo, deals [][]abi.DealID) [][]*miner6.SectorPreCommitOnChainInfo {
 	var precommitInfo [][]*miner6.SectorPreCommitOnChainInfo
-	for _, minerInfo := range minerInfos {
-
-		precommits := vm6Util.PreCommitSectors(t, v, numSectors, miner6.PreCommitSectorBatchMaxSize, minerInfo.WorkerAddress, minerInfo.MinerAddress, sealProof, abi.SectorNumber(firstSectorNo), true, v.GetEpoch()+miner6.MaxSectorExpirationExtension)
+	for i, minerInfo := range minerInfos {
+		var dealIDs []abi.DealID = nil
+		if deals != nil {
+			dealIDs = deals[i]
+		}
+		precommits := vm6Util.PreCommitSectors(t, v, numSectors, miner6.PreCommitSectorBatchMaxSize, minerInfo.WorkerAddress, minerInfo.MinerAddress, sealProof, abi.SectorNumber(firstSectorNo), true, v.GetEpoch()+miner6.MaxSectorExpirationExtension, dealIDs)
 
 		assert.Equal(t, len(precommits), numSectors)
 		balances := vm6.GetMinerBalances(t, v, minerInfo.MinerAddress)
@@ -118,35 +122,54 @@ func precommits(t *testing.T, v *vm6.VM, firstSectorNo int, numSectors int, mine
 	return precommitInfo
 }
 
-func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int) []vm6Util.MinerInfo {
+func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int, addDeals bool) ([]vm6Util.MinerInfo, *vm6.VM) {
 	minerInfos := createMiners(t, ctx, v, numMiners)
+	if numSectors == 0 {
+		return minerInfos, v
+	}
 
-	precommitInfo := precommits(t, v , firstSectorNo, numSectors, minerInfos)
+	var dealsArray [][]abi.DealID = nil
+	if addDeals {
+		for _, minerInfo := range minerInfos {
+			deals := vm6Util.CreateDeals(t, 1, v, minerInfo.WorkerAddress, minerInfo.WorkerAddress, minerInfo.MinerAddress, sealProof)
+			dealsArray = append(dealsArray, deals)
+		}
+	}
+
+	precommitInfo := precommits(t, v , firstSectorNo, numSectors, minerInfos, dealsArray)
 
 	// advance time to when we can prove-commit
 	proveTime := v.GetEpoch() + miner6.PreCommitChallengeDelay + 1
-	v, err := v.WithEpoch(proveTime)
-	require.NoError(t, err)
+	v = vm6Util.AdvanceToEpochWithCron(t, v, proveTime)
 
 	for i, minerInfo := range minerInfos {
-		vm6Util.ProveCommitSectors(t, v, minerInfo.WorkerAddress, minerInfo.MinerAddress, precommitInfo[i])
+		vm6Util.ProveCommitSectors(t, v, minerInfo.WorkerAddress, minerInfo.MinerAddress, precommitInfo[i], addDeals)
 	}
 	v = vm6Util.AdvanceOneEpochWithCron(t, v)
 
-	//networkStats := vm6.GetNetworkStats(t, v)
-	//fmt.Printf("BYTES COMMITTED %s\n", networkStats.TotalBytesCommitted)
-	return minerInfos
+	return minerInfos, v
 }
 
 func TestCreateMiners(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
-	ctxStore := adt.WrapBlockStore(ctx, bs)
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
 
 	v = vm6Util.AdvanceToEpochWithCron(t, v, 200)
-	minerInfos := createMinersAndSectorsV6(t, ctx, v, 100, 11, 10_000)
+
+	var minerInfos []vm6Util.MinerInfo
+	newMiners, v := createMinersAndSectorsV6(t, ctx, v, 100, 100, 0, false)
+	minerInfos = append(minerInfos, newMiners...)
+	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 100, 100, 100, false)
+	minerInfos = append(minerInfos, newMiners...)
+	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 10100, 1, 1_000, false)
+	minerInfos = append(minerInfos, newMiners...)
+	//newMiners, v = createMinersAndSectorsV6(t, ctx, v, 200100, 1, 100_000, false)
+	//minerInfos = append(minerInfos, newMiners...)
+	ctxStore := adt.WrapBlockStore(ctx, bs)
 
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
-	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
+
+	networkStats := vm6.GetNetworkStats(t, v)
+	fmt.Printf("BYTES COMMITTED %s\n", networkStats.TotalBytesCommitted)
 }
