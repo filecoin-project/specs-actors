@@ -11,6 +11,9 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	market0 "github.com/filecoin-project/specs-actors/actors/builtin/market"
+	market3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/market"
+	market5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/market"
+	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -142,10 +145,11 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 // }
 type PublishStorageDealsParams = market0.PublishStorageDealsParams
 
-type PublishStorageDealsReturn struct {
-	IDs        []abi.DealID
-	ValidDeals bitfield.BitField
-}
+//type PublishStorageDealsReturn struct {
+//	IDs        []abi.DealID
+//	ValidDeals bitfield.BitField
+//}
+type PublishStorageDealsReturn = market6.PublishStorageDealsReturn
 
 // Publish a new set of storage deals (not yet included in a sector).
 func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams) *PublishStorageDealsReturn {
@@ -336,29 +340,33 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 	}
 }
 
-// Changed since v2:
+// Changed in v3:
 // - Array of sectors rather than just one
 // - Removed SectorStart (which is unknown at call time)
-type VerifyDealsForActivationParams struct {
-	Sectors []SectorDeals
-}
+//type VerifyDealsForActivationParams struct {
+//	Sectors []SectorDeals
+//}
+type VerifyDealsForActivationParams = market3.VerifyDealsForActivationParams
 
-type SectorDeals struct {
-	SectorExpiry abi.ChainEpoch
-	DealIDs      []abi.DealID
-}
+//type SectorDeals struct {
+//	SectorExpiry abi.ChainEpoch
+//	DealIDs      []abi.DealID
+//}
+type SectorDeals = market3.SectorDeals
 
-// Changed since v2:
+// Changed in v3:
 // - Array of sectors weights
-type VerifyDealsForActivationReturn struct {
-	Sectors []SectorWeights
-}
+//type VerifyDealsForActivationReturn struct {
+//	Sectors []SectorWeights
+//}
+type VerifyDealsForActivationReturn = market3.VerifyDealsForActivationReturn
 
-type SectorWeights struct {
-	DealSpace          uint64         // Total space in bytes of submitted deals.
-	DealWeight         abi.DealWeight // Total space*time of submitted deals.
-	VerifiedDealWeight abi.DealWeight // Total space*time of submitted verified deals.
-}
+//type SectorWeights struct {
+//	DealSpace          uint64         // Total space in bytes of submitted deals.
+//	DealWeight         abi.DealWeight // Total space*time of submitted deals.
+//	VerifiedDealWeight abi.DealWeight // Total space*time of submitted verified deals.
+//}
+type SectorWeights = market3.SectorWeights
 
 // Computes the weight of deals proposed for inclusion in a number of sectors.
 // Deal weight is defined as the sum, over all deals in the set, of the product of deal size and duration.
@@ -460,18 +468,21 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 	return nil
 }
 
-type SectorDataSpec struct {
-	DealIDs    []abi.DealID
-	SectorType abi.RegisteredSealProof
-}
+//type SectorDataSpec struct {
+//	DealIDs    []abi.DealID
+//	SectorType abi.RegisteredSealProof
+//}
+type SectorDataSpec = market5.SectorDataSpec
 
-type ComputeDataCommitmentParams struct {
-	Inputs []*SectorDataSpec
-}
+//type ComputeDataCommitmentParams struct {
+//	Inputs []*SectorDataSpec
+//}
+type ComputeDataCommitmentParams = market5.ComputeDataCommitmentParams
 
-type ComputeDataCommitmentReturn struct {
-	CommDs []cbg.CborCid
-}
+//type ComputeDataCommitmentReturn struct {
+//	CommDs []cbg.CborCid
+//}
+type ComputeDataCommitmentReturn = market5.ComputeDataCommitmentReturn
 
 func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentParams) *ComputeDataCommitmentReturn {
 	rt.ValidateImmediateCallerType(builtin.StorageMinerActorCodeID)

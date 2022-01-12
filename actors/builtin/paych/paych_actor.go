@@ -94,6 +94,8 @@ func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Add
 ////////////////////////////////////////////////////////////////////////////////
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
+// This is not aliased from prior versions due to inclusio nof the SignedVoucher, which is not pure state.
+// If we removed the method SignedVoucher, this could become pure state.
 type UpdateChannelStateParams struct {
 	Sv     SignedVoucher
 	Secret []byte

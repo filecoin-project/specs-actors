@@ -9,8 +9,8 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/exitcode"
+	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
-
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
@@ -90,20 +90,21 @@ func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (owner
 }
 
 // This type duplicates the Miner.ControlAddresses return type, to work around a circular dependency between actors.
-type MinerAddrs struct {
-	Owner        addr.Address
-	Worker       addr.Address
-	ControlAddrs []addr.Address
-}
+//type MinerAddrs struct {
+//	Owner        addr.Address
+//	Worker       addr.Address
+//	ControlAddrs []addr.Address
+//}
+type MinerAddrs = builtin0.MinerAddrs
 
+// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
 type DeferredCronEventParams struct {
 	EventPayload            []byte
 	RewardSmoothed          smoothing.FilterEstimate
 	QualityAdjPowerSmoothed smoothing.FilterEstimate
 }
 
-// Note: we could move this alias back to the mutually-importing packages that use it, now that they
-// can instead both alias the v2 version.
+// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
 type ConfirmSectorProofsParams struct {
 	Sectors                 []abi.SectorNumber
 	RewardSmoothed          smoothing.FilterEstimate

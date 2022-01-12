@@ -134,6 +134,7 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 
 // Changed since v0:
 // - removed ThisEpochReward (unsmoothed)
+// This is not aliased to earlier version due to use of smoothing.FilterEstimate, which is not pure state.
 type ThisEpochRewardReturn struct {
 	ThisEpochRewardSmoothed smoothing.FilterEstimate
 	ThisEpochBaselinePower  abi.StoragePower

@@ -117,201 +117,6 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufRemoveDataCapProposal = []byte{131}
-
-func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write(lengthBufRemoveDataCapProposal); err != nil {
-		return err
-	}
-
-	// t.VerifiedClient (address.Address) (struct)
-	if err := t.VerifiedClient.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.DataCapAmount (big.Int) (struct)
-	if err := t.DataCapAmount.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
-	if err := t.RemovalProposalID.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
-	*t = RemoveDataCapProposal{}
-
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
-
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 3 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.VerifiedClient (address.Address) (struct)
-
-	{
-
-		if err := t.VerifiedClient.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.VerifiedClient: %w", err)
-		}
-
-	}
-	// t.DataCapAmount (big.Int) (struct)
-
-	{
-
-		if err := t.DataCapAmount.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.DataCapAmount: %w", err)
-		}
-
-	}
-	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
-
-	{
-
-		if err := t.RemovalProposalID.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.RemovalProposalID: %w", err)
-		}
-
-	}
-	return nil
-}
-
-var lengthBufRemoveDataCapRequest = []byte{130}
-
-func (t *RemoveDataCapRequest) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write(lengthBufRemoveDataCapRequest); err != nil {
-		return err
-	}
-
-	// t.Verifier (address.Address) (struct)
-	if err := t.Verifier.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.VerifierSignature (crypto.Signature) (struct)
-	if err := t.VerifierSignature.MarshalCBOR(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *RemoveDataCapRequest) UnmarshalCBOR(r io.Reader) error {
-	*t = RemoveDataCapRequest{}
-
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
-
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 2 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.Verifier (address.Address) (struct)
-
-	{
-
-		if err := t.Verifier.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.Verifier: %w", err)
-		}
-
-	}
-	// t.VerifierSignature (crypto.Signature) (struct)
-
-	{
-
-		if err := t.VerifierSignature.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.VerifierSignature: %w", err)
-		}
-
-	}
-	return nil
-}
-
-var lengthBufRmDcProposalID = []byte{129}
-
-func (t *RmDcProposalID) MarshalCBOR(w io.Writer) error {
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if _, err := w.Write(lengthBufRmDcProposalID); err != nil {
-		return err
-	}
-
-	scratch := make([]byte, 9)
-
-	// t.ProposalID (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ProposalID)); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (t *RmDcProposalID) UnmarshalCBOR(r io.Reader) error {
-	*t = RmDcProposalID{}
-
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
-
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajArray {
-		return fmt.Errorf("cbor input should be of type array")
-	}
-
-	if extra != 1 {
-		return fmt.Errorf("cbor input had wrong number of fields")
-	}
-
-	// t.ProposalID (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ProposalID = uint64(extra)
-
-	}
-	return nil
-}
-
 var lengthBufRemoveDataCapParams = []byte{132}
 
 func (t *RemoveDataCapParams) MarshalCBOR(w io.Writer) error {
@@ -459,6 +264,201 @@ func (t *RemoveDataCapReturn) UnmarshalCBOR(r io.Reader) error {
 		if err := t.DataCapRemoved.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.DataCapRemoved: %w", err)
 		}
+
+	}
+	return nil
+}
+
+var lengthBufRemoveDataCapRequest = []byte{130}
+
+func (t *RemoveDataCapRequest) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRemoveDataCapRequest); err != nil {
+		return err
+	}
+
+	// t.Verifier (address.Address) (struct)
+	if err := t.Verifier.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.VerifierSignature (crypto.Signature) (struct)
+	if err := t.VerifierSignature.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *RemoveDataCapRequest) UnmarshalCBOR(r io.Reader) error {
+	*t = RemoveDataCapRequest{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Verifier (address.Address) (struct)
+
+	{
+
+		if err := t.Verifier.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Verifier: %w", err)
+		}
+
+	}
+	// t.VerifierSignature (crypto.Signature) (struct)
+
+	{
+
+		if err := t.VerifierSignature.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifierSignature: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufRemoveDataCapProposal = []byte{131}
+
+func (t *RemoveDataCapProposal) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRemoveDataCapProposal); err != nil {
+		return err
+	}
+
+	// t.VerifiedClient (address.Address) (struct)
+	if err := t.VerifiedClient.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.DataCapAmount (big.Int) (struct)
+	if err := t.DataCapAmount.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
+	if err := t.RemovalProposalID.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *RemoveDataCapProposal) UnmarshalCBOR(r io.Reader) error {
+	*t = RemoveDataCapProposal{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.VerifiedClient (address.Address) (struct)
+
+	{
+
+		if err := t.VerifiedClient.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.VerifiedClient: %w", err)
+		}
+
+	}
+	// t.DataCapAmount (big.Int) (struct)
+
+	{
+
+		if err := t.DataCapAmount.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.DataCapAmount: %w", err)
+		}
+
+	}
+	// t.RemovalProposalID (verifreg.RmDcProposalID) (struct)
+
+	{
+
+		if err := t.RemovalProposalID.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.RemovalProposalID: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufRmDcProposalID = []byte{129}
+
+func (t *RmDcProposalID) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufRmDcProposalID); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.ProposalID (uint64) (uint64)
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ProposalID)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *RmDcProposalID) UnmarshalCBOR(r io.Reader) error {
+	*t = RmDcProposalID{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 1 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.ProposalID (uint64) (uint64)
+
+	{
+
+		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		if err != nil {
+			return err
+		}
+		if maj != cbg.MajUnsignedInt {
+			return fmt.Errorf("wrong type for uint64 field")
+		}
+		t.ProposalID = uint64(extra)
 
 	}
 	return nil

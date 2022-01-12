@@ -12,6 +12,7 @@ import (
 	xerrors "golang.org/x/xerrors"
 
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
+	power3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
@@ -63,16 +64,17 @@ var _ runtime.VMActor = Actor{}
 
 // Storage miner actor constructor params are defined here so the power actor can send them to the init actor
 // to instantiate miners.
-// Changed since v2:
+// Changed in v3:
 // - Seal proof type replaced with PoSt proof type
-type MinerConstructorParams struct {
-	OwnerAddr           addr.Address
-	WorkerAddr          addr.Address
-	ControlAddrs        []addr.Address
-	WindowPoStProofType abi.RegisteredPoStProof
-	PeerId              abi.PeerID
-	Multiaddrs          []abi.Multiaddrs
-}
+//type MinerConstructorParams struct {
+//	OwnerAddr           addr.Address
+//	WorkerAddr          addr.Address
+//	ControlAddrs        []addr.Address
+//	WindowPoStProofType abi.RegisteredPoStProof
+//	PeerId              abi.PeerID
+//	Multiaddrs          []abi.Multiaddrs
+//}
+type MinerConstructorParams = power3.MinerConstructorParams
 
 ////////////////////////////////////////////////////////////////////////////////
 // Actor methods
@@ -87,15 +89,16 @@ func (a Actor) Constructor(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
-// Changed since v2:
+// Changed in v3:
 // - Seal proof type replaced with PoSt proof types
-type CreateMinerParams struct {
-	Owner               addr.Address
-	Worker              addr.Address
-	WindowPoStProofType abi.RegisteredPoStProof
-	Peer                abi.PeerID
-	Multiaddrs          []abi.Multiaddrs
-}
+//type CreateMinerParams struct {
+//	Owner               addr.Address
+//	Worker              addr.Address
+//	WindowPoStProofType abi.RegisteredPoStProof
+//	Peer                abi.PeerID
+//	Multiaddrs          []abi.Multiaddrs
+//}
+type CreateMinerParams = power3.CreateMinerParams
 
 //type CreateMinerReturn struct {
 //	IDAddress     addr.Address // The canonical ID-based address for the actor.
@@ -307,6 +310,7 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 
 // Changed since v0:
 // - QualityAdjPowerSmoothed is not a pointer
+// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
 type CurrentTotalPowerReturn struct {
 	RawBytePower            abi.StoragePower
 	QualityAdjPower         abi.StoragePower
