@@ -18,6 +18,7 @@ import (
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	miner3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/miner"
+	miner5 "github.com/filecoin-project/specs-actors/v5/actors/builtin/miner"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -663,9 +664,10 @@ func (a Actor) PreCommitSector(rt Runtime, params *PreCommitSectorParams) *abi.E
 	return nil
 }
 
-type PreCommitSectorBatchParams struct {
-	Sectors []miner0.SectorPreCommitInfo
-}
+//type PreCommitSectorBatchParams struct {
+//	Sectors []miner0.SectorPreCommitInfo
+//}
+type PreCommitSectorBatchParams = miner5.PreCommitSectorBatchParams
 
 // Pledges the miner to seal and commit some new sectors.
 // The caller specifies sector numbers, sealed sector data CIDs, seal randomness epoch, expiration, and the IDs
@@ -853,10 +855,11 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 	return nil
 }
 
-type ProveCommitAggregateParams struct {
-	SectorNumbers  bitfield.BitField
-	AggregateProof []byte
-}
+//type ProveCommitAggregateParams struct {
+//	SectorNumbers  bitfield.BitField
+//	AggregateProof []byte
+//}
+type ProveCommitAggregateParams = miner5.ProveCommitAggregateParams
 
 // Checks state of the corresponding sector pre-commitments and verifies aggregate proof of replication
 // of these sectors. If valid, the sectors' deals are activated, sectors are assigned a deadline and charged pledge
@@ -2054,6 +2057,7 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
+// New in v7
 type ReplicaUpdate struct {
 	SectorID           abi.SectorNumber
 	Deadline           uint64
@@ -2064,6 +2068,7 @@ type ReplicaUpdate struct {
 	ReplicaProof       []byte
 }
 
+// New in v7
 type ProveReplicaUpdatesParams struct {
 	Updates []ReplicaUpdate
 }
