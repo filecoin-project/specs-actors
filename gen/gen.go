@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	gen "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
@@ -16,7 +15,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm"
 )
 
@@ -33,14 +31,14 @@ func main() {
 		panic(err)
 	}
 
-	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
-		//builtin.MinerAddrs{}, // Aliased from v0
-		builtin.ConfirmSectorProofsParams{}, // Not pure data
-		builtin.DeferredCronEventParams{}, // Not pure data
-		// builtin.ApplyRewardParams{}, // Aliased from v2
-	); err != nil {
-		panic(err)
-	}
+	//if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
+	//	//builtin.MinerAddrs{}, // Aliased from v0
+	//	//builtin.ConfirmSectorProofsParams{}, // Aliased from v6
+	//	//builtin.DeferredCronEventParams{}, // Aliased from v6
+	//	//builtin.ApplyRewardParams{}, // Aliased from v2
+	//); err != nil {
+	//	panic(err)
+	//}
 
 	// if err := gen.WriteTupleEncodersToFile("./actors/states/cbor_gen.go", "states",
 	// 	states.Actor{}, // Aliased from v0
@@ -89,7 +87,7 @@ func main() {
 		reward.State{},
 		// method params and returns
 		//reward.AwardBlockRewardParams{}, // Aliased from v0
-		reward.ThisEpochRewardReturn{}, // Not pure data
+		//reward.ThisEpochRewardReturn{}, // Aliased from v6
 	); err != nil {
 		panic(err)
 	}
@@ -139,7 +137,7 @@ func main() {
 		//power.CreateMinerReturn{}, // Aliased from v0
 		//power.EnrollCronEventParams{}, // Aliased from v0
 		//power.UpdateClaimedPowerParams{}, // Aliased from v0
-		power.CurrentTotalPowerReturn{}, // Not pure data
+		//power.CurrentTotalPowerReturn{}, // Aliased from v6
 		// other types
 		//power.MinerConstructorParams{}, // Aliased from v3
 	); err != nil {
@@ -149,6 +147,7 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/market/cbor_gen.go", "market",
 		// actor state
 		market.State{},
+		market.DealState{},
 		// method params and returns
 		//market.WithdrawBalanceParams{}, // Aliased from v0
 		// market.PublishStorageDealsParams{}, // Aliased from v0
@@ -165,7 +164,6 @@ func main() {
 		//market.SectorDeals{}, // Aliased from v3
 		//market.SectorWeights{}, // Aliased from v3
 		//market.SectorDataSpec{}, // Aliased from v5
-		market.DealState{},
 	); err != nil {
 		panic(err)
 	}
@@ -239,11 +237,11 @@ func main() {
 		panic(err)
 	}
 
-	if err := gen.WriteTupleEncodersToFile("./actors/util/smoothing/cbor_gen.go", "smoothing",
-		smoothing.FilterEstimate{}, // Not pure data
-	); err != nil {
-		panic(err)
-	}
+	//if err := gen.WriteTupleEncodersToFile("./actors/util/smoothing/cbor_gen.go", "smoothing",
+	//	//smoothing.FilterEstimate{}, // Aliased from v0
+	//); err != nil {
+	//	panic(err)
+	//}
 
 	// Support
 	if err := gen.WriteTupleEncodersToFile("./support/vm/cbor_gen.go", "vm",

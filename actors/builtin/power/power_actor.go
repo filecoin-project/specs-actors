@@ -13,6 +13,7 @@ import (
 
 	power0 "github.com/filecoin-project/specs-actors/actors/builtin/power"
 	power3 "github.com/filecoin-project/specs-actors/v3/actors/builtin/power"
+	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
@@ -21,7 +22,6 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime
@@ -310,13 +310,13 @@ func (a Actor) SubmitPoRepForBulkVerify(rt Runtime, sealInfo *proof.SealVerifyIn
 
 // Changed since v0:
 // - QualityAdjPowerSmoothed is not a pointer
-// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
-type CurrentTotalPowerReturn struct {
-	RawBytePower            abi.StoragePower
-	QualityAdjPower         abi.StoragePower
-	PledgeCollateral        abi.TokenAmount
-	QualityAdjPowerSmoothed smoothing.FilterEstimate
-}
+//type CurrentTotalPowerReturn struct {
+//	RawBytePower            abi.StoragePower
+//	QualityAdjPower         abi.StoragePower
+//	PledgeCollateral        abi.TokenAmount
+//	QualityAdjPowerSmoothed smoothing.FilterEstimate
+//}
+type CurrentTotalPowerReturn = power6.CurrentTotalPowerReturn
 
 // Returns the total power and pledge recorded by the power actor.
 // The returned values are frozen during the cron tick before this epoch
