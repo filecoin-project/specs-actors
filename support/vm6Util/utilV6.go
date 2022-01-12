@@ -12,6 +12,7 @@ import (
 	xc "github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	initactor "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
 	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
@@ -126,9 +127,10 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte(vm6.RandString),
 	}
-	fmt.Printf("MINER ADDRESS %s\n", minerAddress)
-	fmt.Printf("WORKER ADDRESS %s\n", workerAddress)
+	fmt.Printf("MINER ADDRESS %s\n", minerAddress.String())
+	fmt.Printf("WORKER ADDRESS %s\n", workerAddress.String())
 	fmt.Printf("DEADLINE INDEX %d\n", dlInfo.Index)
+	fmt.Printf("PARTITIONS %d\n", partitionArray.Length())
 	fmt.Printf("SECTORS %d\n", deadline.LiveSectors)
 	fmt.Printf("EPOCH %d\n", v.GetEpoch())
 
@@ -136,21 +138,8 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 }
 
 func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch, dealIDs []abi.DealID) []*miner.SectorPreCommitOnChainInfo {
-	invocsCommon := []vm6.ExpectInvocation{
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower},
-	}
-	invocFirst := vm6.ExpectInvocation{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.EnrollCronEvent}
-	invocDeal := vm6.ExpectInvocation{To: builtin.StorageMarketActorAddr, Method: builtin.MethodsMarket.VerifyDealsForActivation}
-
 	sectorIndex := 0
 	for sectorIndex < count {
-		msgSectorIndexStart := sectorIndex
-		invocs := invocsCommon
-		if dealIDs != nil {
-			invocs = append(invocs, invocDeal)
-		}
-
 		// Prepare message.
 		params := miner.PreCommitSectorBatchParams{Sectors: make([]miner0.SectorPreCommitInfo, batchSize)}
 		if expiration < 0 {
@@ -179,20 +168,11 @@ func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAd
 			params.Sectors = params.Sectors[:sectorIndex%batchSize]
 		}
 
-		// Finalize invocation expectation list
-		if len(params.Sectors) > 1 {
-			aggFee := miner.AggregatePreCommitNetworkFee(len(params.Sectors), big.Zero())
-			invocs = append(invocs, vm6.ExpectInvocation{To: builtin.BurntFundsActorAddr, Method: builtin.MethodSend, Value: &aggFee})
-		}
-		if expectCronEnrollment && msgSectorIndexStart == 0 {
-			invocs = append(invocs, invocFirst)
-		}
 		vm6.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
 		vm6.ExpectInvocation{
 			To:             mAddr,
 			Method:         builtin.MethodsMiner.PreCommitSectorBatch,
 			Params:         vm6.ExpectObject(&params),
-			SubInvocations: invocs,
 		}.Matches(t, v.LastInvocation())
 	}
 
@@ -326,6 +306,17 @@ func AdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
 		v = AdvanceOneEpochWithCron(t, v)
 	}
 	return v
+}
+
+func PrintMinerInfos(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) {
+	var initState initactor.State
+	err := v.GetState(builtin.InitActorAddr, &initState)
+	require.NoError(t, err)
+	for _, minerInfo := range minerInfos {
+		workerId, _, err := initState.ResolveAddress(ctxStore, minerInfo.WorkerAddress)
+		require.NoError(t, err)
+		fmt.Printf("WORKER, MINER %s %s\n", workerId, minerInfo.MinerAddress.String())
+	}
 }
 
 func ProveThenAdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm6.VM {

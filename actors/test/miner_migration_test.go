@@ -81,11 +81,13 @@ func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID addres
 	return result.Ret.(*market6.PublishStorageDealsReturn)
 }
 
+var seed = int64(93837778)
 func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) []vm6Util.MinerInfo {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
 
-	workerAddresses := vm6.CreateAccounts(ctx, t, v, numMiners, big.Mul(big.NewInt(200_000_000), vm6.FIL), 93837778)
+	workerAddresses := vm6.CreateAccounts(ctx, t, v, numMiners, big.Mul(big.NewInt(200_000_000), vm6.FIL), seed)
+	seed += int64(numMiners)
 	assert.Equal(t, len(workerAddresses), numMiners)
 
 	var minerInfos []vm6Util.MinerInfo
@@ -164,8 +166,8 @@ func TestCreateMiners(t *testing.T) {
 	minerInfos = append(minerInfos, newMiners...)
 	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 10100, 1, 1_000, false)
 	minerInfos = append(minerInfos, newMiners...)
-	//newMiners, v = createMinersAndSectorsV6(t, ctx, v, 200100, 1, 100_000, false)
-	//minerInfos = append(minerInfos, newMiners...)
+	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 200100, 1, 100_000, false)
+	minerInfos = append(minerInfos, newMiners...)
 	ctxStore := adt.WrapBlockStore(ctx, bs)
 
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
