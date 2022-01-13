@@ -3,9 +3,13 @@ package test
 import (
 	"context"
 	"fmt"
+	"github.com/filecoin-project/go-state-types/rt"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
+	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"testing"
 
@@ -15,12 +19,11 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/stretchr/testify/require"
 
-	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
-
 	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
+	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	miner6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
 
 	tutil6 "github.com/filecoin-project/specs-actors/v6/support/testing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm6Util"
@@ -186,19 +189,19 @@ func TestCreateMiners(t *testing.T) {
 	cacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
 
+	networkStatsBefore := vm6.GetNetworkStats(t, v)
 	noCacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
 	require.NoError(t, err)
-
 	require.True(t, cacheRoot.Equals(noCacheRoot))
 
-	//
-	//lookup := map[cid.Cid]rt.VMActor{}
-	//for _, ba := range exported7.BuiltinActors() {
-	//	lookup[ba.Code()] = ba
-	//}
-	//
-	//v7, err := vm7.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
-	//require.NoError(t, err)
-	//var marketState miner7.State
-	//require.NoError(t, v7.GetState(builtin7.StorageMarketActorAddr, &marketState))
+	lookup := map[cid.Cid]rt.VMActor{}
+	for _, ba := range exported.BuiltinActors() {
+		lookup[ba.Code()] = ba
+	}
+
+	v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
+	require.NoError(t, err)
+
+	networkStatsAfter := vm7.GetNetworkStats(t, v7)
+	require.Equal(t, networkStatsBefore, networkStatsAfter)
 }
