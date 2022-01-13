@@ -5,6 +5,7 @@ import (
 	"fmt"
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
 	"github.com/stretchr/testify/assert"
 	"testing"
 
@@ -124,10 +125,10 @@ func precommits(t *testing.T, v *vm6.VM, firstSectorNo int, numSectors int, mine
 	return precommitInfo
 }
 
-func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int, addDeals bool) ([]vm6Util.MinerInfo, *vm6.VM) {
+func createMinersAndSectorsV6(t *testing.T, ctx context.Context, ctxStore adt.Store, v *vm6.VM, firstSectorNo int, numMiners int, numSectors int, addDeals bool, minersToProve []vm6Util.MinerInfo) ([]vm6Util.MinerInfo, *vm6.VM) {
 	minerInfos := createMiners(t, ctx, v, numMiners)
 	if numSectors == 0 {
-		return minerInfos, v
+		return append(minersToProve, minerInfos...), v
 	}
 
 	var dealsArray [][]abi.DealID = nil
@@ -141,37 +142,63 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, v *vm6.VM, firs
 	precommitInfo := precommits(t, v , firstSectorNo, numSectors, minerInfos, dealsArray)
 
 	// advance time to when we can prove-commit
-	proveTime := v.GetEpoch() + miner6.PreCommitChallengeDelay + 1
-	v = vm6Util.AdvanceToEpochWithCron(t, v, proveTime)
+	for i := 0; i < 3; i++ {
+		v = vm6Util.ProveThenAdvanceOneDeadlineWithCron(t, v, ctxStore, minersToProve)
+	}
 
 	for i, minerInfo := range minerInfos {
 		vm6Util.ProveCommitSectors(t, v, minerInfo.WorkerAddress, minerInfo.MinerAddress, precommitInfo[i], addDeals)
 	}
-	v = vm6Util.AdvanceOneEpochWithCron(t, v)
+	// v = vm6Util.AdvanceOneEpochWithCron(t, v)
 
-	return minerInfos, v
+	return append(minersToProve, minerInfos...), v
 }
 
 func TestCreateMiners(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
+	ctxStore := adt.WrapBlockStore(ctx, bs)
+	log := nv15.TestLogger{TB: t}
 
 	v = vm6Util.AdvanceToEpochWithCron(t, v, 200)
 
-	var minerInfos []vm6Util.MinerInfo
-	newMiners, v := createMinersAndSectorsV6(t, ctx, v, 100, 100, 0, false)
-	minerInfos = append(minerInfos, newMiners...)
-	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 100, 100, 100, false)
-	minerInfos = append(minerInfos, newMiners...)
-	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 10100, 1, 1_000, false)
-	minerInfos = append(minerInfos, newMiners...)
-	newMiners, v = createMinersAndSectorsV6(t, ctx, v, 200100, 1, 100_000, false)
-	minerInfos = append(minerInfos, newMiners...)
-	ctxStore := adt.WrapBlockStore(ctx, bs)
+	minerInfos, v := createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 0, false, nil)
+	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 100, true, minerInfos)
+	_, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 10100, 2, 1000, true, minerInfos) // Bad miners who don't prove their sectors
+	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 200100, 1, 10_000, true, minerInfos)
+	// vm6Util.PrintMinerInfos(t, v, ctxStore, minerInfos)
 
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
 
 	networkStats := vm6.GetNetworkStats(t, v)
 	fmt.Printf("BYTES COMMITTED %s\n", networkStats.TotalBytesCommitted)
+
+	startRoot := v.StateRoot()
+	cache := nv15.NewMemMigrationCache()
+	_, err := nv15.MigrateStateTree(ctx, ctxStore, startRoot, v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
+	require.NoError(t, err)
+
+	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 0, false, nil)
+	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 100, true, minerInfos)
+	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
+
+	cacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
+	require.NoError(t, err)
+
+	noCacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
+	require.NoError(t, err)
+
+	require.True(t, cacheRoot.Equals(noCacheRoot))
+
+	//
+	//lookup := map[cid.Cid]rt.VMActor{}
+	//for _, ba := range exported7.BuiltinActors() {
+	//	lookup[ba.Code()] = ba
+	//}
+	//
+	//v7, err := vm7.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
+	//require.NoError(t, err)
+	//var marketState miner7.State
+	//require.NoError(t, v7.GetState(builtin7.StorageMarketActorAddr, &marketState))
 }

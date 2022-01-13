@@ -67,6 +67,18 @@ func CheckSectorFaulty(t *testing.T, v *vm6.VM, minerIDAddress address.Address, 
 	return isFaulty
 }
 
+func DeclareRecoveries(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumbers bitfield.BitField) {
+	recoverParams := miner.RecoveryDeclaration{
+		Deadline:  deadlineIndex,
+		Partition: partitionIndex,
+		Sectors:   sectorNumbers,
+	}
+
+	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.DeclareFaultsRecovered, &miner.DeclareFaultsRecoveredParams{
+		Recoveries: []miner.RecoveryDeclaration{recoverParams},
+	})
+}
+
 func DeclareRecovery(t *testing.T, v *vm6.VM, minerAddress, workerAddress address.Address, deadlineIndex uint64, partitionIndex uint64, sectorNumber abi.SectorNumber) {
 	recoverParams := miner.RecoveryDeclaration{
 		Deadline:  deadlineIndex,
@@ -105,13 +117,23 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 	require.NoError(t, err)
 	deadline, err := deadlines.LoadDeadline(ctxStore, dlInfo.Index)
 	require.NoError(t, err)
-	if deadline.LiveSectors == 0 {
+	if deadline.TotalSectors == 0 {
 		return
 	}
 	partitionArray, err := deadline.PartitionsArray(ctxStore)
-	require.NoError(t, err)
 	var partitions []miner.PoStPartition
 	for i := uint64(0); i < partitionArray.Length(); i++ {
+		var part miner.Partition
+		_, err = partitionArray.Get(i, &part)
+		require.NoError(t, err)
+		hasNoFaults, err := part.Faults.IsEmpty()
+		require.NoError(t, err)
+		if !hasNoFaults {
+			fmt.Println("FAULT MINER ADDRESS %s", minerAddress)
+			//return
+			//DeclareRecoveries(t, v, minerAddress, workerAddress, dlInfo.Index, i, part.Faults)
+		}
+
 		partitions = append(partitions, miner.PoStPartition{
 			Index:   i,
 			Skipped: bitfield.New(),
@@ -127,12 +149,13 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte(vm6.RandString),
 	}
-	fmt.Printf("MINER ADDRESS %s\n", minerAddress.String())
-	fmt.Printf("WORKER ADDRESS %s\n", workerAddress.String())
-	fmt.Printf("DEADLINE INDEX %d\n", dlInfo.Index)
-	fmt.Printf("PARTITIONS %d\n", partitionArray.Length())
-	fmt.Printf("SECTORS %d\n", deadline.LiveSectors)
-	fmt.Printf("EPOCH %d\n", v.GetEpoch())
+	//fmt.Printf("MINER ADDRESS %s\n", minerAddress.String())
+	//fmt.Printf("WORKER ADDRESS %s\n", workerAddress.String())
+	//fmt.Printf("DEADLINE INDEX %d\n", dlInfo.Index)
+	//fmt.Printf("PARTITIONS %d\n", partitionArray.Length())
+	//fmt.Printf("SECTORS %d\n", deadline.LiveSectors)
+	//fmt.Printf("FAULTY POWER %d\n", deadline.FaultyPower.Raw)
+	//fmt.Printf("EPOCH %d\n", v.GetEpoch())
 
 	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
