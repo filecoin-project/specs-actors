@@ -68,7 +68,7 @@ func SetID(id string) Option {
 	}
 }
 
-func SetStartState(v *VM) Option {
+func SetStartStateTree(v *VM) Option {
 	return func(tv *testVector) error {
 		rawRoot, err := v.checkpoint()
 		if err != nil {
@@ -138,10 +138,21 @@ func StartConditions(v *VM, id string) []Option {
 	opts = append(opts, SetEpoch(v.GetEpoch()))
 	opts = append(opts, SetCircSupply(v.GetCirculatingSupply()))
 	opts = append(opts, SetNetworkVersion(v.networkVersion))
-	opts = append(opts, SetStartState(v))
+	opts = append(opts, SetStartStateTree(v))
 	opts = append(opts, SetID(id))
 
 	return opts
+}
+
+// SetState fills the State CAR based with the start and end state-trees.
+func SetState(store adt.Store) Option {
+	return func(tv *testVector) error {
+		var err error
+		getter := nodeGetterFromStore(store)
+		roots := []cid.Cid{tv.StartStateTree, tv.EndStateTree}
+		tv.State, err = encodeCAR(getter, roots...)
+		return err
+	}
 }
 
 //

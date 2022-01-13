@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/ipfs/go-cid"
 )
 
 //
@@ -53,17 +52,6 @@ func (g *vectorGen) before(v *VM, name string) error {
 	return nil
 }
 
-func (g *vectorGen) fillCar(v *VM) error {
-	var err error
-	getter := nodeGetterFromStore(v.Store())
-	roots := []cid.Cid{g.vector.StartStateTree}
-	if g.conformance() {
-		roots = append(roots, g.vector.EndStateTree)
-	}
-	g.vector.State, err = encodeCAR(getter, roots...)
-	return err
-}
-
 func (g *vectorGen) after(v *VM, from, to address.Address, value abi.TokenAmount, method abi.MethodNum, params interface{}, callSeq uint64, result MessageResult, fakesAccessed bool, name string) error {
 	if !g.conformance() && !g.determinism() {
 		return nil
@@ -79,8 +67,12 @@ func (g *vectorGen) after(v *VM, from, to address.Address, value abi.TokenAmount
 		return err
 	}
 
-	if err := g.fillCar(v); err != nil {
-		return err
+	if g.conformance() {
+		// Set the state for conformance tests, we don't need it to check determinism (we
+		// just need the roots)
+		if err := SetState(v.store)(&(g.vector)); err != nil {
+			return err
+		}
 	}
 
 	vectorBytes, err := (&(g.vector)).MarshalJSON()
