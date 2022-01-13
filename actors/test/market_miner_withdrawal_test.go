@@ -103,7 +103,7 @@ func TestMinerWithdraw(t *testing.T) {
 			AmountRequested: oneFIL,
 		}
 		res := vm.RequireApplyMessage(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.WithdrawBalance, params, t.Name())
-		assert.Equal(t, exitcode.ErrForbidden, res.Code)
+		assert.Equal(t, exitcode.SysErrForbidden, res.Code)
 	})
 }
 
