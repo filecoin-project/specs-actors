@@ -4743,7 +4743,7 @@ func (h *actorHarness) reportConsensusFault(rt *mock.Runtime, from addr.Address,
 	}
 	rt.ExpectSend(builtin.RewardActorAddr, builtin.MethodsReward.ThisEpochReward, nil, big.Zero(), &currentReward, exitcode.Ok)
 
-	thisEpochReward := h.epochRewardSmooth.Estimate()
+	thisEpochReward := smoothing.Estimate(&h.epochRewardSmooth)
 	penaltyTotal := miner.ConsensusFaultPenalty(thisEpochReward)
 	rewardTotal := miner.RewardForConsensusSlashReport(thisEpochReward)
 	rt.ExpectSend(from, builtin.MethodSend, nil, rewardTotal, nil, exitcode.Ok)

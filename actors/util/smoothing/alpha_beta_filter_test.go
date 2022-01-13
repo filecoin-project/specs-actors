@@ -44,8 +44,8 @@ func TestCumSumRatioProjection(t *testing.T) {
 	iterativeCumSumOfRatio := func(num, denom smoothing.FilterEstimate, t0, delta abi.ChainEpoch) big.Int {
 		ratio := big.Zero() // Q.128
 		for i := abi.ChainEpoch(0); i < delta; i++ {
-			numEpsilon := num.Extrapolate(t0 + i)                   // Q.256
-			denomEpsilon := denom.Extrapolate(t0 + i)               // Q.256
+			numEpsilon := smoothing.Extrapolate(&num, t0+i)         // Q.256
+			denomEpsilon := smoothing.Extrapolate(&denom, t0+i)     // Q.256
 			denomEpsilon = big.Rsh(denomEpsilon, math.Precision128) // Q.256 => Q.128
 			epsilon := big.Div(numEpsilon, denomEpsilon)            // Q.256 / Q.128 => Q.128
 			if i != abi.ChainEpoch(0) && i != delta-1 {

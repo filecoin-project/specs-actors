@@ -7,11 +7,11 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	reward0 "github.com/filecoin-project/specs-actors/actors/builtin/reward"
+	reward6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 // PenaltyMultiplier is the factor miner penaltys are scaled up by
@@ -134,11 +134,11 @@ func (a Actor) AwardBlockReward(rt runtime.Runtime, params *AwardBlockRewardPara
 
 // Changed since v0:
 // - removed ThisEpochReward (unsmoothed)
-// This is not aliased to earlier version due to use of smoothing.FilterEstimate, which is not pure state.
-type ThisEpochRewardReturn struct {
-	ThisEpochRewardSmoothed smoothing.FilterEstimate
-	ThisEpochBaselinePower  abi.StoragePower
-}
+//type ThisEpochRewardReturn struct {
+//	ThisEpochRewardSmoothed smoothing.FilterEstimate
+//	ThisEpochBaselinePower  abi.StoragePower
+//}
+type ThisEpochRewardReturn = reward6.ThisEpochRewardReturn
 
 // The award value used for the current epoch, updated at the end of an epoch
 // through cron tick.  In the case previous epochs were null blocks this
