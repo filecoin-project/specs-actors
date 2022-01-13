@@ -66,6 +66,15 @@ func (g *vectorGen) after(v *VM, from, to address.Address, value abi.TokenAmount
 	if err := SetReceipt(result)(&(g.vector)); err != nil {
 		return err
 	}
+
+	if g.conformance() {
+		// Set the state for conformance tests, we don't need it to check determinism (we
+		// just need the roots)
+		if err := SetState(v.store)(&(g.vector)); err != nil {
+			return err
+		}
+	}
+
 	vectorBytes, err := (&(g.vector)).MarshalJSON()
 	if err != nil {
 		return err
