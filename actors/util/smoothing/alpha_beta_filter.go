@@ -3,6 +3,7 @@ package smoothing
 import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	smoothing6 "github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/util/math"
 )
@@ -36,14 +37,27 @@ func init() {
 
 // Alpha Beta Filter "position" (value) and "velocity" (rate of change of value) estimates
 // Estimates are in Q.128 format
-type FilterEstimate struct {
-	PositionEstimate big.Int // Q.128
-	VelocityEstimate big.Int // Q.128
-}
+//type FilterEstimate struct {
+//	PositionEstimate big.Int // Q.128
+//	VelocityEstimate big.Int // Q.128
+//}
+type FilterEstimate = smoothing6.FilterEstimate
 
 // Returns the Q.0 position estimate of the filter
-func (fe *FilterEstimate) Estimate() big.Int {
+func Estimate(fe *FilterEstimate) big.Int {
 	return big.Rsh(fe.PositionEstimate, math.Precision128) // Q.128 => Q.0
+}
+
+// Extrapolate filter "position" delta epochs in the future.
+// Note this is currently only used in testing.
+// Output is Q.256 format for use in numerator of ratio in test caller
+func Extrapolate(fe *FilterEstimate, delta abi.ChainEpoch) big.Int {
+	deltaT := big.NewInt(int64(delta))                          // Q.0
+	deltaT = big.Lsh(deltaT, math.Precision128)                 // Q.0 => Q.128
+	extrapolation := big.Mul(fe.VelocityEstimate, deltaT)       // Q.128 * Q.128 => Q.256
+	position := big.Lsh(fe.PositionEstimate, math.Precision128) // Q.128 => Q.256
+	extrapolation = big.Sum(position, extrapolation)
+	return extrapolation // Q.256
 }
 
 func DefaultInitialEstimate() FilterEstimate {
@@ -147,16 +161,4 @@ func ExtrapolatedCumSumOfRatio(delta abi.ChainEpoch, relativeStart abi.ChainEpoc
 	cumsumRatio = big.Div(cumsumRatio, position2) // Q.256 / Q.128 => Q.128
 	return cumsumRatio
 
-}
-
-// Extrapolate filter "position" delta epochs in the future.
-// Note this is currently only used in testing.
-// Output is Q.256 format for use in numerator of ratio in test caller
-func (fe *FilterEstimate) Extrapolate(delta abi.ChainEpoch) big.Int {
-	deltaT := big.NewInt(int64(delta))                          // Q.0
-	deltaT = big.Lsh(deltaT, math.Precision128)                 // Q.0 => Q.128
-	extrapolation := big.Mul(fe.VelocityEstimate, deltaT)       // Q.128 * Q.128 => Q.256
-	position := big.Lsh(fe.PositionEstimate, math.Precision128) // Q.128 => Q.256
-	extrapolation = big.Sum(position, extrapolation)
-	return extrapolation // Q.256
 }

@@ -74,9 +74,9 @@ var BasePenaltyForDisputedWindowPoSt = big.Mul(big.NewInt(20), builtin.TokenPrec
 // ProjectedRewardFraction(t) is the sum of estimated reward over estimated total power
 // over all epochs in the projection period [t t+projectionDuration]
 func ExpectedRewardForPower(rewardEstimate, networkQAPowerEstimate smoothing.FilterEstimate, qaSectorPower abi.StoragePower, projectionDuration abi.ChainEpoch) abi.TokenAmount {
-	networkQAPowerSmoothed := networkQAPowerEstimate.Estimate()
+	networkQAPowerSmoothed := smoothing.Estimate(&networkQAPowerEstimate)
 	if networkQAPowerSmoothed.IsZero() {
-		return rewardEstimate.Estimate()
+		return smoothing.Estimate(&rewardEstimate)
 	}
 	expectedRewardForProvingPeriod := smoothing.ExtrapolatedCumSumOfRatio(projectionDuration, 0, rewardEstimate, networkQAPowerEstimate)
 	br128 := big.Mul(qaSectorPower, expectedRewardForProvingPeriod) // Q.0 * Q.128 => Q.128
@@ -170,7 +170,7 @@ func InitialPledgeForPower(qaPower, baselinePower abi.StoragePower, rewardEstima
 	lockTargetNum := big.Mul(InitialPledgeLockTarget.Numerator, circulatingSupply)
 	lockTargetDenom := InitialPledgeLockTarget.Denominator
 	pledgeShareNum := qaPower
-	networkQAPower := networkQAPowerEstimate.Estimate()
+	networkQAPower := smoothing.Estimate(&networkQAPowerEstimate)
 	pledgeShareDenom := big.Max(big.Max(networkQAPower, baselinePower), qaPower) // use qaPower in case others are 0
 	additionalIPNum := big.Mul(lockTargetNum, pledgeShareNum)
 	additionalIPDenom := big.Mul(lockTargetDenom, pledgeShareDenom)

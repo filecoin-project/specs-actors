@@ -11,8 +11,8 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
+	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 )
 
 ///// Code shared by multiple built-in actors. /////
@@ -97,20 +97,20 @@ func RequestMinerControlAddrs(rt runtime.Runtime, minerAddr addr.Address) (owner
 //}
 type MinerAddrs = builtin0.MinerAddrs
 
-// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
-type DeferredCronEventParams struct {
-	EventPayload            []byte
-	RewardSmoothed          smoothing.FilterEstimate
-	QualityAdjPowerSmoothed smoothing.FilterEstimate
-}
+//type DeferredCronEventParams struct {
+//	EventPayload            []byte
+//	RewardSmoothed          smoothing.FilterEstimate
+//	QualityAdjPowerSmoothed smoothing.FilterEstimate
+//}
+type DeferredCronEventParams = builtin6.DeferredCronEventParams
 
-// Not aliased to prior versions because smoothing.FilterEstimate is not pure data
-type ConfirmSectorProofsParams struct {
-	Sectors                 []abi.SectorNumber
-	RewardSmoothed          smoothing.FilterEstimate
-	RewardBaselinePower     abi.StoragePower
-	QualityAdjPowerSmoothed smoothing.FilterEstimate
-}
+//type ConfirmSectorProofsParams struct {
+//	Sectors                 []abi.SectorNumber
+//	RewardSmoothed          smoothing.FilterEstimate
+//	RewardBaselinePower     abi.StoragePower
+//	QualityAdjPowerSmoothed smoothing.FilterEstimate
+//}
+type ConfirmSectorProofsParams = builtin6.ConfirmSectorProofsParams
 
 // ResolveToIDAddr resolves the given address to it's ID address form.
 // If an ID address for the given address dosen't exist yet, it tries to create one by sending a zero balance to the given address.
