@@ -121,18 +121,12 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 		return
 	}
 	partitionArray, err := deadline.PartitionsArray(ctxStore)
+	require.NoError(t, err)
 	var partitions []miner.PoStPartition
 	for i := uint64(0); i < partitionArray.Length(); i++ {
 		var part miner.Partition
 		_, err = partitionArray.Get(i, &part)
 		require.NoError(t, err)
-		hasNoFaults, err := part.Faults.IsEmpty()
-		require.NoError(t, err)
-		if !hasNoFaults {
-			fmt.Println("FAULT MINER ADDRESS %s", minerAddress)
-			//return
-			//DeclareRecoveries(t, v, minerAddress, workerAddress, dlInfo.Index, i, part.Faults)
-		}
 
 		partitions = append(partitions, miner.PoStPartition{
 			Index:   i,
@@ -149,13 +143,6 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 		ChainCommitEpoch: dlInfo.Challenge,
 		ChainCommitRand:  []byte(vm6.RandString),
 	}
-	//fmt.Printf("MINER ADDRESS %s\n", minerAddress.String())
-	//fmt.Printf("WORKER ADDRESS %s\n", workerAddress.String())
-	//fmt.Printf("DEADLINE INDEX %d\n", dlInfo.Index)
-	//fmt.Printf("PARTITIONS %d\n", partitionArray.Length())
-	//fmt.Printf("SECTORS %d\n", deadline.LiveSectors)
-	//fmt.Printf("FAULTY POWER %d\n", deadline.FaultyPower.Raw)
-	//fmt.Printf("EPOCH %d\n", v.GetEpoch())
 
 	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }

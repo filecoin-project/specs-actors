@@ -2,88 +2,28 @@ package test
 
 import (
 	"context"
-	"fmt"
-	"github.com/filecoin-project/go-state-types/rt"
-	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
-	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
-	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
-	"github.com/ipfs/go-cid"
-	"github.com/stretchr/testify/assert"
-	"testing"
-
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/crypto"
-	"github.com/filecoin-project/go-state-types/exitcode"
-	"github.com/stretchr/testify/require"
+	"github.com/filecoin-project/go-state-types/rt"
 
+	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	miner6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
 
-	tutil6 "github.com/filecoin-project/specs-actors/v6/support/testing"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
+	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
 	"github.com/filecoin-project/specs-actors/v7/support/vm6Util"
 
-	"github.com/filecoin-project/go-address"
+	"github.com/ipfs/go-cid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 const sealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
-
-
-func publishDealv6(t *testing.T, v *vm6.VM, provider, dealClient, minerID address.Address, dealLabel string,
-	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
-) *market6.PublishStorageDealsReturn {
-	deal := market6.DealProposal{
-		PieceCID:             tutil6.MakeCID(dealLabel, &market6.PieceCIDPrefix),
-		PieceSize:            pieceSize,
-		VerifiedDeal:         verifiedDeal,
-		Client:               dealClient,
-		Provider:             minerID,
-		Label:                dealLabel,
-		StartEpoch:           dealStart,
-		EndEpoch:             dealStart + dealLifetime,
-		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
-		ProviderCollateral:   big.Mul(big.NewInt(2), vm6.FIL),
-		ClientCollateral:     big.Mul(big.NewInt(1), vm6.FIL),
-	}
-
-	publishDealParams := market6.PublishStorageDealsParams{
-		Deals: []market6.ClientDealProposal{{
-			Proposal: deal,
-			ClientSignature: crypto.Signature{
-				Type: crypto.SigTypeBLS,
-			},
-		}},
-	}
-	result := vm6.RequireApplyMessage(t, v, provider, builtin6.StorageMarketActorAddr, big.Zero(), builtin6.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
-	require.Equal(t, exitcode.Ok, result.Code)
-
-	expectedPublishSubinvocations := []vm6.ExpectInvocation{
-		{To: minerID, Method: builtin6.MethodsMiner.ControlAddresses, SubInvocations: []vm6.ExpectInvocation{}},
-		{To: builtin6.RewardActorAddr, Method: builtin6.MethodsReward.ThisEpochReward, SubInvocations: []vm6.ExpectInvocation{}},
-		{To: builtin6.StoragePowerActorAddr, Method: builtin6.MethodsPower.CurrentTotalPower, SubInvocations: []vm6.ExpectInvocation{}},
-	}
-
-	if verifiedDeal {
-		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm6.ExpectInvocation{
-			To:             builtin6.VerifiedRegistryActorAddr,
-			Method:         builtin6.MethodsVerifiedRegistry.UseBytes,
-			SubInvocations: []vm6.ExpectInvocation{},
-		})
-	}
-
-	vm6.ExpectInvocation{
-		To:             builtin6.StorageMarketActorAddr,
-		Method:         builtin6.MethodsMarket.PublishStorageDeals,
-		SubInvocations: expectedPublishSubinvocations,
-	}.Matches(t, v.LastInvocation())
-
-	return result.Ret.(*market6.PublishStorageDealsReturn)
-}
 
 var seed = int64(93837778)
 func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) []vm6Util.MinerInfo {
@@ -152,12 +92,11 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, ctxStore adt.St
 	for i, minerInfo := range minerInfos {
 		vm6Util.ProveCommitSectors(t, v, minerInfo.WorkerAddress, minerInfo.MinerAddress, precommitInfo[i], addDeals)
 	}
-	// v = vm6Util.AdvanceOneEpochWithCron(t, v)
 
 	return append(minersToProve, minerInfos...), v
 }
 
-func TestCreateMiners(t *testing.T) {
+func TestMinerMigration(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
@@ -170,12 +109,8 @@ func TestCreateMiners(t *testing.T) {
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 100, true, minerInfos)
 	_, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 10100, 2, 1000, true, minerInfos) // Bad miners who don't prove their sectors
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 200100, 1, 10_000, true, minerInfos)
-	// vm6Util.PrintMinerInfos(t, v, ctxStore, minerInfos)
 
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
-
-	networkStats := vm6.GetNetworkStats(t, v)
-	fmt.Printf("BYTES COMMITTED %s\n", networkStats.TotalBytesCommitted)
 
 	startRoot := v.StateRoot()
 	cache := nv15.NewMemMigrationCache()
@@ -189,7 +124,7 @@ func TestCreateMiners(t *testing.T) {
 	cacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
 
-	networkStatsBefore := vm6.GetNetworkStats(t, v)
+	// networkStatsBefore := vm6.GetNetworkStats(t, v)
 	noCacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
 	require.NoError(t, err)
 	require.True(t, cacheRoot.Equals(noCacheRoot))
@@ -199,9 +134,10 @@ func TestCreateMiners(t *testing.T) {
 		lookup[ba.Code()] = ba
 	}
 
-	v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
-	require.NoError(t, err)
+	// TODO compare network stats, currently these objects are different and not able to compare.
+	//v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
+	//require.NoError(t, err)
 
-	networkStatsAfter := vm7.GetNetworkStats(t, v7)
-	require.Equal(t, networkStatsBefore, networkStatsAfter)
+	// networkStatsAfter := vm7.GetNetworkStats(t, v7)
+	// require.Equal(t, networkStatsBefore, networkStatsAfter)
 }
