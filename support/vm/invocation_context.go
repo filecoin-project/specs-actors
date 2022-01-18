@@ -334,7 +334,7 @@ func (ic *invocationContext) ValidateImmediateCallerIs(addrs ...address.Address)
 			return
 		}
 	}
-	ic.Abortf(exitcode.ErrForbidden, "caller address %v forbidden, allowed: %v", ic.msg.from, addrs)
+	ic.Abortf(exitcode.SysErrForbidden, "caller address %v forbidden, allowed: %v", ic.msg.from, addrs)
 }
 
 func (ic *invocationContext) ValidateImmediateCallerType(types ...cid.Cid) {
@@ -345,7 +345,7 @@ func (ic *invocationContext) ValidateImmediateCallerType(types ...cid.Cid) {
 			return
 		}
 	}
-	ic.Abortf(exitcode.ErrForbidden, "caller type %v forbidden, allowed: %v", ic.fromActor.Code, types)
+	ic.Abortf(exitcode.SysErrForbidden, "caller type %v forbidden, allowed: %v", ic.fromActor.Code, types)
 }
 
 func (ic *invocationContext) Abortf(errExitCode exitcode.ExitCode, msg string, args ...interface{}) {

@@ -717,7 +717,7 @@ func TestAggregateBadSender(t *testing.T) {
 		SectorNumbers: sectorNosBf,
 	}
 	res := vm.RequireApplyMessage(t, v, addrs[1], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams, t.Name())
-	assert.Equal(t, exitcode.ErrForbidden, res.Code)
+	assert.Equal(t, exitcode.SysErrForbidden, res.Code)
 }
 
 func TestAggregateBadSectorNumber(t *testing.T) {
