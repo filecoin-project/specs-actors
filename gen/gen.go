@@ -118,8 +118,8 @@ func main() {
 		paych.LaneState{},
 		// method params and returns
 		//paych.ConstructorParams{}, // Aliased from v0
-		paych.UpdateChannelStateParams{}, // Not pure data
-		paych.SignedVoucher{}, // Not pure data
+		paych.UpdateChannelStateParams{}, // Changed in v7
+		paych.SignedVoucher{}, // Changed in v7
 		//paych.ModVerifyParams{}, // Aliased from v0
 		// other types
 		//paych.Merge{}, // Aliased from v0

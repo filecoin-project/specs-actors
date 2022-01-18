@@ -94,8 +94,8 @@ func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Add
 ////////////////////////////////////////////////////////////////////////////////
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
-// This is not aliased from prior versions due to inclusio nof the SignedVoucher, which is not pure state.
-// If we removed the method SignedVoucher, this could become pure state.
+// Changed in v7:
+// - SignedVoucher type changed
 type UpdateChannelStateParams struct {
 	Sv     SignedVoucher
 	Secret []byte
@@ -103,6 +103,8 @@ type UpdateChannelStateParams struct {
 
 // A voucher is sent by `From` to `To` off-chain in order to enable
 // `To` to redeem payments on-chain in the future
+// Changed in v7:
+// - Renamed SecretPreImage to SecretHash
 type SignedVoucher struct {
 	// ChannelAddr is the address of the payment channel this signed voucher is valid for
 	ChannelAddr addr.Address
@@ -131,7 +133,7 @@ type SignedVoucher struct {
 	Signature *crypto.Signature
 }
 
-func (t *SignedVoucher) SigningBytes() ([]byte, error) {
+func VoucherSigningBytes(t *SignedVoucher) ([]byte, error) {
 	osv := *t
 	osv.Signature = nil
 
@@ -187,7 +189,7 @@ func (pca Actor) UpdateChannelState(rt runtime.Runtime, params *UpdateChannelSta
 		rt.Abortf(exitcode.ErrIllegalArgument, "secret must be at most 256 bytes long")
 	}
 
-	vb, err := sv.SigningBytes()
+	vb, err := VoucherSigningBytes(&sv)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalArgument, "failed to serialize signedvoucher")
 
 	err = rt.VerifySignature(*sv.Signature, signer, vb)

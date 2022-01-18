@@ -986,7 +986,7 @@ func verifyState(t *testing.T, rt *mock.Runtime, expLanes int, expectedState Sta
 }
 
 func voucherBytes(t *testing.T, sv *SignedVoucher) []byte {
-	bytes, err := sv.SigningBytes()
+	bytes, err := VoucherSigningBytes(sv)
 	require.NoError(t, err)
 	return bytes
 }
