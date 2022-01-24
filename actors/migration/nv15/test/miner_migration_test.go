@@ -26,6 +26,7 @@ import (
 const sealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 var seed = int64(93837778)
+
 func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) []vm6Util.MinerInfo {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
@@ -45,7 +46,7 @@ func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) [
 		ret := vm6.ApplyOk(t, v, workerAddress, builtin6.StoragePowerActorAddr, big.Mul(big.NewInt(100_000_000), vm6.FIL), builtin6.MethodsPower.CreateMiner, &params)
 		minerAddress, ok := ret.(*power6.CreateMinerReturn)
 		require.True(t, ok)
-		minerInfos = append(minerInfos, vm6Util.MinerInfo{ WorkerAddress: workerAddress, MinerAddress: minerAddress.IDAddress })
+		minerInfos = append(minerInfos, vm6Util.MinerInfo{WorkerAddress: workerAddress, MinerAddress: minerAddress.IDAddress})
 	}
 	assert.Equal(t, len(minerInfos), numMiners)
 	return minerInfos
@@ -82,7 +83,7 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, ctxStore adt.St
 		}
 	}
 
-	precommitInfo := precommits(t, v , firstSectorNo, numSectors, minerInfos, dealsArray)
+	precommitInfo := precommits(t, v, firstSectorNo, numSectors, minerInfos, dealsArray)
 
 	// advance time to when we can prove-commit
 	for i := 0; i < 3; i++ {
@@ -136,7 +137,7 @@ func TestMinerMigration(t *testing.T) {
 
 	// TODO compare network stats, currently these objects are different and not able to compare.
 	//v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
-	//require.NoError(t, err)
+	//require.NoEeurror(t, err)
 
 	// networkStatsAfter := vm7.GetNetworkStats(t, v7)
 	// require.Equal(t, networkStatsBefore, networkStatsAfter)
