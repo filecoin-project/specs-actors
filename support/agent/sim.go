@@ -362,7 +362,7 @@ func (s *Sim) computePowerTable(v SimVM, agents []Agent) (PowerTable, error) {
 }
 
 func computeCircSupply(v SimVM) error {
-	// disbursed + reward.State.TotalStoragePowerReward - burnt.Balance - power.State.TotalPledgeCollateral
+	// disbursed + reward.State.TotalStoragePowerReward - burnt.ActorBalance - power.State.TotalPledgeCollateral
 	var rewardSt reward.State
 	if err := v.GetState(builtin.RewardActorAddr, &rewardSt); err != nil {
 		return err

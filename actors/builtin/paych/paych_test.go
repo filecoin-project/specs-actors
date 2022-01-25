@@ -496,7 +496,7 @@ func TestActor_UpdateChannelStateMergeFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rt, actor, sv := requireCreateChannelWithLanes(t, 2)
 			if tc.balance > 0 {
-				rt.SetBalance(abi.NewTokenAmount(tc.balance))
+				rt.SetActorBalance(abi.NewTokenAmount(tc.balance))
 			}
 
 			var st1 State
@@ -954,7 +954,7 @@ func (h *pcActorHarness) constructAndVerify(t *testing.T, rt *mock.Runtime, send
 func (h *pcActorHarness) checkState(rt *mock.Runtime) {
 	var st State
 	rt.GetState(&st)
-	_, msgs := CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
+	_, msgs := CheckStateInvariants(&st, rt.AdtStore(), rt.ActorBalance())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 

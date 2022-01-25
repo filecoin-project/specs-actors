@@ -119,7 +119,7 @@ func main() {
 		// method params and returns
 		//paych.ConstructorParams{}, // Aliased from v0
 		paych.UpdateChannelStateParams{}, // Changed in v7
-		paych.SignedVoucher{}, // Changed in v7
+		paych.SignedVoucher{},            // Changed in v7
 		//paych.ModVerifyParams{}, // Aliased from v0
 		// other types
 		//paych.Merge{}, // Aliased from v0
@@ -181,6 +181,9 @@ func main() {
 		miner.SectorPreCommitInfo{},
 		miner.SectorOnChainInfo{},
 		miner.WorkerKeyChange{},
+		miner.ChangeBeneficiaryParams{},
+		miner.BeneficiaryInfo{},
+		miner.PendingBeneficiaryChange{},
 		miner.VestingFunds{},
 		miner.VestingFund{},
 		miner.WindowedPoSt{},
@@ -230,9 +233,9 @@ func main() {
 		verifreg.RemoveDataCapParams{}, // New in v7
 		verifreg.RemoveDataCapReturn{}, // New in v7
 		// other types
-		verifreg.RemoveDataCapRequest{}, // New in v7
+		verifreg.RemoveDataCapRequest{},  // New in v7
 		verifreg.RemoveDataCapProposal{}, // New in v7
-		verifreg.RmDcProposalID{}, // New in v7
+		verifreg.RmDcProposalID{},        // New in v7
 	); err != nil {
 		panic(err)
 	}

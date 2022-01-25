@@ -977,8 +977,14 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
-		Owner:                      owner,
-		Worker:                     worker,
+		Owner:              owner,
+		Worker:             worker,
+		BeneficiaryAddress: owner,
+		BeneficiaryInfo: miner.BeneficiaryInfo{
+			Quota:      abi.TokenAmount{},
+			ExpireDate: 0,
+			UsedQuota:  abi.TokenAmount{},
+		},
 		PendingWorkerKey:           nil,
 		PeerId:                     abi.PeerID("peer"),
 		Multiaddrs:                 testMultiaddrs,

@@ -18,7 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
-// Balance of Miner Actor should be greater than or equal to
+// ActorBalance of Miner Actor should be greater than or equal to
 // the sum of PreCommitDeposits and LockedFunds.
 // It is possible for balance to fall below the sum of
 // PCD, LF and InitialPledgeRequirements, and this is a bad
@@ -85,6 +85,35 @@ type State struct {
 const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
+type BeneficiaryInfo struct {
+	Quota      abi.TokenAmount
+	ExpireDate abi.ChainEpoch
+	UsedQuota  abi.TokenAmount
+}
+
+func (beneficiaryInfo BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
+	return !beneficiaryInfo.IsExpire(cur) && !beneficiaryInfo.IsUsedUp()
+}
+
+func (beneficiaryInfo BeneficiaryInfo) IsUsedUp() bool {
+	return beneficiaryInfo.UsedQuota.Equals(beneficiaryInfo.Quota)
+}
+
+func (beneficiaryInfo BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
+	return beneficiaryInfo.ExpireDate < cur
+}
+
+func (beneficiaryInfo BeneficiaryInfo) Available() abi.TokenAmount {
+	return big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota)
+}
+
+type PendingBeneficiaryChange struct {
+	NewBeneficiary addr.Address
+	NewQuota       abi.TokenAmount
+	NewExpireDate  abi.ChainEpoch
+	NextApprover   addr.Address
+}
+
 type MinerInfo struct {
 	// Account that owns this miner.
 	// - Income and returned collateral are paid to this address.
@@ -99,6 +128,10 @@ type MinerInfo struct {
 	ControlAddresses []addr.Address // Must all be ID addresses.
 
 	PendingWorkerKey *WorkerKeyChange
+
+	BeneficiaryAddress     addr.Address
+	BeneficiaryInfo        BeneficiaryInfo
+	PendingBeneficiaryInfo *PendingBeneficiaryChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
 	PeerId abi.PeerID
@@ -248,9 +281,16 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 	}
 
 	return &MinerInfo{
-		Owner:                      owner,
-		Worker:                     worker,
-		ControlAddresses:           controlAddrs,
+		Owner:              owner,
+		Worker:             worker,
+		ControlAddresses:   controlAddrs,
+		BeneficiaryAddress: owner,
+		BeneficiaryInfo: BeneficiaryInfo{
+			Quota:      abi.TokenAmount{},
+			ExpireDate: 0,
+			UsedQuota:  abi.TokenAmount{},
+		},
+		PendingBeneficiaryInfo:     nil,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,

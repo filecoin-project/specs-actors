@@ -326,7 +326,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufMinerInfo = []byte{139}
+var lengthBufMinerInfo = []byte{142}
 
 func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -365,6 +365,21 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 
 	// t.PendingWorkerKey (miner.WorkerKeyChange) (struct)
 	if err := t.PendingWorkerKey.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.BeneficiaryAddress (address.Address) (struct)
+	if err := t.BeneficiaryAddress.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.BeneficiaryInfo (miner.BeneficiaryInfo) (struct)
+	if err := t.BeneficiaryInfo.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.PendingBeneficiaryInfo (miner.PendingBeneficiaryChange) (struct)
+	if err := t.PendingBeneficiaryInfo.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -458,7 +473,7 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 11 {
+	if extra != 14 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -524,6 +539,43 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			t.PendingWorkerKey = new(WorkerKeyChange)
 			if err := t.PendingWorkerKey.UnmarshalCBOR(br); err != nil {
 				return xerrors.Errorf("unmarshaling t.PendingWorkerKey pointer: %w", err)
+			}
+		}
+
+	}
+	// t.BeneficiaryAddress (address.Address) (struct)
+
+	{
+
+		if err := t.BeneficiaryAddress.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.BeneficiaryAddress: %w", err)
+		}
+
+	}
+	// t.BeneficiaryInfo (miner.BeneficiaryInfo) (struct)
+
+	{
+
+		if err := t.BeneficiaryInfo.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.BeneficiaryInfo: %w", err)
+		}
+
+	}
+	// t.PendingBeneficiaryInfo (miner.PendingBeneficiaryChange) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+			t.PendingBeneficiaryInfo = new(PendingBeneficiaryChange)
+			if err := t.PendingBeneficiaryInfo.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.PendingBeneficiaryInfo pointer: %w", err)
 			}
 		}
 
@@ -2273,6 +2325,320 @@ func (t *WorkerKeyChange) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		t.EffectiveAt = abi.ChainEpoch(extraI)
+	}
+	return nil
+}
+
+var lengthBufChangeBeneficiaryParams = []byte{131}
+
+func (t *ChangeBeneficiaryParams) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufChangeBeneficiaryParams); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.NewBeneficiary (address.Address) (struct)
+	if err := t.NewBeneficiary.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.NewQuota (big.Int) (struct)
+	if err := t.NewQuota.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	if t.NewExpireDate >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpireDate)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpireDate-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *ChangeBeneficiaryParams) UnmarshalCBOR(r io.Reader) error {
+	*t = ChangeBeneficiaryParams{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.NewBeneficiary (address.Address) (struct)
+
+	{
+
+		if err := t.NewBeneficiary.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewBeneficiary: %w", err)
+		}
+
+	}
+	// t.NewQuota (big.Int) (struct)
+
+	{
+
+		if err := t.NewQuota.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewQuota: %w", err)
+		}
+
+	}
+	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.NewExpireDate = abi.ChainEpoch(extraI)
+	}
+	return nil
+}
+
+var lengthBufBeneficiaryInfo = []byte{131}
+
+func (t *BeneficiaryInfo) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufBeneficiaryInfo); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.Quota (big.Int) (struct)
+	if err := t.Quota.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.ExpireDate (abi.ChainEpoch) (int64)
+	if t.ExpireDate >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ExpireDate)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ExpireDate-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.UsedQuota (big.Int) (struct)
+	if err := t.UsedQuota.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
+	*t = BeneficiaryInfo{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 3 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Quota (big.Int) (struct)
+
+	{
+
+		if err := t.Quota.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Quota: %w", err)
+		}
+
+	}
+	// t.ExpireDate (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.ExpireDate = abi.ChainEpoch(extraI)
+	}
+	// t.UsedQuota (big.Int) (struct)
+
+	{
+
+		if err := t.UsedQuota.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.UsedQuota: %w", err)
+		}
+
+	}
+	return nil
+}
+
+var lengthBufPendingBeneficiaryChange = []byte{132}
+
+func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufPendingBeneficiaryChange); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.NewBeneficiary (address.Address) (struct)
+	if err := t.NewBeneficiary.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.NewQuota (big.Int) (struct)
+	if err := t.NewQuota.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	if t.NewExpireDate >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpireDate)); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpireDate-1)); err != nil {
+			return err
+		}
+	}
+
+	// t.NextApprover (address.Address) (struct)
+	if err := t.NextApprover.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
+	*t = PendingBeneficiaryChange{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 4 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.NewBeneficiary (address.Address) (struct)
+
+	{
+
+		if err := t.NewBeneficiary.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewBeneficiary: %w", err)
+		}
+
+	}
+	// t.NewQuota (big.Int) (struct)
+
+	{
+
+		if err := t.NewQuota.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NewQuota: %w", err)
+		}
+
+	}
+	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	{
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		var extraI int64
+		if err != nil {
+			return err
+		}
+		switch maj {
+		case cbg.MajUnsignedInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 positive overflow")
+			}
+		case cbg.MajNegativeInt:
+			extraI = int64(extra)
+			if extraI < 0 {
+				return fmt.Errorf("int64 negative oveflow")
+			}
+			extraI = -1 - extraI
+		default:
+			return fmt.Errorf("wrong type for int64 field: %d", maj)
+		}
+
+		t.NewExpireDate = abi.ChainEpoch(extraI)
+	}
+	// t.NextApprover (address.Address) (struct)
+
+	{
+
+		if err := t.NextApprover.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.NextApprover: %w", err)
+		}
+
 	}
 	return nil
 }
