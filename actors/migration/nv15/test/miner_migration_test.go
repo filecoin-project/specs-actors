@@ -12,6 +12,8 @@ import (
 	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
+	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
@@ -26,6 +28,45 @@ import (
 const sealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
 
 var seed = int64(93837778)
+
+func compareNetworkStats(t *testing.T, statsV6 vm6.NetworkStats, statsV7 vm7.NetworkStats) {
+	comparePowerState(t, statsV6.State, statsV7.State)
+	require.Equal(t, statsV6.TotalRawBytePower, statsV7.TotalRawBytePower)
+	require.Equal(t, statsV6.TotalBytesCommitted, statsV7.TotalBytesCommitted)
+	require.Equal(t, statsV6.TotalQualityAdjPower, statsV7.TotalQualityAdjPower)
+	require.Equal(t, statsV6.TotalQABytesCommitted, statsV7.TotalQABytesCommitted)
+	require.Equal(t, statsV6.TotalPledgeCollateral, statsV7.TotalPledgeCollateral)
+	require.Equal(t, statsV6.ThisEpochRawBytePower, statsV7.ThisEpochRawBytePower)
+	require.Equal(t, statsV6.ThisEpochQualityAdjPower, statsV7.ThisEpochQualityAdjPower)
+	require.Equal(t, statsV6.ThisEpochPledgeCollateral, statsV7.ThisEpochPledgeCollateral)
+	require.Equal(t, statsV6.MinerCount, statsV7.MinerCount)
+	require.Equal(t, statsV6.MinerAboveMinPowerCount, statsV7.MinerAboveMinPowerCount)
+	require.Equal(t, statsV6.ThisEpochReward, statsV7.ThisEpochReward)
+	require.Equal(t, statsV6.ThisEpochRewardSmoothed, statsV7.ThisEpochRewardSmoothed)
+	require.Equal(t, statsV6.ThisEpochBaselinePower, statsV7.ThisEpochBaselinePower)
+	require.Equal(t, statsV6.TotalStoragePowerReward, statsV7.TotalStoragePowerReward)
+	require.Equal(t, statsV6.TotalClientLockedCollateral, statsV7.TotalClientLockedCollateral)
+	require.Equal(t, statsV6.TotalProviderLockedCollateral, statsV7.TotalProviderLockedCollateral)
+	require.Equal(t, statsV6.TotalClientStorageFee, statsV7.TotalClientStorageFee)
+}
+
+func comparePowerState(t *testing.T, stateV6 power6.State, stateV7 power7.State) {
+	require.Equal(t, stateV6.TotalRawBytePower, stateV7.TotalRawBytePower)
+	require.Equal(t, stateV6.TotalBytesCommitted, stateV7.TotalBytesCommitted)
+	require.Equal(t, stateV6.TotalQualityAdjPower, stateV7.TotalQualityAdjPower)
+	require.Equal(t, stateV6.TotalQABytesCommitted, stateV7.TotalQABytesCommitted)
+	require.Equal(t, stateV6.TotalPledgeCollateral, stateV7.TotalPledgeCollateral)
+	require.Equal(t, stateV6.ThisEpochRawBytePower, stateV7.ThisEpochRawBytePower)
+	require.Equal(t, stateV6.ThisEpochPledgeCollateral, stateV7.ThisEpochPledgeCollateral)
+	require.Equal(t, stateV6.ThisEpochPledgeCollateral, stateV7.ThisEpochPledgeCollateral)
+	require.Equal(t, stateV6.ThisEpochQAPowerSmoothed, stateV7.ThisEpochQAPowerSmoothed)
+	require.Equal(t, stateV6.MinerCount, stateV7.MinerCount)
+	require.Equal(t, stateV6.MinerAboveMinPowerCount, stateV7.MinerAboveMinPowerCount)
+	require.Equal(t, stateV6.CronEventQueue, stateV7.CronEventQueue)
+	require.Equal(t, stateV6.FirstCronEpoch, stateV7.FirstCronEpoch)
+	require.Equal(t, stateV6.Claims, stateV7.Claims)
+	require.Equal(t, stateV6.ProofValidationBatch, stateV7.ProofValidationBatch)
+}
 
 func createMiners(t *testing.T, ctx context.Context, v *vm6.VM, numMiners int) []vm6Util.MinerInfo {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
@@ -125,7 +166,7 @@ func TestMinerMigration(t *testing.T) {
 	cacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
 
-	// networkStatsBefore := vm6.GetNetworkStats(t, v)
+	networkStatsBefore := vm6.GetNetworkStats(t, v)
 	noCacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, nv15.NewMemMigrationCache())
 	require.NoError(t, err)
 	require.True(t, cacheRoot.Equals(noCacheRoot))
@@ -135,10 +176,9 @@ func TestMinerMigration(t *testing.T) {
 		lookup[ba.Code()] = ba
 	}
 
-	// TODO compare network stats, currently these objects are different and not able to compare.
-	//v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
-	//require.NoEeurror(t, err)
+	v7, err := vm7.NewVMAtEpoch(ctx, lookup, ctxStore, noCacheRoot, v.GetEpoch())
+	require.NoError(t, err)
 
-	// networkStatsAfter := vm7.GetNetworkStats(t, v7)
-	// require.Equal(t, networkStatsBefore, networkStatsAfter)
+	networkStatsAfter := vm7.GetNetworkStats(t, v7)
+	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
 }
