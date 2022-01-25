@@ -557,7 +557,7 @@ func TestPublishStorageDeals(t *testing.T) {
 		expectGetControlAddresses(rt, providerResolved, mAddr.owner, mAddr.worker)
 		rt.Call(actor.AddBalance, &mAddr.provider)
 		rt.Verify()
-		rt.SetBalance(big.Add(rt.Balance(), deal.ProviderCollateral))
+		rt.SetActorBalance(big.Add(rt.ActorBalance(), deal.ProviderCollateral))
 		require.EqualValues(t, deal.ProviderCollateral, actor.getEscrowBalance(rt, providerResolved))
 
 		// publish deal using the BLS addresses
@@ -2843,7 +2843,7 @@ func (h *marketActorTestHarness) addProviderFunds(rt *mock.Runtime, amount abi.T
 
 	rt.Call(h.AddBalance, &minerAddrs.provider)
 	rt.Verify()
-	rt.SetBalance(big.Add(rt.Balance(), amount))
+	rt.SetActorBalance(big.Add(rt.ActorBalance(), amount))
 }
 
 // addParticipantFunds is a helper method to setup non-provider storage market participant funds
@@ -2854,7 +2854,7 @@ func (h *marketActorTestHarness) addParticipantFunds(rt *mock.Runtime, addr addr
 
 	rt.Call(h.AddBalance, &addr)
 	rt.Verify()
-	rt.SetBalance(big.Add(rt.Balance(), amount))
+	rt.SetActorBalance(big.Add(rt.ActorBalance(), amount))
 }
 
 func (h *marketActorTestHarness) withdrawProviderBalance(rt *mock.Runtime, withDrawAmt, expectedSend abi.TokenAmount, miner *minerAddrs) {
@@ -3299,7 +3299,7 @@ func (h *marketActorTestHarness) generateDealWithCollateralAndAddFunds(rt *mock.
 func (h *marketActorTestHarness) checkState(rt *mock.Runtime, expectedMessagePatterns ...string) {
 	var st market.State
 	rt.GetState(&st)
-	_, msgs := market.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance(), rt.Epoch())
+	_, msgs := market.CheckStateInvariants(&st, rt.AdtStore(), rt.ActorBalance(), rt.Epoch())
 	if len(expectedMessagePatterns) == 0 {
 		assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 	} else {

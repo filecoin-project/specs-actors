@@ -78,6 +78,8 @@ func (a Actor) Exports() []interface{} {
 		25:                        a.PreCommitSectorBatch,
 		26:                        a.ProveCommitAggregate,
 		27:                        a.ProveReplicaUpdates,
+		28:                        a.ChangeBeneficiaryChange,
+		29:                        a.ConfirmBeneficiaryChange,
 	}
 }
 
@@ -1971,7 +1973,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the miner's available balance.
-// Only owner key has permission to withdraw.
+// Only beneficiary key has permission to withdraw.
 // If less than the specified amount is available, yields the entire available balance.
 // Returns the amount withdrawn.
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
@@ -1986,10 +1988,9 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	rt.StateTransaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
-		// Only the owner is allowed to withdraw the balance as it belongs to/is controlled by the owner
+		// Only the owner/beneficiary is allowed to withdraw the balance as it belongs to/is controlled by the owner
 		// and not the worker.
-		rt.ValidateImmediateCallerIs(info.Owner)
-
+		rt.ValidateImmediateCallerIs(info.Owner, info.BeneficiaryInfo.Addr)
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
@@ -2016,12 +2017,23 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		feeToBurn = RepayDebtsOrAbort(rt, &st)
 	})
 
-	amountWithdrawn := big.Min(availableBalance, params.AmountRequested)
+	var amountWithdrawn abi.TokenAmount
+	var receiver addr.Address
+	if info.BeneficiaryInfo.Addr == addr.Undef || info.Owner == info.BeneficiaryInfo.Addr {
+		receiver = info.Owner
+		amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
+	} else {
+		receiver = info.BeneficiaryInfo.Addr
+		builtin.RequireState(rt, !info.BeneficiaryInfo.IsUsedUp(), "beneficiary(%s) %d use up quota", info.BeneficiaryInfo.Addr)
+		builtin.RequireState(rt, !info.BeneficiaryInfo.IsExpire(rt.CurrEpoch()), "beneficiary(%s) %d have expired at epoch %d", info.BeneficiaryInfo.Addr, info.BeneficiaryInfo.ExpireDate, rt.CurrEpoch())
+		amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), info.BeneficiaryInfo.Available())
+	}
+
 	builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
 	builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
-		code := rt.Send(info.Owner, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
+		code := rt.Send(receiver, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
 	}
 
@@ -3107,4 +3119,187 @@ func checkPeerInfo(rt Runtime, peerID abi.PeerID, multiaddrs []abi.Multiaddrs) {
 	if totalSize > MaxMultiaddrData {
 		rt.Abortf(exitcode.ErrIllegalArgument, "multiaddr size of %d exceeds maximum of %d", totalSize, MaxMultiaddrData)
 	}
+}
+
+type ChangeeBeneficiaryParams struct {
+	NewBeneficiary          addr.Address
+	NewBeneficialQuota      abi.TokenAmount
+	NewBeneficialExpireDate abi.ChainEpoch
+}
+
+func checkNewBeneficialParam(rt Runtime, params *ChangeeBeneficiaryParams) {
+	if params.NewBeneficialExpireDate <= rt.CurrEpoch() {
+		rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire (%d) date must bigger than current epoch (%d)", params.NewBeneficialExpireDate, rt.CurrEpoch())
+	}
+
+	if params.NewBeneficialQuota.LessThanEqual(big.Zero()) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) should bigger than zero", params.NewBeneficialQuota)
+	}
+}
+
+func checkIncreaseQuota(rt Runtime, curBeneficiary BeneficiaryInfo, params *ChangeeBeneficiaryParams) {
+	if params.NewBeneficialQuota.LessThanEqual(curBeneficiary.Quota) {
+		rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial quota {} must larger than old one {}", params.NewBeneficialQuota, curBeneficiary.Quota)
+	}
+	if params.NewBeneficialExpireDate < curBeneficiary.ExpireDate {
+		rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire date {} must big or equal than old one {}", params.NewBeneficialQuota, curBeneficiary.Quota)
+	}
+}
+
+func (a Actor) ChangeBeneficiaryChange(rt Runtime, params *ChangeeBeneficiaryParams) *abi.EmptyValue {
+	newBeneficiary := resolveWorkerAddress(rt, params.NewBeneficiary)
+
+	var st State
+	rt.StateTransaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+		// Only the Owner is allowed to change the newWorker and control addresses.
+		rt.ValidateImmediateCallerIs(info.Owner)
+
+		//todo need pending
+		/*if info.PendingBeneficiaryInfo != nil { //need to change pending?
+			rt.Abortf(exitcode.ErrIllegalArgument, "cannt pending new address while")
+		}*/
+
+		if info.BeneficiaryInfo.Addr == info.Owner && newBeneficiary != info.Owner {
+			//1.1 propose a new beneficiary address
+			//ChangeBeneficiary command needs to propose a new beneficiary address, at the same time, the pending beneficiaryInfo can be set at the same time
+			//The new beneficiary should send the same command to confirm, and then it can take effect. In addition, the usedQuota is set to 0 since it's new
+			checkNewBeneficialParam(rt, params)
+			info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
+				NewBeneficiary:          newBeneficiary,
+				NewBeneficialQuota:      params.NewBeneficialQuota,
+				NewBeneficialExpireDate: params.NewBeneficialExpireDate,
+				OldBeneficiaryConfirmed: false,
+			}
+		} else {
+			if info.BeneficiaryInfo.UsedUpOrExpire(rt.CurrEpoch()) {
+				if newBeneficiary == info.BeneficiaryInfo.Addr {
+					//3.1
+					// the new Quota should be larger than or equal to the usedQuota  and for the ExpireDate?
+					checkIncreaseQuota(rt, info.BeneficiaryInfo, params)
+					//When the beneficiary address does not change, i.e. only change beneficiaryInfo, thus, only need the beneficiary to send the same command to confirm (like what we do for owner change)
+					info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
+						NewBeneficiary:          newBeneficiary,
+						NewBeneficialQuota:      params.NewBeneficialQuota,
+						NewBeneficialExpireDate: params.NewBeneficialExpireDate,
+						OldBeneficiaryConfirmed: false,
+					}
+				} else {
+					//3.2
+					//When there is a new beneficiary address is proposed. It requires the current beneficiary to send the same command to confirm,
+					//and followed the new beneficiary confirmation command the the same parameters. In this case, the usedQuota is set to 0, and the newly set quota is counted from 0.
+					//this situation may change into 2.3, only confirm by new beneficiary address
+					checkNewBeneficialParam(rt, params)
+					info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
+						NewBeneficiary:          newBeneficiary,
+						NewBeneficialQuota:      params.NewBeneficialQuota,
+						NewBeneficialExpireDate: params.NewBeneficialExpireDate,
+						OldBeneficiaryConfirmed: false,
+					}
+				}
+			} else {
+				if newBeneficiary == info.Owner {
+					//2.1
+					//When the new beneficiary is back to owner, the BeneficiaryInfo is set to default, and the change takes effect immediately
+					info.PendingBeneficiaryInfo = nil
+					info.BeneficiaryInfo = BeneficiaryInfo{
+						Addr:       info.Owner,
+						Quota:      abi.TokenAmount{},
+						ExpireDate: 0,
+						UsedQuota:  abi.TokenAmount{},
+					}
+				} else {
+					if newBeneficiary == info.BeneficiaryInfo.Addr {
+						//2.2
+						//When the beneficiary address keeps the same, only beneficiaryInfo is set. In this case, the usedQuota keeps no change,
+						//and the new Quota should be larger than or equal to the usedQuota and beneficiay expire date should be larger than current (+ ChainFinality?)
+						//(need send confirm message by beneficiary address or takes effect  immediately)
+						checkIncreaseQuota(rt, info.BeneficiaryInfo, params)
+						info.PendingBeneficiaryInfo = nil
+						info.BeneficiaryInfo.Quota = params.NewBeneficialQuota
+						info.BeneficiaryInfo.ExpireDate = params.NewBeneficialExpireDate
+					} else {
+						//2.3
+						//When there is a new beneficiary (not the owner itself), after the owner sent the ChangeBeneficiary command to change the beneficiary and beneficiaryInfo,
+						//the new beneficiary should send the same command to confirm, and then it can take effect. In addition, the usedQuota is set to 0 since it's new.
+						checkNewBeneficialParam(rt, params)
+						info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
+							NewBeneficiary:          newBeneficiary,
+							NewBeneficialQuota:      params.NewBeneficialQuota,
+							NewBeneficialExpireDate: params.NewBeneficialExpireDate,
+							OldBeneficiaryConfirmed: false,
+						}
+					}
+				}
+			}
+		}
+
+		err := st.SaveInfo(adt.AsStore(rt), info)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
+	})
+
+	return nil
+}
+
+func (a Actor) ConfirmBeneficiaryChange(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
+	var st State
+	rt.StateTransaction(&st, func() {
+		info := getMinerInfo(rt, &st)
+
+		if info.PendingBeneficiaryInfo == nil {
+			rt.Abortf(exitcode.ErrIllegalArgument, "no pending beneficiary change")
+		}
+
+		builtin.RequireState(rt, info.PendingBeneficiaryInfo.NewBeneficialExpireDate > rt.CurrEpoch(),
+			"pending beneficiary has expire current epoch %d beneficial expire date %d", rt.CurrEpoch(), info.PendingBeneficiaryInfo.NewBeneficialExpireDate)
+
+		if info.BeneficiaryInfo.Addr == info.Owner && info.PendingBeneficiaryInfo.NewBeneficiary != info.Owner {
+			// Only the  is allowed to change the newWorker.
+			rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NewBeneficiary)
+			info.BeneficiaryInfo = BeneficiaryInfo{
+				Addr:       info.PendingBeneficiaryInfo.NewBeneficiary,
+				Quota:      info.PendingBeneficiaryInfo.NewBeneficialQuota,
+				ExpireDate: info.PendingBeneficiaryInfo.NewBeneficialExpireDate,
+				UsedQuota:  big.Zero(),
+			}
+			info.PendingBeneficiaryInfo = nil
+		} else {
+			if info.PendingBeneficiaryInfo.NewBeneficiary == info.BeneficiaryInfo.Addr {
+				rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NewBeneficiary)
+				info.BeneficiaryInfo.Addr = info.PendingBeneficiaryInfo.NewBeneficiary
+				info.BeneficiaryInfo.ExpireDate = info.PendingBeneficiaryInfo.NewBeneficialExpireDate
+				info.PendingBeneficiaryInfo = nil
+			} else {
+				if info.BeneficiaryInfo.UsedUpOrExpire(rt.CurrEpoch()) {
+					rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NewBeneficiary)
+					info.BeneficiaryInfo = BeneficiaryInfo{
+						Addr:       info.PendingBeneficiaryInfo.NewBeneficiary,
+						Quota:      info.PendingBeneficiaryInfo.NewBeneficialQuota,
+						ExpireDate: info.PendingBeneficiaryInfo.NewBeneficialExpireDate,
+						UsedQuota:  big.Zero(),
+					}
+					info.PendingBeneficiaryInfo = nil
+				} else {
+					if info.PendingBeneficiaryInfo.OldBeneficiaryConfirmed {
+						rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NewBeneficiary)
+						info.BeneficiaryInfo = BeneficiaryInfo{
+							Addr:       info.PendingBeneficiaryInfo.NewBeneficiary,
+							Quota:      info.PendingBeneficiaryInfo.NewBeneficialQuota,
+							ExpireDate: info.PendingBeneficiaryInfo.NewBeneficialExpireDate,
+							UsedQuota:  big.Zero(),
+						}
+						info.PendingBeneficiaryInfo = nil
+					} else {
+						rt.ValidateImmediateCallerIs(info.BeneficiaryInfo.Addr)
+						info.PendingBeneficiaryInfo.OldBeneficiaryConfirmed = true
+					}
+				}
+			}
+		}
+
+		err := st.SaveInfo(adt.AsStore(rt), info)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
+	})
+
+	return nil
 }

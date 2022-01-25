@@ -136,7 +136,7 @@ func TestConstruction(t *testing.T) {
 
 		assertEmptyBitfield(t, st.EarlyTerminations)
 
-		_, msgs := miner.CheckStateInvariants(&st, rt.AdtStore(), rt.Balance())
+		_, msgs := miner.CheckStateInvariants(&st, rt.AdtStore(), rt.ActorBalance())
 		assert.True(t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 	})
 
@@ -1372,7 +1372,7 @@ func TestDeadlineCron(t *testing.T) {
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
 		// Miner balance = IP, debt repayment covered by unlocked funds
-		rt.SetBalance(st.InitialPledge)
+		rt.SetActorBalance(st.InitialPledge)
 
 		// because we skip forward in state and don't check post, there's no penalty.
 		// this is the first time the sector is detected faulty
@@ -1728,7 +1728,7 @@ func TestDeclareRecoveries(t *testing.T) {
 
 		// Fault will take miner into fee debt
 		st := getState(rt)
-		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
+		rt.SetActorBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
 
 		actor.declareFaults(rt, oneSector...)
 
@@ -1759,7 +1759,7 @@ func TestDeclareRecoveries(t *testing.T) {
 
 		// Recovery pays back fee debt and IP requirements and succeeds
 		funds := big.Add(ff, st.InitialPledge)
-		rt.SetBalance(funds) // this is how we send funds along with recovery message using mock rt
+		rt.SetActorBalance(funds) // this is how we send funds along with recovery message using mock rt
 		actor.declareRecoveries(rt, dlIdx, pIdx, bf(uint64(oneSector[0].SectorNumber)), ff)
 
 		dl := actor.getDeadline(rt, dlIdx)
@@ -2218,7 +2218,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		st := getState(rt)
-		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		st.FeeDebt = big.Add(rt.ActorBalance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
 			actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
@@ -2235,10 +2235,31 @@ func TestWithdrawBalance(t *testing.T) {
 		st.FeeDebt = feeDebt
 		rt.ReplaceState(st)
 
-		requested := rt.Balance()
+		requested := rt.ActorBalance()
 		expectedWithdraw := big.Sub(requested, feeDebt)
 		actor.withdrawFunds(rt, requested, expectedWithdraw, feeDebt)
 		actor.checkState(rt)
+	})
+
+	t.Run("withdraw from other beneficiary address", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		benecifiaryAddr := tutil.NewBLSAddr(t, 999)
+		benecifiaryId := tutil.NewIDAddr(t, 556)
+		rt.AddIDAddress(benecifiaryAddr, benecifiaryId)
+		rt.SetAddressActorType(benecifiaryId, builtin.AccountActorCodeID)
+
+		actor.setBeneficiary(rt, miner.BeneficiaryInfo{
+			Addr:       benecifiaryAddr,
+			Quota:      bigBalance,
+			ExpireDate: periodOffset,
+			UsedQuota:  abi.TokenAmount{},
+		})
+		// withdraw 1% of balance
+		actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
+		actor.checkState(rt)
+		assert.True(t, rt.BalanceOf(benecifiaryId).Equals(onePercentBalance), "beneficiary address can not withdraw expect balance expect %s but got %s", onePercentBalance, rt.BalanceOf(benecifiaryId))
 	})
 }
 
@@ -2306,7 +2327,7 @@ func TestRepayDebts(t *testing.T) {
 
 		rewardAmount := big.Mul(big.NewInt(4), big.NewInt(1e18))
 		amountLocked, _ := miner.LockedRewardFromReward(rewardAmount)
-		rt.SetBalance(amountLocked)
+		rt.SetActorBalance(amountLocked)
 		actor.applyRewards(rt, rewardAmount, big.Zero())
 		require.Equal(t, amountLocked, actor.getLockedFunds(rt))
 
@@ -2614,6 +2635,46 @@ func TestChangeMultiAddrs(t *testing.T) {
 		actor.changeMultiAddrs(rt, nil)
 		actor.checkState(rt)
 	})
+}
+
+func TestChangeBeneficiaryInfo(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+
+	setupFunc := func() (*mock.Runtime, *actorHarness) {
+		actor := newHarness(t, periodOffset)
+		builder := builderForHarness(actor).
+			WithBalance(bigBalance, big.Zero())
+		rt := builder.Build(t)
+
+		return rt, actor
+	}
+
+	t.Run("successfully change beneficiary to another address", func(t *testing.T) {
+		rt, actor := setupFunc()
+		actor.constructAndVerify(rt)
+
+		newBeneficiaryId := tutil.NewIDAddr(t, 999)
+		newBeneficiary := tutil.NewBLSAddr(t, 100)
+		rt.AddIDAddress(newBeneficiary, newBeneficiaryId)
+		quota := abi.NewTokenAmount(100)
+		expireDate := periodOffset * 2
+		actor.changeBeneficiary(rt, newBeneficiary, quota, expireDate)
+		// assert change has been made in state
+		info := actor.getInfo(rt)
+		require.EqualValues(t, expireDate, info.PendingBeneficiaryInfo.NewBeneficialExpireDate)
+		require.EqualValues(t, quota, info.PendingBeneficiaryInfo.NewBeneficialQuota)
+		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
+
+		rt.SetEpoch(periodOffset + 10)
+		actor.confirmChangeBeneficiary(rt, newBeneficiary)
+
+		// assert change has been made in state
+		info = actor.getInfo(rt)
+		require.EqualValues(t, expireDate, info.BeneficiaryInfo.ExpireDate)
+		require.EqualValues(t, quota, info.BeneficiaryInfo.Quota)
+		require.EqualValues(t, newBeneficiaryId, info.BeneficiaryInfo.Addr)
+	})
+
 }
 
 func TestChangeWorkerAddress(t *testing.T) {
@@ -3300,7 +3361,7 @@ func TestApplyRewards(t *testing.T) {
 		lockedAmt, _ := miner.LockedRewardFromReward(amt)
 		assert.Equal(t, lockedAmt, st.LockedFunds)
 		// technically applying rewards without first activating cron is an impossible state but convenient for testing
-		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.ActorBalance())
 		assert.Equal(t, 1, len(msgs.Messages()))
 		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
@@ -3311,7 +3372,7 @@ func TestApplyRewards(t *testing.T) {
 
 		rwd := abi.NewTokenAmount(600_000)
 		penalty := abi.NewTokenAmount(300_000)
-		rt.SetBalance(big.Add(rt.Balance(), rwd))
+		rt.SetActorBalance(big.Add(rt.ActorBalance(), rwd))
 		actor.applyRewards(rt, rwd, penalty)
 
 		expectedLockAmt, _ := miner.LockedRewardFromReward(rwd)
@@ -3320,7 +3381,7 @@ func TestApplyRewards(t *testing.T) {
 
 		// technically applying rewards without first activating cron is an impossible state but convenient for testing
 		st := getState(rt)
-		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.ActorBalance())
 		assert.Equal(t, 1, len(msgs.Messages()))
 		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
@@ -3331,13 +3392,13 @@ func TestApplyRewards(t *testing.T) {
 		st := getState(rt)
 		assert.Equal(t, big.Zero(), st.FeeDebt)
 
-		amt := rt.Balance()
+		amt := rt.ActorBalance()
 		penalty := big.Mul(big.NewInt(3), amt)
 		reward := amt
 
 		// manually update actor balance to include the added funds on reward message
 		newBalance := big.Add(reward, amt)
-		rt.SetBalance(newBalance)
+		rt.SetActorBalance(newBalance)
 
 		rt.SetCaller(builtin.RewardActorAddr, builtin.RewardActorCodeID)
 		rt.ExpectValidateCallerAddr(builtin.RewardActorAddr)
@@ -3369,7 +3430,7 @@ func TestApplyRewards(t *testing.T) {
 
 		assert.Equal(t, big.Zero(), st.LockedFunds)
 
-		amt := rt.Balance()
+		amt := rt.ActorBalance()
 		availableBefore, err := st.GetAvailableBalance(amt)
 		require.NoError(t, err)
 		assert.True(t, availableBefore.GreaterThan(big.Zero()))
@@ -3385,7 +3446,7 @@ func TestApplyRewards(t *testing.T) {
 		penalty := big.Zero()
 		// manually update actor balance to include the added funds from outside
 		newBalance := big.Add(amt, reward)
-		rt.SetBalance(newBalance)
+		rt.SetActorBalance(newBalance)
 
 		// pledge change is new reward - reward taken for fee debt
 		// 3*LockedRewardFactor*amt - 2*amt = remainingLocked
@@ -3423,7 +3484,7 @@ func TestApplyRewards(t *testing.T) {
 		// remaining funds locked in vesting table
 		assert.Equal(t, remainingLocked, st.LockedFunds)
 		// technically applying rewards without first activating cron is an impossible state but convenient for testing
-		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+		_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.ActorBalance())
 		assert.Equal(t, 1, len(msgs.Messages()))
 		assert.Contains(t, msgs.Messages()[0], "DeadlineCronActive == false")
 	})
@@ -3553,6 +3614,8 @@ type actorHarness struct {
 	worker   addr.Address
 	key      addr.Address
 
+	beneficiaryInfo miner.BeneficiaryInfo
+
 	controlAddrs []addr.Address
 
 	sealProofType       abi.RegisteredSealProof
@@ -3587,6 +3650,12 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		owner:    owner,
 		worker:   worker,
 		key:      workerKey,
+		beneficiaryInfo: miner.BeneficiaryInfo{
+			Addr:       owner,
+			Quota:      abi.TokenAmount{},
+			ExpireDate: 0,
+			UsedQuota:  abi.TokenAmount{},
+		},
 
 		controlAddrs: controlAddrs,
 
@@ -3615,6 +3684,31 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	require.NoError(h.t, err)
 	h.partitionSize, err = builtin.PoStProofWindowPoStPartitionSectors(h.windowPostProofType)
 	require.NoError(h.t, err)
+}
+
+func (h *actorHarness) setBeneficiary(rt *mock.Runtime, beneficiary miner.BeneficiaryInfo) {
+	beneficiaryIdAddr, found := rt.GetIdAddr(beneficiary.Addr)
+	require.Equal(h.t, found, true)
+	h.beneficiaryInfo = miner.BeneficiaryInfo{
+		Addr:       beneficiaryIdAddr,
+		Quota:      beneficiary.Quota,
+		ExpireDate: beneficiary.ExpireDate,
+	}
+
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.SetCaller(h.owner, builtin.StorageMinerActorCodeID)
+	param := miner.ChangeeBeneficiaryParams{
+		NewBeneficiary:          beneficiary.Addr,
+		NewBeneficialQuota:      beneficiary.Quota,
+		NewBeneficialExpireDate: beneficiary.ExpireDate,
+	}
+	rt.Call(h.a.ChangeBeneficiaryChange, &param)
+	rt.Verify()
+
+	rt.ExpectValidateCallerAddr(beneficiaryIdAddr)
+	rt.SetCaller(beneficiaryIdAddr, builtin.AccountActorCodeID)
+	rt.Call(h.a.ConfirmBeneficiaryChange, &abi.EmptyValue{})
+	rt.Verify()
 }
 
 func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
@@ -3789,13 +3883,39 @@ func (h *actorHarness) getLockedFunds(rt *mock.Runtime) abi.TokenAmount {
 
 func (h *actorHarness) checkState(rt *mock.Runtime) {
 	st := getState(rt)
-	_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.Balance())
+	_, msgs := miner.CheckStateInvariants(st, rt.AdtStore(), rt.ActorBalance())
 	assert.True(h.t, msgs.IsEmpty(), strings.Join(msgs.Messages(), "\n"))
 }
 
 //
 // Actor method calls
 //
+
+func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, newBeneficiaryAddr addr.Address, Quota abi.TokenAmount, expireDate abi.ChainEpoch) {
+	rt.SetAddressActorType(newBeneficiaryAddr, builtin.AccountActorCodeID)
+
+	param := &miner.ChangeeBeneficiaryParams{
+		NewBeneficiary:          newBeneficiaryAddr,
+		NewBeneficialQuota:      Quota,
+		NewBeneficialExpireDate: expireDate,
+	}
+	//rt.ExpectSend(newBeneficiaryAddr, builtin.MethodsAccount.PubkeyAddress, nil, big.Zero(), &h.key, exitcode.Ok)
+
+	rt.ExpectValidateCallerAddr(h.owner)
+	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
+	rt.Call(h.a.ChangeBeneficiaryChange, param)
+	rt.Verify()
+}
+
+func (h *actorHarness) confirmChangeBeneficiary(rt *mock.Runtime, sender addr.Address) {
+	rt.ExpectValidateCallerAddr(sender)
+	senderId, found := rt.GetIdAddr(sender)
+	require.True(h.t, found, "unable to find send id of address %s", sender)
+	rt.SetCaller(senderId, builtin.AccountActorCodeID)
+	rt.ExpectValidateCallerAddr(senderId)
+	rt.Call(h.a.ConfirmBeneficiaryChange, nil)
+	rt.Verify()
+}
 
 func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch, newControlAddrs []addr.Address) {
 	rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
@@ -4881,12 +5001,13 @@ func (h *actorHarness) onDeadlineCron(rt *mock.Runtime, config *cronConfig) {
 
 func (h *actorHarness) withdrawFunds(rt *mock.Runtime, amountRequested, expectedWithdrawn, expectedDebtRepaid abi.TokenAmount) {
 	rt.SetCaller(h.owner, builtin.AccountActorCodeID)
-	rt.ExpectValidateCallerAddr(h.owner)
 
-	rt.ExpectSend(h.owner, builtin.MethodSend, nil, expectedWithdrawn, nil, exitcode.Ok)
+	rt.ExpectSend(h.beneficiaryInfo.Addr, builtin.MethodSend, nil, expectedWithdrawn, nil, exitcode.Ok)
 	if expectedDebtRepaid.GreaterThan(big.Zero()) {
 		rt.ExpectSend(builtin.BurntFundsActorAddr, builtin.MethodSend, nil, expectedDebtRepaid, nil, exitcode.Ok)
 	}
+
+	rt.ExpectValidateCallerAddr(h.owner, h.beneficiaryInfo.Addr)
 	ret := rt.Call(h.a.WithdrawBalance, &miner.WithdrawBalanceParams{
 		AmountRequested: amountRequested,
 	})
@@ -4903,7 +5024,7 @@ func (h *actorHarness) repayDebt(rt *mock.Runtime, value, expectedRepayedFromVes
 	rt.SetCaller(h.worker, builtin.AccountActorCodeID)
 	rt.ExpectValidateCallerAddr(append(h.controlAddrs, h.owner, h.worker)...)
 
-	rt.SetBalance(big.Sum(rt.Balance(), value))
+	rt.SetActorBalance(big.Sum(rt.ActorBalance(), value))
 	rt.SetReceived(value)
 	if expectedRepayedFromVest.GreaterThan(big.Zero()) {
 		pledgeDelta := expectedRepayedFromVest.Neg()

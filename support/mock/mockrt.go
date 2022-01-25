@@ -50,7 +50,7 @@ type Runtime struct {
 
 	// Actor state
 	state   cid.Cid
-	balance abi.TokenAmount
+	balance map[addr.Address]abi.TokenAmount
 
 	// VM implementation
 	store         map[cid.Cid][]byte
@@ -260,7 +260,12 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
 	rt.requireInCall()
-	return rt.balance
+	if val, ok := rt.balance[rt.receiver]; ok {
+		return val
+	} else {
+		rt.balance[rt.receiver] = big.Zero()
+		return rt.balance[rt.receiver]
+	}
 }
 
 func (rt *Runtime) BaseFee() abi.TokenAmount {
@@ -367,14 +372,16 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params cbo
 			toAddr, toName, methodNum, toMeth, value, params, exp.to, expToName, exp.method, expToMeth, exp.value, exp.params)
 	}
 
-	if value.GreaterThan(rt.balance) {
+	fromBalance := rt.ActorBalance()
+	if value.GreaterThan(fromBalance) {
 		rt.Abortf(exitcode.SysErrSenderStateInvalid, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
 
 	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
 	defer func() {
 		rt.expectSends = rt.expectSends[1:]
-		rt.balance = big.Sub(rt.balance, value)
+		rt.balance[rt.receiver] = big.Sub(rt.balance[rt.receiver], value)
+		rt.balance[toAddr] = big.Add(rt.BalanceOf(toAddr), value)
 	}()
 
 	// populate the output argument
@@ -810,8 +817,22 @@ func (rt *Runtime) GetState(o cbor.Unmarshaler) {
 	}
 }
 
-func (rt *Runtime) Balance() abi.TokenAmount {
-	return rt.balance
+func (rt *Runtime) ActorBalance() abi.TokenAmount {
+	if val, ok := rt.balance[rt.receiver]; ok {
+		return val
+	} else {
+		rt.balance[rt.receiver] = big.Zero()
+		return rt.balance[rt.receiver]
+	}
+}
+
+func (rt *Runtime) BalanceOf(addr addr.Address) abi.TokenAmount {
+	if val, ok := rt.balance[addr]; ok {
+		return val
+	} else {
+		rt.balance[addr] = big.Zero()
+		return rt.balance[addr]
+	}
 }
 
 func (rt *Runtime) Epoch() abi.ChainEpoch {
@@ -830,8 +851,8 @@ func (rt *Runtime) SetAddressActorType(address addr.Address, actorType cid.Cid) 
 	rt.actorCodeCIDs[address] = actorType
 }
 
-func (rt *Runtime) SetBalance(amt abi.TokenAmount) abi.TokenAmount {
-	rt.balance = amt
+func (rt *Runtime) SetActorBalance(amt abi.TokenAmount) abi.TokenAmount {
+	rt.balance[rt.receiver] = amt
 	return amt
 }
 

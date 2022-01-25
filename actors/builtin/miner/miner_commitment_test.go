@@ -283,7 +283,7 @@ func TestCommitments(t *testing.T) {
 
 		// Try to precommit while in fee debt with insufficient balance
 		st = getState(rt)
-		st.FeeDebt = big.Add(rt.Balance(), abi.NewTokenAmount(1e18))
+		st.FeeDebt = big.Add(rt.ActorBalance(), abi.NewTokenAmount(1e18))
 		rt.ReplaceState(st)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
 			actor.preCommitSector(rt, actor.makePreCommit(102, challengeEpoch, expiration, nil), preCommitConf{}, false)
@@ -553,7 +553,7 @@ func TestPreCommitBatch(t *testing.T) {
 			netFee := miner.AggregatePreCommitNetworkFee(batchSize, test.baseFee)
 			totalDeposit := big.Sum(deposits...)
 			totalBalance := big.Add(netFee, totalDeposit)
-			rt.SetBalance(big.Add(totalBalance, test.balanceSurplus))
+			rt.SetActorBalance(big.Add(totalBalance, test.balanceSurplus))
 
 			if test.exit != exitcode.Ok {
 				rt.ExpectAbortContainsMessage(test.exit, test.error, func() {
@@ -690,7 +690,7 @@ func TestProveCommit(t *testing.T) {
 
 		// run prove commit logic
 		rt.SetEpoch(proveCommitEpoch)
-		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+		rt.SetActorBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 		sector := actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(sectorNo), proveCommitConf{})
 
 		assert.Equal(t, precommit.Info.SealProof, sector.SealProof)
@@ -900,7 +900,7 @@ func TestProveCommit(t *testing.T) {
 		})
 		rt.Reset()
 
-		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+		rt.SetActorBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
 		proveCommit := makeProveCommit(sectorNo)
 		actor.proveCommitSectorAndConfirm(rt, precommit, proveCommit, proveCommitConf{})
@@ -950,7 +950,7 @@ func TestProveCommit(t *testing.T) {
 
 		// Set balance to exactly cover locked funds.
 		st := getState(rt)
-		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
+		rt.SetActorBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.LockedFunds))
 
 		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[actor.sealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
@@ -959,7 +959,7 @@ func TestProveCommit(t *testing.T) {
 		rt.Reset()
 
 		// succeeds with enough free balance (enough to cover 2x IP)
-		rt.SetBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.InitialPledge, st.LockedFunds))
+		rt.SetActorBalance(big.Sum(st.PreCommitDeposits, st.InitialPledge, st.InitialPledge, st.LockedFunds))
 		actor.proveCommitSectorAndConfirm(rt, precommit, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 		actor.checkState(rt)
 	})
@@ -1085,7 +1085,7 @@ func TestProveCommit(t *testing.T) {
 
 		// Set the right epoch for all following tests
 		rt.SetEpoch(precommitEpoch + miner.PreCommitChallengeDelay + 1)
-		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+		rt.SetActorBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
 		proveCommit := makeProveCommit(sectorNo)
 		proveCommit.Proof = make([]byte, 192)
@@ -1133,7 +1133,7 @@ func TestAggregateProveCommit(t *testing.T) {
 
 		// run prove commit logic
 		rt.SetEpoch(proveCommitEpoch)
-		rt.SetBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
+		rt.SetActorBalance(big.Mul(big.NewInt(1000), big.NewInt(1e18)))
 
 		actor.proveCommitAggregateSector(rt, proveCommitConf{}, precommits, makeProveCommitAggregate(sectorNosBf), big.Zero())
 
@@ -1254,7 +1254,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover IP but not cover network fee
 		rt.SetEpoch(proveCommitEpoch)
 		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 		baseFee := big.NewInt(1e16)
 		rt.SetBaseFee(baseFee)
 		require.True(t, miner.AggregateProveCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
@@ -1286,7 +1286,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 
 		// set base fee extremely high so AggregateProveCommitNetworkFee is > 1000 FIL. Set balance to 1000 FIL to easily cover PCD but not network fee
 		balance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 		baseFee := big.NewInt(1e16)
 		rt.SetBaseFee(baseFee)
 		require.True(t, miner.AggregatePreCommitNetworkFee(len(precommits), baseFee).GreaterThan(balance))
@@ -1334,7 +1334,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		// Give miner almost enough balance to pay both
 		balance := big.Mul(big.NewInt(2), netFee)
 		balance = big.Sub(balance, big.NewInt(1))
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "unlocked balance can not repay fee debt", func() {
 			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
@@ -1378,7 +1378,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 
 		// Give miner enough balance to pay both but not any extra for pcd
 		balance := big.Mul(big.NewInt(2), netFee)
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds 0 for pre-commit deposit:", func() {
 			actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
@@ -1425,7 +1425,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 		oneSectorPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, expiration-precommitEpoch, big.Zero(), big.Zero())
 		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, big.Mul(big.NewInt(4), oneSectorPowerEstimate))
 		balance = big.Add(balance, expectedDeposit)
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 
 		actor.preCommitSectorBatch(rt, &miner.PreCommitSectorBatchParams{Sectors: precommits}, preCommitBatchConf{firstForMiner: true}, baseFee)
 		// State updated

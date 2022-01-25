@@ -66,7 +66,7 @@ func TestExec(t *testing.T) {
 		// anne execs a payment channel actor with 100 FIL.
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 		rt.SetReceived(balance)
 
 		// re-org-stable address of the payment channel actor
@@ -92,7 +92,7 @@ func TestExec(t *testing.T) {
 
 		// creating another actor should get a different address, the below logic is a repeat of the above to insure
 		// the next ID address created is incremented. 100 -> 101
-		rt.SetBalance(balance)
+		rt.SetActorBalance(balance)
 		rt.SetReceived(balance)
 		uniqueAddr2 := tutil.NewActorAddr(t, "paych2")
 		rt.SetNewActorAddress(uniqueAddr2)

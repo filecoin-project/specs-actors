@@ -108,7 +108,7 @@ func TestCreateMinerFailures(t *testing.T) {
 		// owner send CreateMiner to Actor
 		rt.SetCaller(owner, builtin.AccountActorCodeID)
 		rt.SetReceived(abi.NewTokenAmount(10))
-		rt.SetBalance(abi.NewTokenAmount(10))
+		rt.SetActorBalance(abi.NewTokenAmount(10))
 		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 		msgParams := &initact.ExecParams{
@@ -1240,7 +1240,7 @@ func (h *spActorHarness) createMiner(rt *mock.Runtime, owner, worker, miner, rob
 	// owner send CreateMiner to Actor
 	rt.SetCaller(owner, builtin.AccountActorCodeID)
 	rt.SetReceived(value)
-	rt.SetBalance(value)
+	rt.SetActorBalance(value)
 	rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
 
 	createMinerRet := &power.CreateMinerReturn{
