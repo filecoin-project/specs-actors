@@ -2,9 +2,14 @@ package test
 
 import (
 	"context"
+
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
+
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/rt"
+	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 
 	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
@@ -19,10 +24,11 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
 	"github.com/filecoin-project/specs-actors/v7/support/vm6Util"
 
+	"testing"
+
 	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 const sealProof = abi.RegisteredSealProof_StackedDrg32GiBV1_1
@@ -149,7 +155,7 @@ func TestMinerMigration(t *testing.T) {
 
 	minerInfos, v := createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 0, false, nil)
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 100, true, minerInfos)
-	_, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 10100, 2, 1000, true, minerInfos) // Bad miners who don't prove their sectors
+	lazyMinerInfos, v := createMinersAndSectorsV6(t, ctx, ctxStore, v, 10100, 2, 1000, true, minerInfos) // Bad miners who don't prove their sectors
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 200100, 1, 10_000, true, minerInfos)
 
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
@@ -162,6 +168,7 @@ func TestMinerMigration(t *testing.T) {
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 0, false, nil)
 	minerInfos, v = createMinersAndSectorsV6(t, ctx, ctxStore, v, 100, 100, 100, true, minerInfos)
 	v = vm6Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
+	minerInfos = append(minerInfos, lazyMinerInfos...)
 
 	cacheRoot, err := nv15.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv15.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
@@ -181,4 +188,26 @@ func TestMinerMigration(t *testing.T) {
 
 	networkStatsAfter := vm7.GetNetworkStats(t, v7)
 	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
+
+	// Check if every single sector has null SectorKey
+	for _, minerInfo := range minerInfos {
+		var minerState miner7.State
+		err := v7.GetState(minerInfo.MinerAddress, &minerState)
+		require.NoError(t, err)
+
+		err = minerState.ForEachSector(ctxStore, func(si *miner7.SectorOnChainInfo) {
+			require.Nil(t, si.SectorKeyCID)
+		})
+		require.NoError(t, err)
+	}
+
+	// Check if the verified registry actor's RemoveDataCapProposalIDs is empty
+	var verifRegState verifreg.State
+	err = v7.GetState(builtin.VerifiedRegistryActorAddr, &verifRegState)
+	require.NoError(t, err)
+	proposalIDs, err := adt.AsMap(ctxStore, verifRegState.RemoveDataCapProposalIDs, builtin.DefaultHamtBitwidth)
+	require.NoError(t, err)
+	keys, err := proposalIDs.CollectKeys()
+	require.Nil(t, keys)
+
 }
