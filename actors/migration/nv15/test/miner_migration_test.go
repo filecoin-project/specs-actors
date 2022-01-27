@@ -144,7 +144,7 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, ctxStore adt.St
 	return append(minersToProve, minerInfos...), v
 }
 
-func TestMinerMigration(t *testing.T) {
+func TestNv15Migration(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld2.NewSyncBlockStoreInMemory()
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
@@ -189,13 +189,39 @@ func TestMinerMigration(t *testing.T) {
 	networkStatsAfter := vm7.GetNetworkStats(t, v7)
 	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
 
-	// Check if every single sector has null SectorKey
+	// Compare miner states
 	for _, minerInfo := range minerInfos {
-		var minerState miner7.State
-		err := v7.GetState(minerInfo.MinerAddress, &minerState)
+		var oldMinerState miner6.State
+		err := v.GetState(minerInfo.MinerAddress, &oldMinerState)
+		require.NoError(t, err)
+		oldDeadlines, err := oldMinerState.LoadDeadlines(ctxStore)
 		require.NoError(t, err)
 
-		err = minerState.ForEachSector(ctxStore, func(si *miner7.SectorOnChainInfo) {
+		var newMinerState miner7.State
+		err = v7.GetState(minerInfo.MinerAddress, &newMinerState)
+		require.NoError(t, err)
+		newDeadlines, err := newMinerState.LoadDeadlines(ctxStore)
+		require.NoError(t, err)
+
+		for i := 0; uint64(i) < miner6.WPoStPeriodDeadlines; i++ {
+			oldDeadline, err := oldDeadlines.LoadDeadline(v.Store(), uint64(i))
+			require.NoError(t, err)
+			newDeadline, err := newDeadlines.LoadDeadline(v.Store(), uint64(i))
+			require.NoError(t, err)
+
+			require.Equal(t, oldDeadline.TotalSectors, newDeadline.TotalSectors)
+			require.Equal(t, oldDeadline.LiveSectors, newDeadline.LiveSectors)
+			require.Equal(t, oldDeadline.FaultyPower.Raw, newDeadline.FaultyPower.Raw)
+			require.Equal(t, oldDeadline.FaultyPower.QA, newDeadline.FaultyPower.QA)
+		}
+
+		oldPower := vm6Util.MinerPower(t, v, ctxStore, minerInfo.MinerAddress)
+		newPower := vm7.MinerPower(t, v7, minerInfo.MinerAddress)
+		require.Equal(t, oldPower.Raw, newPower.Raw)
+		require.Equal(t, oldPower.QA, newPower.QA)
+
+		// Check if every single sector has null SectorKey
+		err = newMinerState.ForEachSector(ctxStore, func(si *miner7.SectorOnChainInfo) {
 			require.Nil(t, si.SectorKeyCID)
 		})
 		require.NoError(t, err)
@@ -208,6 +234,6 @@ func TestMinerMigration(t *testing.T) {
 	proposalIDs, err := adt.AsMap(ctxStore, verifRegState.RemoveDataCapProposalIDs, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
 	keys, err := proposalIDs.CollectKeys()
+	require.NoError(t, err)
 	require.Nil(t, keys)
-
 }
