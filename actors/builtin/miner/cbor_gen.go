@@ -2352,13 +2352,13 @@ func (t *ChangeBeneficiaryParams) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewExpireDate (abi.ChainEpoch) (int64)
-	if t.NewExpireDate >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpireDate)); err != nil {
+	// t.NewExpiration (abi.ChainEpoch) (int64)
+	if t.NewExpiration >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpiration)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpireDate-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpiration-1)); err != nil {
 			return err
 		}
 	}
@@ -2401,7 +2401,7 @@ func (t *ChangeBeneficiaryParams) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	// t.NewExpiration (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -2424,7 +2424,7 @@ func (t *ChangeBeneficiaryParams) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.NewExpireDate = abi.ChainEpoch(extraI)
+		t.NewExpiration = abi.ChainEpoch(extraI)
 	}
 	return nil
 }
@@ -2447,13 +2447,13 @@ func (t *BeneficiaryInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.ExpireDate (abi.ChainEpoch) (int64)
-	if t.ExpireDate >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ExpireDate)); err != nil {
+	// t.Expiration (abi.ChainEpoch) (int64)
+	if t.Expiration >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.Expiration)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.ExpireDate-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.Expiration-1)); err != nil {
 			return err
 		}
 	}
@@ -2492,7 +2492,7 @@ func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.ExpireDate (abi.ChainEpoch) (int64)
+	// t.Expiration (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -2515,7 +2515,7 @@ func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.ExpireDate = abi.ChainEpoch(extraI)
+		t.Expiration = abi.ChainEpoch(extraI)
 	}
 	// t.UsedQuota (big.Int) (struct)
 
@@ -2552,13 +2552,13 @@ func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.NewExpireDate (abi.ChainEpoch) (int64)
-	if t.NewExpireDate >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpireDate)); err != nil {
+	// t.NewExpiration (abi.ChainEpoch) (int64)
+	if t.NewExpiration >= 0 {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NewExpiration)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpireDate-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NewExpiration-1)); err != nil {
 			return err
 		}
 	}
@@ -2606,7 +2606,7 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.NewExpireDate (abi.ChainEpoch) (int64)
+	// t.NewExpiration (abi.ChainEpoch) (int64)
 	{
 		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
@@ -2629,7 +2629,7 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 			return fmt.Errorf("wrong type for int64 field: %d", maj)
 		}
 
-		t.NewExpireDate = abi.ChainEpoch(extraI)
+		t.NewExpiration = abi.ChainEpoch(extraI)
 	}
 	// t.NextApprover (address.Address) (struct)
 
