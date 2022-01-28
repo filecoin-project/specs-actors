@@ -87,7 +87,7 @@ const SectorsAmtBitwidth = 5
 
 type BeneficiaryInfo struct {
 	Quota      abi.TokenAmount
-	ExpireDate abi.ChainEpoch
+	Expiration abi.ChainEpoch
 	UsedQuota  abi.TokenAmount
 }
 
@@ -96,21 +96,23 @@ func (beneficiaryInfo BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
 }
 
 func (beneficiaryInfo BeneficiaryInfo) IsUsedUp() bool {
-	return beneficiaryInfo.UsedQuota.Equals(beneficiaryInfo.Quota)
+	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
 }
 
 func (beneficiaryInfo BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
-	return beneficiaryInfo.ExpireDate < cur
+	return beneficiaryInfo.Expiration < cur
 }
 
 func (beneficiaryInfo BeneficiaryInfo) Available() abi.TokenAmount {
-	return big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota)
+	// Return 0 when the usedQuota > Quota for safe
+	// This could happen while there is a race when setting beneficialInfo.newQuota lower
+	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
 }
 
 type PendingBeneficiaryChange struct {
 	NewBeneficiary addr.Address
 	NewQuota       abi.TokenAmount
-	NewExpireDate  abi.ChainEpoch
+	NewExpiration  abi.ChainEpoch
 	NextApprover   addr.Address
 }
 
@@ -284,12 +286,18 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 		Owner:            owner,
 		Worker:           worker,
 		ControlAddresses: controlAddrs,
-		Beneficiary:      owner,
+
+		// Todo: a non-owner address could be set as the beneficiary in the contruction
+		// At the same time, the BeneficiaryInfo needs to be set too
+		// Here, just setting it to Owner to simplify the implementation,
+		// and, the owner can ChangeBeneficiary later.
+		Beneficiary: owner,
 		BeneficiaryInfo: BeneficiaryInfo{
 			Quota:      abi.TokenAmount{},
-			ExpireDate: 0,
+			Expiration: 0,
 			UsedQuota:  abi.TokenAmount{},
 		},
+
 		PendingBeneficiaryInfo:     nil,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
