@@ -2252,7 +2252,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		actor.changeOwnerToNewBeneficiary(rt, benecifiaryAddr, miner.BeneficiaryInfo{
 			Quota:      bigBalance,
-			ExpireDate: periodOffset,
+			Expiration: periodOffset,
 			UsedQuota:  abi.TokenAmount{},
 		})
 		// withdraw 1% of balance
@@ -2272,7 +2272,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		actor.changeOwnerToNewBeneficiary(rt, beneficiaryAddr, miner.BeneficiaryInfo{
 			Quota:      onePercentBalance,
-			ExpireDate: periodOffset,
+			Expiration: periodOffset,
 			UsedQuota:  big.Zero(),
 		})
 		// withdraw 1% of balance
@@ -2292,7 +2292,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		actor.changeOwnerToNewBeneficiary(rt, beneficiaryAddr, miner.BeneficiaryInfo{
 			Quota:      onePercentBalance,
-			ExpireDate: periodOffset,
+			Expiration: periodOffset,
 			UsedQuota:  big.Zero(),
 		})
 
@@ -2306,7 +2306,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.changeBeneficiary(rt, actor.owner, actor.owner, onePercentBalance, 0)
 		actor.setBeneficiary(rt, actor.owner, miner.BeneficiaryInfo{
 			Quota:      onePercentBalance,
-			ExpireDate: 0,
+			Expiration: 0,
 			UsedQuota:  abi.TokenAmount{},
 		})
 		actor.withdrawFunds(rt, twoPercentBalance, big.Add(onePercentBalance, onePercentBalance), big.Zero())
@@ -2718,7 +2718,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		actor.changeBeneficiary(rt, actor.owner, newBeneficiary, quota, expireDate)
 		// assert change has been made in state
 		info := actor.getInfo(rt)
-		require.EqualValues(t, expireDate, info.PendingBeneficiaryInfo.NewExpireDate)
+		require.EqualValues(t, expireDate, info.PendingBeneficiaryInfo.NewExpiration)
 		require.EqualValues(t, quota, info.PendingBeneficiaryInfo.NewQuota)
 		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 
@@ -2727,7 +2727,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		// assert change has been made in state
 		info = actor.getInfo(rt)
-		require.EqualValues(t, expireDate, info.BeneficiaryInfo.ExpireDate)
+		require.EqualValues(t, expireDate, info.BeneficiaryInfo.Expiration)
 		require.EqualValues(t, quota, info.BeneficiaryInfo.Quota)
 		require.EqualValues(t, newBeneficiaryId, info.Beneficiary)
 	})
@@ -2739,7 +2739,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		expireDate := periodOffset * 2
 		actor.changeOwnerToNewBeneficiary(rt, newBeneficiary, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
-			ExpireDate: expireDate,
+			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(1000),
 		})
 
@@ -2751,7 +2751,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info := actor.getInfo(rt)
 		require.EqualValues(t, actor.owner, info.Beneficiary)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.Quota)
-		require.EqualValues(t, 0, info.BeneficiaryInfo.ExpireDate)
+		require.EqualValues(t, 0, info.BeneficiaryInfo.Expiration)
 		require.True(t, info.PendingBeneficiaryInfo == nil)
 	})
 
@@ -2762,7 +2762,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		expireDate := periodOffset * 2
 		actor.changeOwnerToNewBeneficiary(rt, newBeneficiary, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
-			ExpireDate: expireDate,
+			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(0),
 		})
 
@@ -2783,7 +2783,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		quota := abi.NewTokenAmount(1000)
 		actor.changeOwnerToNewBeneficiary(rt, newBeneficiary, miner.BeneficiaryInfo{
 			Quota:      quota,
-			ExpireDate: expireDate,
+			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(0),
 		})
 
@@ -2798,7 +2798,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info := actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, anotherQuota, info.PendingBeneficiaryInfo.NewQuota)
-		require.EqualValues(t, anotherExpireDate, info.PendingBeneficiaryInfo.NewExpireDate)
+		require.EqualValues(t, anotherExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
 
 		//work after confirm
 		actor.changeBeneficiary(rt, secondBeneficiary, secondBeneficiary, anotherQuota, anotherExpireDate)
@@ -2806,7 +2806,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, anotherQuota, info.BeneficiaryInfo.Quota)
-		require.EqualValues(t, anotherExpireDate, info.BeneficiaryInfo.ExpireDate)
+		require.EqualValues(t, anotherExpireDate, info.BeneficiaryInfo.Expiration)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.UsedQuota)
 		require.EqualValues(t, (*miner.PendingBeneficiaryChange)(nil), info.PendingBeneficiaryInfo)
 	})
@@ -2819,7 +2819,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		quota := abi.NewTokenAmount(100)
 		actor.changeOwnerToNewBeneficiary(rt, newBeneficiary, miner.BeneficiaryInfo{
 			Quota:      quota,
-			ExpireDate: expireDate,
+			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(0),
 		})
 
@@ -2847,7 +2847,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		expireDate := periodOffset * 2
 		actor.changeOwnerToNewBeneficiary(rt, newBeneficiary, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
-			ExpireDate: expireDate,
+			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(0),
 		})
 
@@ -2859,7 +2859,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info := actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
-		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpireDate)
+		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
 		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by old beneficiary address
@@ -2867,7 +2867,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
-		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpireDate)
+		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by new beneficiary address and worked
@@ -2875,7 +2875,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, sencondQuota, info.BeneficiaryInfo.Quota)
-		require.EqualValues(t, sencondExpireDate, info.BeneficiaryInfo.ExpireDate)
+		require.EqualValues(t, sencondExpireDate, info.BeneficiaryInfo.Expiration)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.UsedQuota)
 		require.EqualValues(t, (*miner.PendingBeneficiaryChange)(nil), info.PendingBeneficiaryInfo)
 
@@ -3872,7 +3872,7 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		beneficiary: owner,
 		beneficiaryInfo: miner.BeneficiaryInfo{
 			Quota:      abi.TokenAmount{},
-			ExpireDate: 0,
+			Expiration: 0,
 			UsedQuota:  abi.TokenAmount{},
 		},
 
@@ -3911,7 +3911,7 @@ func (h *actorHarness) setBeneficiary(rt *mock.Runtime, beneficiaryAddr addr.Add
 	h.beneficiary = beneficiaryIdAddr
 	h.beneficiaryInfo = miner.BeneficiaryInfo{
 		Quota:      beneficiary.Quota,
-		ExpireDate: beneficiary.ExpireDate,
+		Expiration: beneficiary.Expiration,
 	}
 }
 
@@ -3921,7 +3921,7 @@ func (h *actorHarness) changeOwnerToNewBeneficiary(rt *mock.Runtime, beneficiary
 	h.beneficiary = beneficiaryIdAddr
 	h.beneficiaryInfo = miner.BeneficiaryInfo{
 		Quota:      beneficiary.Quota,
-		ExpireDate: beneficiary.ExpireDate,
+		Expiration: beneficiary.Expiration,
 	}
 
 	rt.ExpectValidateCallerAddr(h.owner)
@@ -3929,7 +3929,7 @@ func (h *actorHarness) changeOwnerToNewBeneficiary(rt *mock.Runtime, beneficiary
 	param := &miner.ChangeBeneficiaryParams{
 		NewBeneficiary: beneficiaryAddr,
 		NewQuota:       beneficiary.Quota,
-		NewExpireDate:  beneficiary.ExpireDate,
+		NewExpiration:  beneficiary.Expiration,
 	}
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
@@ -4127,7 +4127,7 @@ func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, expectCaller addr.Add
 	param := &miner.ChangeBeneficiaryParams{
 		NewBeneficiary: newBeneficiaryAddr,
 		NewQuota:       Quota,
-		NewExpireDate:  expireDate,
+		NewExpiration:  expireDate,
 	}
 
 	rt.ExpectValidateCallerAddr(callerId)
