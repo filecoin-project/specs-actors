@@ -3201,10 +3201,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 				// We still need the NewBeneficiary to approve this proposal
 				info.PendingBeneficiaryInfo.NextApprover = params.NewBeneficiary
 			} else {
-				// All approved, set beneficiary to the NewBeneficiary
-				info.Beneficiary = params.NewBeneficiary
-
-				// Set BeneficiaryInfo
+				// All approved, Set BeneficiaryInfo
 				if params.NewBeneficiary == info.Owner {
 					// The beneficiary set back to owner
 					info.BeneficiaryInfo = BeneficiaryInfo{
@@ -3213,17 +3210,20 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 						UsedQuota:  big.Zero(),
 					}
 				} else if params.NewBeneficiary == info.Beneficiary {
-					// the beneficiary keeps no change
+					// the beneficiary keeps no change, keep UsedQuota
 					info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
 					info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
 				} else {
-					// A new non-owner beneficiary is set
+					// A new non-owner beneficiary is set, reset everything
 					info.BeneficiaryInfo = BeneficiaryInfo{
 						Quota:      info.PendingBeneficiaryInfo.NewQuota,
 						Expiration: info.PendingBeneficiaryInfo.NewExpiration,
 						UsedQuota:  big.Zero(),
 					}
 				}
+
+				// set Beneficiary to the NewBeneficiary
+				info.Beneficiary = params.NewBeneficiary
 
 				// Clear the pending proposal
 				info.PendingBeneficiaryInfo = nil
