@@ -2729,7 +2729,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		info = actor.getInfo(rt)
 		require.EqualValues(t, expireDate, info.BeneficiaryInfo.ExpireDate)
 		require.EqualValues(t, quota, info.BeneficiaryInfo.Quota)
-		require.EqualValues(t, newBeneficiaryId, info.BeneficiaryAddress)
+		require.EqualValues(t, newBeneficiaryId, info.Beneficiary)
 	})
 
 	t.Run("successfully change back to owner address while used up quota, should work immediately", func(t *testing.T) {
@@ -2749,7 +2749,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		// assert change has been made in state
 		info := actor.getInfo(rt)
-		require.EqualValues(t, actor.owner, info.BeneficiaryAddress)
+		require.EqualValues(t, actor.owner, info.Beneficiary)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.Quota)
 		require.EqualValues(t, 0, info.BeneficiaryInfo.ExpireDate)
 		require.True(t, info.PendingBeneficiaryInfo == nil)
@@ -2771,7 +2771,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		// assert change has been made in state
 		info := actor.getInfo(rt)
-		require.EqualValues(t, actor.owner, info.BeneficiaryAddress)
+		require.EqualValues(t, actor.owner, info.Beneficiary)
 		require.True(t, info.PendingBeneficiaryInfo == nil)
 	})
 
@@ -2804,7 +2804,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		actor.changeBeneficiary(rt, secondBeneficiary, secondBeneficiary, anotherQuota, anotherExpireDate)
 
 		info = actor.getInfo(rt)
-		require.EqualValues(t, secondBeneficiaryId, info.BeneficiaryAddress)
+		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, anotherQuota, info.BeneficiaryInfo.Quota)
 		require.EqualValues(t, anotherExpireDate, info.BeneficiaryInfo.ExpireDate)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.UsedQuota)
@@ -2835,7 +2835,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		// assert change has been made in state
 		info = actor.getInfo(rt)
-		require.EqualValues(t, newBeneficiaryId, info.BeneficiaryAddress)
+		require.EqualValues(t, newBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, quota, info.BeneficiaryInfo.UsedQuota)
 		require.EqualValues(t, increaseQuota, info.BeneficiaryInfo.Quota)
 	})
@@ -2873,7 +2873,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		//confirm by new beneficiary address and worked
 		actor.changeBeneficiary(rt, secondBeneficiary, secondBeneficiary, sencondQuota, sencondExpireDate)
 		info = actor.getInfo(rt)
-		require.EqualValues(t, secondBeneficiaryId, info.BeneficiaryAddress)
+		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, sencondQuota, info.BeneficiaryInfo.Quota)
 		require.EqualValues(t, sencondExpireDate, info.BeneficiaryInfo.ExpireDate)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryInfo.UsedQuota)

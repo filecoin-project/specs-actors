@@ -129,7 +129,7 @@ type MinerInfo struct {
 
 	PendingWorkerKey *WorkerKeyChange
 
-	BeneficiaryAddress     addr.Address
+	Beneficiary            addr.Address
 	BeneficiaryInfo        BeneficiaryInfo
 	PendingBeneficiaryInfo *PendingBeneficiaryChange
 
@@ -281,10 +281,10 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 	}
 
 	return &MinerInfo{
-		Owner:              owner,
-		Worker:             worker,
-		ControlAddresses:   controlAddrs,
-		BeneficiaryAddress: owner,
+		Owner:            owner,
+		Worker:           worker,
+		ControlAddresses: controlAddrs,
+		Beneficiary:      owner,
 		BeneficiaryInfo: BeneficiaryInfo{
 			Quota:      abi.TokenAmount{},
 			ExpireDate: 0,

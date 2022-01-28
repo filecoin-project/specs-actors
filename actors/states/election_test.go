@@ -140,9 +140,9 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 	require.NoError(t, err)
 
 	info := miner.MinerInfo{
-		Owner:              owner,
-		Worker:             owner,
-		BeneficiaryAddress: owner,
+		Owner:       owner,
+		Worker:      owner,
+		Beneficiary: owner,
 		BeneficiaryInfo: miner.BeneficiaryInfo{
 			Quota:      abi.TokenAmount{},
 			ExpireDate: 0,
