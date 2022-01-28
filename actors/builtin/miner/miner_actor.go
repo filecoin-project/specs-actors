@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -20,7 +22,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
-	"math"
 
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
@@ -77,7 +78,7 @@ func (a Actor) Exports() []interface{} {
 		25:                        a.PreCommitSectorBatch,
 		26:                        a.ProveCommitAggregate,
 		27:                        a.ProveReplicaUpdates,
-		28:                        a.ChangeBeneficiaryInfo,
+		28:                        a.ChangeBeneficiary,
 	}
 }
 
@@ -1971,7 +1972,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the miner's available balance.
-// Only beneficiary key has permission to withdraw.
+// Only beneficiary key and owner key have permission to withdraw.
 // If less than the specified amount is available, yields the entire available balance.
 // Returns the amount withdrawn.
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
@@ -1984,13 +1985,13 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	feeToBurn := big.Zero()
 	availableBalance := big.Zero()
 	amountWithdrawn := big.Zero()
-	var receiver addr.Address
+
 	rt.StateTransaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
 		// Only the owner/beneficiary is allowed to withdraw the balance as it belongs to/is controlled by the owner
 		// and not the worker.
-		rt.ValidateImmediateCallerIs(info.Owner, info.BeneficiaryAddress)
+		rt.ValidateImmediateCallerIs(info.Owner, info.Beneficiary)
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to count early terminations")
@@ -2016,17 +2017,15 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		// and repay fee debt now.
 		feeToBurn = RepayDebtsOrAbort(rt, &st)
 
-		if info.BeneficiaryAddress == addr.Undef || info.Owner == info.BeneficiaryAddress {
-			receiver = info.Owner
+		// To get the actual amount to be withdrawed
+		if info.Beneficiary == info.Owner {
 			amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
 		} else {
-			receiver = info.BeneficiaryAddress
-			builtin.RequireState(rt, !info.BeneficiaryInfo.IsUsedUp(), "beneficiary(%s) %d use up quota", info.BeneficiaryAddress)
-			builtin.RequireState(rt, !info.BeneficiaryInfo.IsExpire(rt.CurrEpoch()), "beneficiary(%s) %d have expired at epoch %d", info.BeneficiaryAddress, info.BeneficiaryInfo.ExpireDate, rt.CurrEpoch())
+			builtin.RequireState(rt, !info.BeneficiaryInfo.IsUsedUp(), "beneficiary(%s) %d use up quota", info.Beneficiary)
+			builtin.RequireState(rt, !info.BeneficiaryInfo.IsExpire(rt.CurrEpoch()), "beneficiary(%s) %d have expired at epoch %d", info.Beneficiary, info.BeneficiaryInfo.ExpireDate, rt.CurrEpoch())
 			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), info.BeneficiaryInfo.Available())
 		}
 
-		info.BeneficiaryInfo.UsedQuota = big.Add(info.BeneficiaryInfo.UsedQuota, amountWithdrawn)
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
@@ -2035,8 +2034,12 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
-		code := rt.Send(receiver, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
+		code := rt.Send(info.Beneficiary, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
+
+		if info.Beneficiary != info.Owner {
+			info.BeneficiaryInfo.UsedQuota = big.Add(info.BeneficiaryInfo.UsedQuota, amountWithdrawn)
+		}
 	}
 
 	burnFunds(rt, feeToBurn, BurnMethodWithdrawBalance)
@@ -3139,8 +3142,8 @@ func checkNewBeneficialParam(rt Runtime, params *ChangeBeneficiaryParams) {
 	}
 }
 
-// ChangeBeneficiaryInfo proposal/approve beneficiary change
-func (a Actor) ChangeBeneficiaryInfo(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
+// ChangeBeneficiary proposal/approve beneficiary change
+func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
 	newBeneficiary, err := builtin.ResolveToIDAddr(rt, params.NewBeneficiary)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve address %v", params.NewBeneficiary)
 
@@ -3150,13 +3153,13 @@ func (a Actor) ChangeBeneficiaryInfo(rt Runtime, params *ChangeBeneficiaryParams
 
 		if rt.Caller() == info.Owner {
 			rt.ValidateImmediateCallerIs(info.Owner)
-			if info.BeneficiaryAddress != info.Owner && info.BeneficiaryInfo.Effective(rt.CurrEpoch()) {
+			if info.Beneficiary != info.Owner && info.BeneficiaryInfo.Effective(rt.CurrEpoch()) {
 				checkNewBeneficialParam(rt, params)
 				info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
 					NewBeneficiary: newBeneficiary,
 					NewQuota:       params.NewQuota,
 					NewExpireDate:  params.NewExpireDate,
-					NextApprover:   info.BeneficiaryAddress,
+					NextApprover:   info.Beneficiary,
 				}
 			} else {
 				if newBeneficiary != info.Owner {
@@ -3168,7 +3171,7 @@ func (a Actor) ChangeBeneficiaryInfo(rt Runtime, params *ChangeBeneficiaryParams
 						NextApprover:   newBeneficiary,
 					}
 				} else {
-					info.BeneficiaryAddress = newBeneficiary
+					info.Beneficiary = newBeneficiary
 					info.BeneficiaryInfo = BeneficiaryInfo{
 						Quota:      big.Zero(),
 						ExpireDate: 0,
@@ -3189,11 +3192,11 @@ func (a Actor) ChangeBeneficiaryInfo(rt Runtime, params *ChangeBeneficiaryParams
 				info.PendingBeneficiaryInfo.NextApprover = newBeneficiary
 			} else {
 				usedQutota := info.BeneficiaryInfo.UsedQuota
-				if newBeneficiary != info.BeneficiaryAddress {
+				if newBeneficiary != info.Beneficiary {
 					//reset to zero for different address
 					usedQutota = big.Zero()
 				}
-				info.BeneficiaryAddress = newBeneficiary
+				info.Beneficiary = newBeneficiary
 				info.BeneficiaryInfo = BeneficiaryInfo{
 					Quota:      info.PendingBeneficiaryInfo.NewQuota,
 					ExpireDate: info.PendingBeneficiaryInfo.NewExpireDate,
