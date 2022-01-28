@@ -84,7 +84,7 @@ func TestAwardBlockReward(t *testing.T) {
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
 
-		rt.SetActorBalance(abi.NewTokenAmount(9))
+		rt.SetBalance(abi.NewTokenAmount(9))
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			gasReward := big.NewInt(10)
@@ -97,7 +97,7 @@ func TestAwardBlockReward(t *testing.T) {
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
 
-		rt.SetActorBalance(abi.NewTokenAmount(1e18))
+		rt.SetBalance(abi.NewTokenAmount(1e18))
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			penalty := big.NewInt(-1)
@@ -115,7 +115,7 @@ func TestAwardBlockReward(t *testing.T) {
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
 
-		rt.SetActorBalance(abi.NewTokenAmount(1e18))
+		rt.SetBalance(abi.NewTokenAmount(1e18))
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.awardBlockReward(rt, winner, big.Zero(), big.Zero(), 0, big.Zero())
@@ -128,7 +128,7 @@ func TestAwardBlockReward(t *testing.T) {
 		startRealizedPower := abi.NewStoragePower(0)
 		actor.constructAndVerify(rt, &startRealizedPower)
 
-		rt.SetActorBalance(big.Mul(big.NewInt(1e9), abi.NewTokenAmount(1e18)))
+		rt.SetBalance(big.Mul(big.NewInt(1e9), abi.NewTokenAmount(1e18)))
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		penalty := big.NewInt(100)
 		gasReward := big.NewInt(200)
@@ -145,7 +145,7 @@ func TestAwardBlockReward(t *testing.T) {
 		// Total reward is a huge number, upon writing ~1e18, so 300 should be way less
 		smallReward := abi.NewTokenAmount(300)
 		penalty := abi.NewTokenAmount(100)
-		rt.SetActorBalance(smallReward)
+		rt.SetBalance(smallReward)
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 
 		minerPenalty := big.Mul(big.NewInt(reward.PenaltyMultiplier), penalty)
@@ -172,7 +172,7 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.ReplaceState(st)
 		// enough balance to pay 3 full rewards and one partial
 		totalPayout := abi.NewTokenAmount(3500)
-		rt.SetActorBalance(totalPayout)
+		rt.SetBalance(totalPayout)
 
 		// award normalized by expected leaders is 1000
 		actor.awardBlockReward(rt, miner, big.Zero(), big.Zero(), 1, big.NewInt(1000))
@@ -196,7 +196,7 @@ func TestAwardBlockReward(t *testing.T) {
 		rt.ReplaceState(st)
 		// enough balance to pay 3 full rewards and one partial
 		totalPayout := abi.NewTokenAmount(3500)
-		rt.SetActorBalance(totalPayout)
+		rt.SetBalance(totalPayout)
 
 		rt.ExpectValidateCallerAddr(builtin.SystemActorAddr)
 		expectedReward := big.NewInt(1000)

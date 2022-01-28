@@ -368,8 +368,8 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.BeneficiaryAddress (address.Address) (struct)
-	if err := t.BeneficiaryAddress.MarshalCBOR(w); err != nil {
+	// t.Beneficiary (address.Address) (struct)
+	if err := t.Beneficiary.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -543,12 +543,12 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.BeneficiaryAddress (address.Address) (struct)
+	// t.Beneficiary (address.Address) (struct)
 
 	{
 
-		if err := t.BeneficiaryAddress.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.BeneficiaryAddress: %w", err)
+		if err := t.Beneficiary.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Beneficiary: %w", err)
 		}
 
 	}

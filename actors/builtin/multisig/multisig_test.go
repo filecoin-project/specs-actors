@@ -322,9 +322,9 @@ func TestVesting(t *testing.T) {
 	t.Run("avoid truncating division", func(t *testing.T) {
 		rt := builder.Build(t)
 
-		lockedBalance := big.NewInt(int64(unlockDuration) - 1) // ActorBalance < duration
+		lockedBalance := big.NewInt(int64(unlockDuration) - 1) // Balance < duration
 		rt.SetReceived(lockedBalance)
-		rt.SetActorBalance(lockedBalance)
+		rt.SetBalance(lockedBalance)
 		actor.constructAndVerify(rt, 1, unlockDuration, startEpoch, anne)
 		rt.SetReceived(big.Zero())
 
@@ -346,7 +346,7 @@ func TestVesting(t *testing.T) {
 		rt.SetEpoch(2)
 		rt.ExpectSend(anne, builtin.MethodSend, nil, big.NewInt(1), nil, exitcode.Ok)
 		actor.proposeOK(rt, anne, big.NewInt(1), builtin.MethodSend, nil, nil)
-		rt.SetActorBalance(lockedBalance)
+		rt.SetBalance(lockedBalance)
 
 		// Do not expect full vesting before full duration has elapsed
 		rt.SetEpoch(unlockDuration - 1)
@@ -358,10 +358,10 @@ func TestVesting(t *testing.T) {
 		// Expect all but one unit available after all but one epochs
 		rt.ExpectSend(anne, builtin.MethodSend, nil, big.Sub(lockedBalance, big.NewInt(1)), nil, exitcode.Ok)
 		actor.proposeOK(rt, anne, big.Sub(lockedBalance, big.NewInt(1)), builtin.MethodSend, nil, nil)
-		rt.SetActorBalance(lockedBalance)
+		rt.SetBalance(lockedBalance)
 
 		// Expect everything after exactly the right epochs
-		rt.SetActorBalance(lockedBalance)
+		rt.SetBalance(lockedBalance)
 		rt.SetEpoch(unlockDuration)
 		rt.ExpectSend(anne, builtin.MethodSend, nil, lockedBalance, nil, exitcode.Ok)
 		actor.proposeOK(rt, anne, lockedBalance, builtin.MethodSend, nil, nil)
@@ -383,7 +383,7 @@ func TestVesting(t *testing.T) {
 	t.Run("sending zero ok when lockup exceeds balance", func(t *testing.T) {
 		rt := builder.Build(t)
 		rt.SetReceived(big.Zero())
-		rt.SetActorBalance(big.Zero())
+		rt.SetBalance(big.Zero())
 		actor.constructAndVerify(rt, 1, 0, startEpoch, anne)
 
 		// Lock up funds the actor doesn't have yet.
@@ -555,7 +555,7 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 		actor.approveOK(rt, txnID, proposalHashData, nil)
@@ -613,7 +613,7 @@ func TestApprove(t *testing.T) {
 		})
 
 		rt.SetEpoch(startEpoch + 20)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 
@@ -628,7 +628,7 @@ func TestApprove(t *testing.T) {
 
 		actor.constructAndVerify(rt, numApprovals, noUnlockDuration, startEpoch, signers...)
 
-		rt.SetActorBalance(big.Sub(sendValue, big.NewInt(1)))
+		rt.SetBalance(big.Sub(sendValue, big.NewInt(1)))
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		rt.ExpectAbortContainsMessage(exitcode.ErrInsufficientFunds, "insufficient funds unlocked: current balance 9 less than amount to spend 10", func() {
 			_ = actor.propose(rt, chuck, sendValue, fakeMethod, fakeParams, nil)
@@ -656,7 +656,7 @@ func TestApprove(t *testing.T) {
 		})
 
 		rt.SetEpoch(startEpoch + 5)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		// expected locked amount at epoch=startEpoch + 5 would be 15.
 		// however, remaining funds if this transactions is approved would be 0.
@@ -682,7 +682,7 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
@@ -713,7 +713,7 @@ func TestApprove(t *testing.T) {
 			Approved: []addr.Address{anne},
 		})
 
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
 		actor.approveOK(rt, txnID, nil, nil)
@@ -819,7 +819,7 @@ func TestApprove(t *testing.T) {
 
 		// even if anne calls for an approval again(duplicate approval), transaction is executed because the threshold has been met.
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		actor.approveOK(rt, txnID, proposalHash, nil)
 
@@ -849,7 +849,7 @@ func TestApprove(t *testing.T) {
 
 		// even if bob calls for an approval again(duplicate approval), transaction is executed because the threshold has been met.
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		actor.approveOK(rt, txnID, proposalHash, nil)
 
@@ -883,7 +883,7 @@ func TestApprove(t *testing.T) {
 		// bob attempts to approve the transaction but it gets approved without
 		// processing his approval as it the threshold has been met.
 		rt.ExpectSend(chuck, fakeMethod, fakeParams, sendValue, nil, 0)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(bob, builtin.AccountActorCodeID)
 		actor.approveOK(rt, txnID, proposalHash, nil)
 
@@ -924,7 +924,7 @@ func TestCancel(t *testing.T) {
 		proposalHashData := actor.proposeOK(rt, chuck, sendValue, fakeMethod, nil, nil)
 
 		// anne cancels their transaction
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		actor.cancel(rt, txnID, proposalHashData)
 
 		// Transaction should be removed from actor state after cancel
@@ -942,7 +942,7 @@ func TestCancel(t *testing.T) {
 		actor.proposeOK(rt, chuck, sendValue, fakeMethod, nil, nil)
 
 		// anne cancels their transaction
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.ExpectAbort(exitcode.ErrIllegalState, func() {
 			proposalHashData := makeProposalHash(t, &multisig.Transaction{
 				To:       bob, // mismatched To
@@ -1728,7 +1728,7 @@ func TestChangeThreshold(t *testing.T) {
 
 		// anne may re-approve causing transaction to be executed
 		rt.ExpectSend(chuck, fakeMethod, nil, sendValue, nil, 0)
-		rt.SetActorBalance(sendValue)
+		rt.SetBalance(sendValue)
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 		actor.approveOK(rt, 0, nil, nil)
 		actor.checkState(rt)
@@ -1772,7 +1772,7 @@ func TestLockBalance(t *testing.T) {
 		rt.Reset()
 
 		// Fail to spend more than the vested amount
-		rt.SetActorBalance(lockAmount)
+		rt.SetBalance(lockAmount)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			_ = actor.propose(rt, bob, big.Add(vested, big.NewInt(1)), builtin.MethodSend, nil, nil)
 		})
@@ -1783,7 +1783,7 @@ func TestLockBalance(t *testing.T) {
 		actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
 
 		// Can't spend more
-		rt.SetActorBalance(big.Sub(lockAmount, vested))
+		rt.SetBalance(big.Sub(lockAmount, vested))
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})
@@ -1816,12 +1816,12 @@ func TestLockBalance(t *testing.T) {
 		rt.SetCaller(anne, builtin.AccountActorCodeID)
 
 		// Oversupply the wallet, allow spending the oversupply.
-		rt.SetActorBalance(big.Add(lockAmount, abi.NewTokenAmount(1)))
+		rt.SetBalance(big.Add(lockAmount, abi.NewTokenAmount(1)))
 		rt.ExpectSend(bob, builtin.MethodSend, nil, abi.NewTokenAmount(1), nil, exitcode.Ok)
 		actor.proposeOK(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 
 		// Fail to spend locked funds before vesting starts
-		rt.SetActorBalance(lockAmount)
+		rt.SetBalance(lockAmount)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})
@@ -1834,7 +1834,7 @@ func TestLockBalance(t *testing.T) {
 		actor.proposeOK(rt, bob, vested, builtin.MethodSend, nil, nil)
 
 		// Can't spend more
-		rt.SetActorBalance(big.Sub(lockAmount, vested))
+		rt.SetBalance(big.Sub(lockAmount, vested))
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			_ = actor.propose(rt, bob, abi.NewTokenAmount(1), builtin.MethodSend, nil, nil)
 		})

@@ -372,7 +372,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params cbo
 			toAddr, toName, methodNum, toMeth, value, params, exp.to, expToName, exp.method, expToMeth, exp.value, exp.params)
 	}
 
-	fromBalance := rt.ActorBalance()
+	fromBalance := rt.Balance()
 	if value.GreaterThan(fromBalance) {
 		rt.Abortf(exitcode.SysErrSenderStateInvalid, "cannot send value: %v exceeds balance: %v", value, rt.balance)
 	}
@@ -817,7 +817,7 @@ func (rt *Runtime) GetState(o cbor.Unmarshaler) {
 	}
 }
 
-func (rt *Runtime) ActorBalance() abi.TokenAmount {
+func (rt *Runtime) Balance() abi.TokenAmount {
 	if val, ok := rt.balance[rt.receiver]; ok {
 		return val
 	} else {
@@ -851,7 +851,7 @@ func (rt *Runtime) SetAddressActorType(address addr.Address, actorType cid.Cid) 
 	rt.actorCodeCIDs[address] = actorType
 }
 
-func (rt *Runtime) SetActorBalance(amt abi.TokenAmount) abi.TokenAmount {
+func (rt *Runtime) SetBalance(amt abi.TokenAmount) abi.TokenAmount {
 	rt.balance[rt.receiver] = amt
 	return amt
 }

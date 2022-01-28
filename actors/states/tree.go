@@ -17,7 +17,7 @@ import (
 // 	Code       cid.Cid // CID representing the code associated with the actor
 // 	Head       cid.Cid // CID of the head state object for the actor
 // 	CallSeqNum uint64  // CallSeqNum for the next message to be received by the actor (non-zero for accounts only)
-// 	ActorBalance    big.Int // Token balance of the actor
+// 	Balance    big.Int // Token balance of the actor
 // }
 type Actor = states0.Actor
 

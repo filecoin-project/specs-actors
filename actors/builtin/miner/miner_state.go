@@ -18,7 +18,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 )
 
-// ActorBalance of Miner Actor should be greater than or equal to
+// Balance of Miner Actor should be greater than or equal to
 // the sum of PreCommitDeposits and LockedFunds.
 // It is possible for balance to fall below the sum of
 // PCD, LF and InitialPledgeRequirements, and this is a bad
