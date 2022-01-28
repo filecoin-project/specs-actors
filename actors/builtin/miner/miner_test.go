@@ -2690,7 +2690,7 @@ func TestChangeMultiAddrs(t *testing.T) {
 	})
 }
 
-func TestChangeBeneficiaryInfo(t *testing.T) {
+func TestChangeBeneficiary(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 	newBeneficiaryId := tutil.NewIDAddr(t, 999)
 	newBeneficiary := tutil.NewBLSAddr(t, 100)
@@ -3931,12 +3931,12 @@ func (h *actorHarness) changeOwnerToNewBeneficiary(rt *mock.Runtime, beneficiary
 		NewQuota:       beneficiary.Quota,
 		NewExpireDate:  beneficiary.ExpireDate,
 	}
-	rt.Call(h.a.ChangeBeneficiaryInfo, param)
+	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
 
 	rt.ExpectValidateCallerAddr(beneficiaryIdAddr)
 	rt.SetCaller(beneficiaryIdAddr, builtin.AccountActorCodeID)
-	rt.Call(h.a.ChangeBeneficiaryInfo, param)
+	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
 }
 
@@ -4132,7 +4132,7 @@ func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, expectCaller addr.Add
 
 	rt.ExpectValidateCallerAddr(callerId)
 	rt.SetCaller(callerId, builtin.AccountActorCodeID)
-	rt.Call(h.a.ChangeBeneficiaryInfo, param)
+	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
 }
 
