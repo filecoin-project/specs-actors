@@ -45,7 +45,7 @@ func (b RuntimeBuilder) Build(t testing.TB) *Runtime {
 		store:    make(map[cid.Cid][]byte),
 		hashfunc: blake2b.Sum256,
 
-		balance:       abi.NewTokenAmount(0),
+		balance:       make(map[addr.Address]abi.TokenAmount),
 		valueReceived: abi.NewTokenAmount(0),
 
 		actorCodeCIDs: make(map[addr.Address]cid.Cid),
@@ -94,7 +94,7 @@ func (b RuntimeBuilder) WithMiner(miner addr.Address) RuntimeBuilder {
 
 func (b RuntimeBuilder) WithBalance(balance, received abi.TokenAmount) RuntimeBuilder {
 	b.add(func(rt *Runtime) {
-		rt.balance = balance
+		rt.balance[rt.receiver] = balance
 		rt.valueReceived = received
 	})
 	return b

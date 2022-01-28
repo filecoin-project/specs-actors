@@ -85,6 +85,37 @@ type State struct {
 const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
+type BeneficiaryInfo struct {
+	Quota      abi.TokenAmount
+	Expiration abi.ChainEpoch
+	UsedQuota  abi.TokenAmount
+}
+
+func (beneficiaryInfo BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
+	return !beneficiaryInfo.IsExpire(cur) && !beneficiaryInfo.IsUsedUp()
+}
+
+func (beneficiaryInfo BeneficiaryInfo) IsUsedUp() bool {
+	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
+}
+
+func (beneficiaryInfo BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
+	return beneficiaryInfo.Expiration < cur
+}
+
+func (beneficiaryInfo BeneficiaryInfo) Available() abi.TokenAmount {
+	// Return 0 when the usedQuota > Quota for safe
+	// This could happen while there is a race when setting beneficialInfo.newQuota lower
+	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
+}
+
+type PendingBeneficiaryChange struct {
+	NewBeneficiary addr.Address
+	NewQuota       abi.TokenAmount
+	NewExpiration  abi.ChainEpoch
+	NextApprover   addr.Address
+}
+
 type MinerInfo struct {
 	// Account that owns this miner.
 	// - Income and returned collateral are paid to this address.
@@ -99,6 +130,10 @@ type MinerInfo struct {
 	ControlAddresses []addr.Address // Must all be ID addresses.
 
 	PendingWorkerKey *WorkerKeyChange
+
+	Beneficiary            addr.Address
+	BeneficiaryInfo        BeneficiaryInfo
+	PendingBeneficiaryInfo *PendingBeneficiaryChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
 	PeerId abi.PeerID
@@ -248,9 +283,22 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 	}
 
 	return &MinerInfo{
-		Owner:                      owner,
-		Worker:                     worker,
-		ControlAddresses:           controlAddrs,
+		Owner:            owner,
+		Worker:           worker,
+		ControlAddresses: controlAddrs,
+
+		// Todo: a non-owner address could be set as the beneficiary in the contruction
+		// At the same time, the BeneficiaryInfo needs to be set too
+		// Here, just setting it to Owner to simplify the implementation,
+		// and, the owner can ChangeBeneficiary later.
+		Beneficiary: owner,
+		BeneficiaryInfo: BeneficiaryInfo{
+			Quota:      abi.TokenAmount{},
+			Expiration: 0,
+			UsedQuota:  abi.TokenAmount{},
+		},
+
+		PendingBeneficiaryInfo:     nil,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,
