@@ -2021,9 +2021,10 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		if info.Beneficiary == info.Owner {
 			amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
 		} else {
-			builtin.RequirePredicate(rt, info.BeneficiaryInfo.Available().GreaterThan(big.Zero()), exitcode.ErrForbidden,
+			amountWithdrawn = info.BeneficiaryInfo.Available(rt.CurrEpoch())
+			builtin.RequirePredicate(rt, amountWithdrawn.GreaterThan(big.Zero()), exitcode.ErrForbidden,
 				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryInfo.Quota, info.BeneficiaryInfo.UsedQuota, info.BeneficiaryInfo.Expiration, rt.CurrEpoch())
-			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), info.BeneficiaryInfo.Available())
+			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), amountWithdrawn)
 		}
 
 		if info.Beneficiary != info.Owner {
@@ -3166,7 +3167,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 				}
 			}
 
-			if info.Beneficiary != info.Owner && info.BeneficiaryInfo.Effective(rt.CurrEpoch()) {
+			if info.Beneficiary != info.Owner && info.BeneficiaryInfo.Available(rt.CurrEpoch()).GreaterThan(big.Zero()) {
 				info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
 					NewBeneficiary: newBeneficiary,
 					NewQuota:       params.NewQuota,
@@ -3202,14 +3203,12 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 				// We still need the NewBeneficiary to approve this proposal
 				info.PendingBeneficiaryInfo.NextApprover = newBeneficiary
 			} else {
+				info.Beneficiary = newBeneficiary
 				info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
 				info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
 				if newBeneficiary != info.Beneficiary {
 					info.BeneficiaryInfo.UsedQuota = big.Zero()
 				}
-
-				// set Beneficiary to the NewBeneficiary
-				info.Beneficiary = newBeneficiary
 
 				// Clear the pending proposal
 				info.PendingBeneficiaryInfo = nil

@@ -94,11 +94,6 @@ type BeneficiaryInfo struct {
 	UsedQuota abi.TokenAmount
 }
 
-//Effective Indicates whether the current beneficiary is in effect. check whether epoch expired or whether the quota is used up
-func (beneficiaryInfo *BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
-	return !beneficiaryInfo.IsExpire(cur) && !beneficiaryInfo.IsUsedUp()
-}
-
 //IsUsedUp check whether beneficiary has use up all quota
 func (beneficiaryInfo *BeneficiaryInfo) IsUsedUp() bool {
 	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
@@ -110,9 +105,12 @@ func (beneficiaryInfo *BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
 }
 
 //Available get the amount that the beneficiary has not yet withdrawn
-func (beneficiaryInfo *BeneficiaryInfo) Available() abi.TokenAmount {
+func (beneficiaryInfo *BeneficiaryInfo) Available(cur abi.ChainEpoch) abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
 	// This could happen while there is a race when setting beneficialInfo.newQuota lower
+	if beneficiaryInfo.IsExpire(cur) {
+		return big.Zero()
+	}
 	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
 }
 
