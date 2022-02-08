@@ -249,6 +249,11 @@ func (a Actor) ChangeOwnerAddress(rt Runtime, newAddress *addr.Address) *abi.Emp
 					info.PendingOwnerAddress, newAddress)
 			}
 			info.Owner = *info.PendingOwnerAddress
+			//change beneficiary address to new owner if current beneficiary address equal to old owner address
+			if info.Beneficiary == info.Owner {
+				info.Beneficiary = *info.PendingOwnerAddress
+			}
+			info.PendingBeneficiaryTerm = nil
 		}
 
 		// Clear any resulting no-op change.
