@@ -143,7 +143,7 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 		Owner:       owner,
 		Worker:      owner,
 		Beneficiary: owner,
-		BeneficiaryInfo: miner.BeneficiaryInfo{
+		BeneficiaryTerm: miner.BeneficiaryTerm{
 			Quota:      big.Zero(),
 			Expiration: 0,
 			UsedQuota:  big.Zero(),

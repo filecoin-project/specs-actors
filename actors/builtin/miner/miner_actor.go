@@ -2021,14 +2021,14 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		if info.Beneficiary == info.Owner {
 			amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
 		} else {
-			amountWithdrawn = info.BeneficiaryInfo.Available(rt.CurrEpoch())
+			amountWithdrawn = info.BeneficiaryTerm.Available(rt.CurrEpoch())
 			builtin.RequirePredicate(rt, amountWithdrawn.GreaterThan(big.Zero()), exitcode.ErrForbidden,
-				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryInfo.Quota, info.BeneficiaryInfo.UsedQuota, info.BeneficiaryInfo.Expiration, rt.CurrEpoch())
+				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryTerm.Quota, info.BeneficiaryTerm.UsedQuota, info.BeneficiaryTerm.Expiration, rt.CurrEpoch())
 			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), amountWithdrawn)
 		}
 
 		if info.Beneficiary != info.Owner {
-			info.BeneficiaryInfo.UsedQuota = big.Add(info.BeneficiaryInfo.UsedQuota, amountWithdrawn)
+			info.BeneficiaryTerm.UsedQuota = big.Add(info.BeneficiaryTerm.UsedQuota, amountWithdrawn)
 		}
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
@@ -3165,42 +3165,42 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 				}
 			}
 
-			info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
+			info.PendingBeneficiaryTerm = &PendingBeneficiaryChange{
 				NewBeneficiary: newBeneficiary,
 				NewQuota:       params.NewQuota,
 				NewExpiration:  params.NewExpiration,
 			}
 
-			if info.BeneficiaryInfo.Available(rt.CurrEpoch()).Equals(big.Zero()) {
+			if info.BeneficiaryTerm.Available(rt.CurrEpoch()).Equals(big.Zero()) {
 				//set current beneficiary to approved when current beneficiary not effected
-				info.PendingBeneficiaryInfo.ApprovedByBeneficiary = true
+				info.PendingBeneficiaryTerm.ApprovedByBeneficiary = true
 			}
 		} else {
 			// Non-owner calls ChangeBeneficiary is to approve a pending proposal
-			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo != nil, exitcode.ErrForbidden, "No changeBeneficiary proposal exists")
+			builtin.RequirePredicate(rt, info.PendingBeneficiaryTerm != nil, exitcode.ErrForbidden, "No changeBeneficiary proposal exists")
 
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewBeneficiary == newBeneficiary, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewBeneficiary, params.NewBeneficiary)
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewQuota.Equals(params.NewQuota), "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewQuota, params.NewQuota)
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewExpiration == params.NewExpiration, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewExpiration, params.NewExpiration)
+			builtin.RequireParam(rt, info.PendingBeneficiaryTerm.NewBeneficiary == newBeneficiary, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryTerm.NewBeneficiary, params.NewBeneficiary)
+			builtin.RequireParam(rt, info.PendingBeneficiaryTerm.NewQuota.Equals(params.NewQuota), "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryTerm.NewQuota, params.NewQuota)
+			builtin.RequireParam(rt, info.PendingBeneficiaryTerm.NewExpiration == params.NewExpiration, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryTerm.NewExpiration, params.NewExpiration)
 		}
 
 		if rt.Caller() == info.Beneficiary {
-			info.PendingBeneficiaryInfo.ApprovedByBeneficiary = true
+			info.PendingBeneficiaryTerm.ApprovedByBeneficiary = true
 		}
 
 		if rt.Caller() == newBeneficiary {
-			info.PendingBeneficiaryInfo.ApprovedByNominee = true
+			info.PendingBeneficiaryTerm.ApprovedByNominee = true
 		}
 
-		if info.PendingBeneficiaryInfo.ApprovedByBeneficiary && info.PendingBeneficiaryInfo.ApprovedByNominee {
+		if info.PendingBeneficiaryTerm.ApprovedByBeneficiary && info.PendingBeneficiaryTerm.ApprovedByNominee {
 			info.Beneficiary = newBeneficiary
-			info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
-			info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
+			info.BeneficiaryTerm.Quota = info.PendingBeneficiaryTerm.NewQuota
+			info.BeneficiaryTerm.Expiration = info.PendingBeneficiaryTerm.NewExpiration
 			if newBeneficiary != info.Beneficiary {
-				info.BeneficiaryInfo.UsedQuota = big.Zero()
+				info.BeneficiaryTerm.UsedQuota = big.Zero()
 			}
 			// Clear the pending proposal
-			info.PendingBeneficiaryInfo = nil
+			info.PendingBeneficiaryTerm = nil
 		}
 
 		err := st.SaveInfo(adt.AsStore(rt), info)

@@ -85,7 +85,7 @@ type State struct {
 const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
-type BeneficiaryInfo struct {
+type BeneficiaryTerm struct {
 	//Quota: The total amount the current beneficiary can withdraw. Monotonic, but reset when beneficiary changes.
 	Quota abi.TokenAmount
 	//Expiration: The epoch at which the beneficiary's rights expire and revert to the owner
@@ -95,17 +95,17 @@ type BeneficiaryInfo struct {
 }
 
 //IsUsedUp check whether beneficiary has use up all quota
-func (beneficiaryInfo *BeneficiaryInfo) IsUsedUp() bool {
+func (beneficiaryInfo *BeneficiaryTerm) IsUsedUp() bool {
 	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
 }
 
 //IsExpire check if the beneficiary is within the validity period
-func (beneficiaryInfo *BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
+func (beneficiaryInfo *BeneficiaryTerm) IsExpire(cur abi.ChainEpoch) bool {
 	return beneficiaryInfo.Expiration <= cur
 }
 
 //Available get the amount that the beneficiary has not yet withdrawn
-func (beneficiaryInfo *BeneficiaryInfo) Available(cur abi.ChainEpoch) abi.TokenAmount {
+func (beneficiaryInfo *BeneficiaryTerm) Available(cur abi.ChainEpoch) abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
 	if beneficiaryInfo.IsExpire(cur) {
 		return big.Zero()
@@ -136,9 +136,11 @@ type MinerInfo struct {
 
 	PendingWorkerKey *WorkerKeyChange
 
+	// Beneficiary account for receive miner benefits, withdraw on miner must send to this address,
+	// beneficiary set owner address by default when create miner
 	Beneficiary            addr.Address
-	BeneficiaryInfo        BeneficiaryInfo
-	PendingBeneficiaryInfo *PendingBeneficiaryChange
+	BeneficiaryTerm        BeneficiaryTerm
+	PendingBeneficiaryTerm *PendingBeneficiaryChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
 	PeerId abi.PeerID
@@ -293,13 +295,13 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 		ControlAddresses: controlAddrs,
 
 		Beneficiary: owner,
-		BeneficiaryInfo: BeneficiaryInfo{
+		BeneficiaryTerm: BeneficiaryTerm{
 			Quota:      big.Zero(),
 			Expiration: 0,
 			UsedQuota:  big.Zero(),
 		},
 
-		PendingBeneficiaryInfo:     nil,
+		PendingBeneficiaryTerm:     nil,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,
