@@ -3149,13 +3149,23 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			if newBeneficiary != info.Owner {
 				// No need to check others when the newBeneficiary is set back to owner
 				if params.NewExpiration <= rt.CurrEpoch() {
-					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire (%d) date must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
+					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire date (%d)  must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
 				}
 
-				if params.NewQuota.LessThanEqual(big.NewInt(0)) {
-					rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) should bigger than zero", params.NewQuota)
+				if params.NewQuota.LessThanEqual(big.Zero()) {
+					rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) must bigger than zero", params.NewQuota)
+				}
+			} else {
+				//expiration/quota must set to 0 while change beneficiary to owner
+				if params.NewExpiration != 0 {
+					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expire date (%d)  must be zero", params.NewExpiration)
+				}
+
+				if !params.NewQuota.NilOrZero() {
+					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial quota (%s) must be zero", params.NewQuota)
 				}
 			}
+
 			if info.Beneficiary != info.Owner && info.BeneficiaryInfo.Effective(rt.CurrEpoch()) {
 				info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
 					NewBeneficiary: newBeneficiary,
@@ -3184,42 +3194,19 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo != nil, exitcode.ErrForbidden, "No changeBeneficiary proposal exists")
 			rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NextApprover)
 
-			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewBeneficiary == newBeneficiary, exitcode.ErrForbidden, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewBeneficiary, params.NewBeneficiary)
-			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewQuota.Equals(params.NewQuota), exitcode.ErrForbidden, "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewQuota, params.NewQuota)
-			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewExpiration == params.NewExpiration, exitcode.ErrForbidden, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewExpiration, params.NewExpiration)
+			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewBeneficiary == newBeneficiary, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewBeneficiary, params.NewBeneficiary)
+			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewQuota.Equals(params.NewQuota), "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewQuota, params.NewQuota)
+			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewExpiration == params.NewExpiration, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewExpiration, params.NewExpiration)
 
 			if newBeneficiary != rt.Caller() && newBeneficiary != info.Owner {
 				// We still need the NewBeneficiary to approve this proposal
 				info.PendingBeneficiaryInfo.NextApprover = newBeneficiary
 			} else {
-				// All approved, Set BeneficiaryInfo
-				if newBeneficiary == info.Owner {
-					// The beneficiary set back to owner
-					info.BeneficiaryInfo = BeneficiaryInfo{
-						Quota:      big.Zero(),
-						Expiration: 0,
-						UsedQuota:  big.Zero(),
-					}
-				} else if newBeneficiary == info.Beneficiary {
-					// the beneficiary keeps no change, keep UsedQuota
-					info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
-					info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
-				} else {
-					// A new non-owner beneficiary is set, reset everything
-					info.BeneficiaryInfo = BeneficiaryInfo{
-						Quota:      info.PendingBeneficiaryInfo.NewQuota,
-						Expiration: info.PendingBeneficiaryInfo.NewExpiration,
-						UsedQuota:  big.Zero(),
-					}
+				info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
+				info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
+				if newBeneficiary != info.Beneficiary {
+					info.BeneficiaryInfo.UsedQuota = big.Zero()
 				}
-
-				/*
-					替换上面的部分
-					info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
-					info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
-					if newBeneficiary != info.Beneficiary {
-						info.BeneficiaryInfo.UsedQuota = big.Zero()
-					}*/
 
 				// set Beneficiary to the NewBeneficiary
 				info.Beneficiary = newBeneficiary
