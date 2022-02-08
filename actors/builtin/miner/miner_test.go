@@ -2850,7 +2850,6 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
 		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
-		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by old beneficiary address
 		actor.changeBeneficiary(rt, newBeneficiary, beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate}, nil)
@@ -2858,7 +2857,6 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
 		require.EqualValues(t, sencondExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
-		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by new beneficiary address and worked
 		actor.changeBeneficiary(rt, secondBeneficiary, beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate}, &secondBeneficiaryId)
@@ -3892,7 +3890,6 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 }
 
 func (h *actorHarness) proposeAndApproveInitialBeneficiary(rt *mock.Runtime, beneficiaryIdAddr addr.Address, beneficiary miner.BeneficiaryInfo) {
-	rt.ExpectValidateCallerAddr(h.owner)
 	rt.SetCaller(h.owner, builtin.StorageMinerActorCodeID)
 	param := &miner.ChangeBeneficiaryParams{
 		NewBeneficiary: beneficiaryIdAddr,
@@ -3902,7 +3899,6 @@ func (h *actorHarness) proposeAndApproveInitialBeneficiary(rt *mock.Runtime, ben
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
 
-	rt.ExpectValidateCallerAddr(beneficiaryIdAddr)
 	rt.SetCaller(beneficiaryIdAddr, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
@@ -4105,7 +4101,6 @@ func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, expectCaller addr.Add
 		NewExpiration:  beneficiaryChange.expiration,
 	}
 
-	rt.ExpectValidateCallerAddr(callerId)
 	rt.SetCaller(callerId, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()

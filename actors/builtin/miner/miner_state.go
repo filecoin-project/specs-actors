@@ -107,7 +107,6 @@ func (beneficiaryInfo *BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
 //Available get the amount that the beneficiary has not yet withdrawn
 func (beneficiaryInfo *BeneficiaryInfo) Available(cur abi.ChainEpoch) abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
-	// This could happen while there is a race when setting beneficialInfo.newQuota lower
 	if beneficiaryInfo.IsExpire(cur) {
 		return big.Zero()
 	}
@@ -115,10 +114,11 @@ func (beneficiaryInfo *BeneficiaryInfo) Available(cur abi.ChainEpoch) abi.TokenA
 }
 
 type PendingBeneficiaryChange struct {
-	NewBeneficiary addr.Address
-	NewQuota       abi.TokenAmount
-	NewExpiration  abi.ChainEpoch
-	NextApprover   addr.Address
+	NewBeneficiary        addr.Address
+	NewQuota              abi.TokenAmount
+	NewExpiration         abi.ChainEpoch
+	ApprovedByBeneficiary bool
+	ApprovedByNominee     bool
 }
 
 type MinerInfo struct {

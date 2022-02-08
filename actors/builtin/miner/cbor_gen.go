@@ -2529,7 +2529,7 @@ func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPendingBeneficiaryChange = []byte{132}
+var lengthBufPendingBeneficiaryChange = []byte{133}
 
 func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -2563,8 +2563,13 @@ func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.NextApprover (address.Address) (struct)
-	if err := t.NextApprover.MarshalCBOR(w); err != nil {
+	// t.ApprovedByBeneficiary (bool) (bool)
+	if err := cbg.WriteBool(w, t.ApprovedByBeneficiary); err != nil {
+		return err
+	}
+
+	// t.ApprovedByNominee (bool) (bool)
+	if err := cbg.WriteBool(w, t.ApprovedByNominee); err != nil {
 		return err
 	}
 	return nil
@@ -2584,7 +2589,7 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2631,14 +2636,39 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 
 		t.NewExpiration = abi.ChainEpoch(extraI)
 	}
-	// t.NextApprover (address.Address) (struct)
+	// t.ApprovedByBeneficiary (bool) (bool)
 
-	{
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.ApprovedByBeneficiary = false
+	case 21:
+		t.ApprovedByBeneficiary = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	// t.ApprovedByNominee (bool) (bool)
 
-		if err := t.NextApprover.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NextApprover: %w", err)
-		}
-
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.ApprovedByNominee = false
+	case 21:
+		t.ApprovedByNominee = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
 	}
 	return nil
 }
