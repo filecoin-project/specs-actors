@@ -86,24 +86,31 @@ const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
 type BeneficiaryInfo struct {
-	Quota      abi.TokenAmount
+	//Quota: The total amount the current beneficiary can withdraw. Monotonic, but reset when beneficiary changes.
+	Quota abi.TokenAmount
+	//Expiration: The epoch at which the beneficiary's rights expire and revert to the owner
 	Expiration abi.ChainEpoch
-	UsedQuota  abi.TokenAmount
+	//UsedQuota: The amount of quota the current beneficiary has already withdrawn
+	UsedQuota abi.TokenAmount
 }
 
-func (beneficiaryInfo BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
+//Effective Indicates whether the current beneficiary is in effect. check whether epoch expired or whether the quota is used up
+func (beneficiaryInfo *BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
 	return !beneficiaryInfo.IsExpire(cur) && !beneficiaryInfo.IsUsedUp()
 }
 
-func (beneficiaryInfo BeneficiaryInfo) IsUsedUp() bool {
+//IsUsedUp check whether beneficiary has use up all quota
+func (beneficiaryInfo *BeneficiaryInfo) IsUsedUp() bool {
 	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
 }
 
-func (beneficiaryInfo BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
-	return beneficiaryInfo.Expiration < cur
+//IsExpire check if the beneficiary is within the validity period
+func (beneficiaryInfo *BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
+	return beneficiaryInfo.Expiration <= cur
 }
 
-func (beneficiaryInfo BeneficiaryInfo) Available() abi.TokenAmount {
+//Available get the amount that the beneficiary has not yet withdrawn
+func (beneficiaryInfo *BeneficiaryInfo) Available() abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
 	// This could happen while there is a race when setting beneficialInfo.newQuota lower
 	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
@@ -287,15 +294,11 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 		Worker:           worker,
 		ControlAddresses: controlAddrs,
 
-		// Todo: a non-owner address could be set as the beneficiary in the contruction
-		// At the same time, the BeneficiaryInfo needs to be set too
-		// Here, just setting it to Owner to simplify the implementation,
-		// and, the owner can ChangeBeneficiary later.
 		Beneficiary: owner,
 		BeneficiaryInfo: BeneficiaryInfo{
-			Quota:      abi.TokenAmount{},
+			Quota:      big.Zero(),
 			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		},
 
 		PendingBeneficiaryInfo:     nil,

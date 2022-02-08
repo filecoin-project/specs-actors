@@ -144,9 +144,9 @@ func constructMinerState(ctx context.Context, t *testing.T, store adt.Store, own
 		Worker:      owner,
 		Beneficiary: owner,
 		BeneficiaryInfo: miner.BeneficiaryInfo{
-			Quota:      abi.TokenAmount{},
+			Quota:      big.Zero(),
 			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		},
 		ControlAddresses:           []address.Address{},
 		PendingWorkerKey:           nil,

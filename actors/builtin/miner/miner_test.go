@@ -2245,20 +2245,19 @@ func TestWithdrawBalance(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
-		benecifiaryAddr := tutil.NewBLSAddr(t, 999)
-		benecifiaryId := tutil.NewIDAddr(t, 556)
-		rt.AddIDAddress(benecifiaryAddr, benecifiaryId)
-		rt.SetAddressActorType(benecifiaryId, builtin.AccountActorCodeID)
+		beneficiaryAddr := tutil.NewBLSAddr(t, 999)
+		beneficiaryId := tutil.NewIDAddr(t, 556)
+		rt.AddIDAddress(beneficiaryAddr, beneficiaryId)
+		rt.SetAddressActorType(beneficiaryId, builtin.AccountActorCodeID)
 
-		actor.changeOwnerToNewBeneficiary(rt, benecifiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, beneficiaryId, miner.BeneficiaryInfo{
 			Quota:      bigBalance,
 			Expiration: periodOffset,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		})
 		// withdraw 1% of balance
 		actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
 		actor.checkState(rt)
-		assert.True(t, rt.BalanceOf(benecifiaryId).Equals(onePercentBalance), "beneficiary address can not withdraw expect balance expect %s but got %s", onePercentBalance, rt.BalanceOf(benecifiaryId))
 	})
 
 	t.Run("withdraw more than beneficiary quota", func(t *testing.T) {
@@ -2270,7 +2269,7 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.AddIDAddress(beneficiaryAddr, beneficiaryId)
 		rt.SetAddressActorType(beneficiaryId, builtin.AccountActorCodeID)
 
-		actor.changeOwnerToNewBeneficiary(rt, beneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, beneficiaryId, miner.BeneficiaryInfo{
 			Quota:      onePercentBalance,
 			Expiration: periodOffset,
 			UsedQuota:  big.Zero(),
@@ -2278,7 +2277,6 @@ func TestWithdrawBalance(t *testing.T) {
 		// withdraw 1% of balance
 		actor.withdrawFunds(rt, big.Add(onePercentBalance, onePercentBalance), onePercentBalance, big.Zero())
 		actor.checkState(rt)
-		assert.True(t, rt.BalanceOf(beneficiaryId).Equals(onePercentBalance), "beneficiary address can not withdraw expect balance expect %s but got %s", onePercentBalance, rt.BalanceOf(beneficiaryId))
 	})
 
 	t.Run("ignore quota and expire date while owner as beneficiary address", func(t *testing.T) {
@@ -2290,7 +2288,7 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.AddIDAddress(beneficiaryAddr, beneficiaryId)
 		rt.SetAddressActorType(beneficiaryId, builtin.AccountActorCodeID)
 
-		actor.changeOwnerToNewBeneficiary(rt, beneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, beneficiaryId, miner.BeneficiaryInfo{
 			Quota:      onePercentBalance,
 			Expiration: periodOffset,
 			UsedQuota:  big.Zero(),
@@ -2299,20 +2297,12 @@ func TestWithdrawBalance(t *testing.T) {
 		// withdraw 1% of balance, used up quota
 		actor.withdrawFunds(rt, big.Add(onePercentBalance, onePercentBalance), onePercentBalance, big.Zero())
 		actor.checkState(rt)
-		assert.True(t, rt.BalanceOf(beneficiaryId).Equals(onePercentBalance), "beneficiary address can not withdraw expect balance expect %s but got %s", onePercentBalance, rt.BalanceOf(beneficiaryId))
 
 		//change back to owner and should withdraw
 		twoPercentBalance := big.Add(onePercentBalance, onePercentBalance)
-		actor.changeBeneficiary(rt, actor.owner, actor.owner, onePercentBalance, 0)
-		actor.setBeneficiary(rt, actor.owner, miner.BeneficiaryInfo{
-			Quota:      onePercentBalance,
-			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
-		})
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, onePercentBalance, 0}, &beneficiaryChange{actor.owner, big.Zero(), 0})
 		actor.withdrawFunds(rt, twoPercentBalance, big.Add(onePercentBalance, onePercentBalance), big.Zero())
 		actor.checkState(rt)
-		assert.True(t, rt.BalanceOf(actor.owner).Equals(twoPercentBalance), "beneficiary address can not withdraw expect balance expect %s but got %s", onePercentBalance, rt.BalanceOf(actor.owner))
-
 	})
 }
 
@@ -2715,7 +2705,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		quota := abi.NewTokenAmount(100)
 		expireDate := periodOffset * 2
-		actor.changeBeneficiary(rt, actor.owner, newBeneficiaryId, quota, expireDate)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{newBeneficiaryId, quota, expireDate}, nil)
 		// assert change has been made in state
 		info := actor.getInfo(rt)
 		require.EqualValues(t, expireDate, info.PendingBeneficiaryInfo.NewExpiration)
@@ -2723,7 +2713,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 
 		rt.SetEpoch(periodOffset + 10)
-		actor.changeBeneficiary(rt, newBeneficiary, newBeneficiaryId, quota, expireDate)
+		actor.changeBeneficiary(rt, newBeneficiary, beneficiaryChange{newBeneficiaryId, quota, expireDate}, &beneficiaryChange{newBeneficiary, quota, expireDate})
 
 		// assert change has been made in state
 		info = actor.getInfo(rt)
@@ -2737,7 +2727,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		expireDate := periodOffset * 2
-		actor.changeOwnerToNewBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
 			Expiration: expireDate,
 			UsedQuota:  abi.NewTokenAmount(1000),
@@ -2745,7 +2735,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		//withdraw
 		actor.withdrawFunds(rt, abi.NewTokenAmount(1000), abi.NewTokenAmount(1000), abi.NewTokenAmount(0))
-		actor.changeBeneficiary(rt, actor.owner, actor.owner, abi.TokenAmount{}, 0)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, big.Zero(), 0}, &beneficiaryChange{actor.owner, big.Zero(), 0})
 
 		// assert change has been made in state
 		info := actor.getInfo(rt)
@@ -2760,14 +2750,14 @@ func TestChangeBeneficiary(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		expireDate := periodOffset * 2
-		actor.changeOwnerToNewBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
 			Expiration: expireDate,
-			UsedQuota:  abi.NewTokenAmount(0),
+			UsedQuota:  big.Zero(),
 		})
 
 		rt.SetEpoch(expireDate + 1)
-		actor.changeBeneficiary(rt, actor.owner, actor.owner, abi.TokenAmount{}, 0)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, big.Zero(), 0}, &beneficiaryChange{actor.owner, big.Zero(), 0})
 
 		// assert change has been made in state
 		info := actor.getInfo(rt)
@@ -2781,10 +2771,10 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		expireDate := periodOffset * 2
 		quota := abi.NewTokenAmount(1000)
-		actor.changeOwnerToNewBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
 			Quota:      quota,
 			Expiration: expireDate,
-			UsedQuota:  abi.NewTokenAmount(0),
+			UsedQuota:  big.Zero(),
 		})
 
 		//make expired
@@ -2793,7 +2783,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		//change beneficiary
 		anotherQuota := abi.NewTokenAmount(1001)
 		anotherExpireDate := periodOffset * 3
-		actor.changeBeneficiary(rt, actor.owner, secondBeneficiaryId, anotherQuota, anotherExpireDate)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{secondBeneficiaryId, anotherQuota, anotherExpireDate}, nil)
 
 		info := actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
@@ -2801,7 +2791,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, anotherExpireDate, info.PendingBeneficiaryInfo.NewExpiration)
 
 		//work after confirm
-		actor.changeBeneficiary(rt, secondBeneficiary, secondBeneficiaryId, anotherQuota, anotherExpireDate)
+		actor.changeBeneficiary(rt, secondBeneficiary, beneficiaryChange{secondBeneficiaryId, anotherQuota, anotherExpireDate}, &beneficiaryChange{secondBeneficiaryId, anotherQuota, anotherExpireDate})
 
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
@@ -2817,10 +2807,10 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		expireDate := periodOffset * 2
 		quota := abi.NewTokenAmount(100)
-		actor.changeOwnerToNewBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
 			Quota:      quota,
 			Expiration: expireDate,
-			UsedQuota:  abi.NewTokenAmount(0),
+			UsedQuota:  big.Zero(),
 		})
 
 		//used up quota
@@ -2831,7 +2821,7 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		//increase quota
 		increaseQuota := abi.NewTokenAmount(100)
-		actor.changeBeneficiary(rt, actor.owner, newBeneficiaryId, increaseQuota, expireDate)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{newBeneficiaryId, increaseQuota, expireDate}, &beneficiaryChange{newBeneficiaryId, increaseQuota, expireDate})
 
 		// assert change has been made in state
 		info = actor.getInfo(rt)
@@ -2845,17 +2835,17 @@ func TestChangeBeneficiary(t *testing.T) {
 		actor.constructAndVerify(rt)
 
 		expireDate := periodOffset * 2
-		actor.changeOwnerToNewBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
+		actor.proposeAndApproveInitialBeneficiary(rt, newBeneficiaryId, miner.BeneficiaryInfo{
 			Quota:      abi.NewTokenAmount(1000),
 			Expiration: expireDate,
-			UsedQuota:  abi.NewTokenAmount(0),
+			UsedQuota:  big.Zero(),
 		})
 
 		//owner send proposal
 		rt.SetEpoch(periodOffset + 10)
 		sencondQuota := abi.NewTokenAmount(100)
 		sencondExpireDate := periodOffset + 20
-		actor.changeBeneficiary(rt, actor.owner, secondBeneficiaryId, sencondQuota, sencondExpireDate)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate}, nil)
 		info := actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
@@ -2863,7 +2853,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, newBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by old beneficiary address
-		actor.changeBeneficiary(rt, newBeneficiary, secondBeneficiaryId, sencondQuota, sencondExpireDate)
+		actor.changeBeneficiary(rt, newBeneficiary, beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate}, nil)
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NewBeneficiary)
 		require.EqualValues(t, sencondQuota, info.PendingBeneficiaryInfo.NewQuota)
@@ -2871,7 +2861,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, secondBeneficiaryId, info.PendingBeneficiaryInfo.NextApprover)
 
 		//confirm by new beneficiary address and worked
-		actor.changeBeneficiary(rt, secondBeneficiary, secondBeneficiaryId, sencondQuota, sencondExpireDate)
+		actor.changeBeneficiary(rt, secondBeneficiary, beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate}, &beneficiaryChange{secondBeneficiaryId, sencondQuota, sencondExpireDate})
 		info = actor.getInfo(rt)
 		require.EqualValues(t, secondBeneficiaryId, info.Beneficiary)
 		require.EqualValues(t, sencondQuota, info.BeneficiaryInfo.Quota)
@@ -2887,13 +2877,13 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		rt.SetEpoch(periodOffset)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeBeneficiary(rt, actor.owner, newBeneficiary, abi.NewTokenAmount(10), periodOffset-10)
+			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{newBeneficiary, abi.NewTokenAmount(10), periodOffset - 10}, nil)
 		})
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeBeneficiary(rt, actor.owner, newBeneficiary, abi.NewTokenAmount(0), periodOffset+10)
+			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{newBeneficiary, abi.NewTokenAmount(0), periodOffset + 10}, nil)
 		})
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeBeneficiary(rt, actor.owner, newBeneficiaryId, abi.NewTokenAmount(0), periodOffset+10)
+			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{newBeneficiaryId, abi.NewTokenAmount(0), periodOffset + 10}, nil)
 		})
 	})
 }
@@ -3874,9 +3864,9 @@ func newHarness(t testing.TB, provingPeriodOffset abi.ChainEpoch) *actorHarness 
 		key:         workerKey,
 		beneficiary: owner,
 		beneficiaryInfo: miner.BeneficiaryInfo{
-			Quota:      abi.TokenAmount{},
+			Quota:      big.Zero(),
 			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		},
 
 		controlAddrs: controlAddrs,
@@ -3908,29 +3898,11 @@ func (h *actorHarness) setProofType(proof abi.RegisteredSealProof) {
 	require.NoError(h.t, err)
 }
 
-func (h *actorHarness) setBeneficiary(rt *mock.Runtime, beneficiaryAddr addr.Address, beneficiary miner.BeneficiaryInfo) {
-	beneficiaryIdAddr, found := rt.GetIdAddr(beneficiaryAddr)
-	require.Equal(h.t, found, true)
-	h.beneficiary = beneficiaryIdAddr
-	h.beneficiaryInfo = miner.BeneficiaryInfo{
-		Quota:      beneficiary.Quota,
-		Expiration: beneficiary.Expiration,
-	}
-}
-
-func (h *actorHarness) changeOwnerToNewBeneficiary(rt *mock.Runtime, beneficiaryAddr addr.Address, beneficiary miner.BeneficiaryInfo) {
-	beneficiaryIdAddr, found := rt.GetIdAddr(beneficiaryAddr)
-	require.Equal(h.t, found, true)
-	h.beneficiary = beneficiaryIdAddr
-	h.beneficiaryInfo = miner.BeneficiaryInfo{
-		Quota:      beneficiary.Quota,
-		Expiration: beneficiary.Expiration,
-	}
-
+func (h *actorHarness) proposeAndApproveInitialBeneficiary(rt *mock.Runtime, beneficiaryIdAddr addr.Address, beneficiary miner.BeneficiaryInfo) {
 	rt.ExpectValidateCallerAddr(h.owner)
 	rt.SetCaller(h.owner, builtin.StorageMinerActorCodeID)
 	param := &miner.ChangeBeneficiaryParams{
-		NewBeneficiary: beneficiaryAddr,
+		NewBeneficiary: beneficiaryIdAddr,
 		NewQuota:       beneficiary.Quota,
 		NewExpiration:  beneficiary.Expiration,
 	}
@@ -3941,6 +3913,13 @@ func (h *actorHarness) changeOwnerToNewBeneficiary(rt *mock.Runtime, beneficiary
 	rt.SetCaller(beneficiaryIdAddr, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
+
+	h.beneficiary = beneficiaryIdAddr
+	h.beneficiaryInfo = miner.BeneficiaryInfo{
+		Quota:      beneficiary.Quota,
+		Expiration: beneficiary.Expiration,
+		UsedQuota:  big.Zero(),
+	}
 }
 
 func (h *actorHarness) constructAndVerify(rt *mock.Runtime) {
@@ -4122,21 +4101,31 @@ func (h *actorHarness) checkState(rt *mock.Runtime) {
 //
 // Actor method calls
 //
+type beneficiaryChange struct {
+	beneficiaryAddr addr.Address
+	quota           abi.TokenAmount
+	expiration      abi.ChainEpoch
+}
 
-func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, expectCaller addr.Address, newBeneficiaryAddr addr.Address, Quota abi.TokenAmount, expireDate abi.ChainEpoch) {
-	rt.SetAddressActorType(newBeneficiaryAddr, builtin.AccountActorCodeID)
+func (h *actorHarness) changeBeneficiary(rt *mock.Runtime, expectCaller addr.Address, beneficiaryChange beneficiaryChange, expectBeneficiaryChange *beneficiaryChange) {
+	rt.SetAddressActorType(beneficiaryChange.beneficiaryAddr, builtin.AccountActorCodeID)
 	callerId, found := rt.GetIdAddr(expectCaller)
 	assert.True(h.t, found, "caller id must exit")
 	param := &miner.ChangeBeneficiaryParams{
-		NewBeneficiary: newBeneficiaryAddr,
-		NewQuota:       Quota,
-		NewExpiration:  expireDate,
+		NewBeneficiary: beneficiaryChange.beneficiaryAddr,
+		NewQuota:       beneficiaryChange.quota,
+		NewExpiration:  beneficiaryChange.expiration,
 	}
 
 	rt.ExpectValidateCallerAddr(callerId)
 	rt.SetCaller(callerId, builtin.AccountActorCodeID)
 	rt.Call(h.a.ChangeBeneficiary, param)
 	rt.Verify()
+	if expectBeneficiaryChange != nil {
+		h.beneficiary = expectBeneficiaryChange.beneficiaryAddr
+		h.beneficiaryInfo.Quota = expectBeneficiaryChange.quota
+		h.beneficiaryInfo.Expiration = expectBeneficiaryChange.expiration
+	}
 }
 
 func (h *actorHarness) changeWorkerAddress(rt *mock.Runtime, newWorker addr.Address, effectiveEpoch abi.ChainEpoch, newControlAddrs []addr.Address) {

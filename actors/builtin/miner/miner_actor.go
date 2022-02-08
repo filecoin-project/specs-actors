@@ -1972,7 +1972,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the miner's available balance.
-// Only beneficiary key and owner key have permission to withdraw.
+// Only beneficiary key and owner key have permission to withdraw (to the beneficiary).
 // If less than the specified amount is available, yields the entire available balance.
 // Returns the amount withdrawn.
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
@@ -1989,7 +1989,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	rt.StateTransaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
-		// Only the owner/beneficiary is allowed to withdraw the balance as it belongs to/is controlled by the owner
+		// Only the beneficiary is allowed to withdraw the balance
 		// and not the worker.
 		rt.ValidateImmediateCallerIs(info.Owner, info.Beneficiary)
 		// Ensure we don't have any pending terminations.
@@ -2021,8 +2021,8 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		if info.Beneficiary == info.Owner {
 			amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
 		} else {
-			builtin.RequireState(rt, !info.BeneficiaryInfo.IsUsedUp(), "beneficiary(%s) %d use up quota", info.Beneficiary)
-			builtin.RequireState(rt, !info.BeneficiaryInfo.IsExpire(rt.CurrEpoch()), "beneficiary(%s) %d have expired at epoch %d", info.Beneficiary, info.BeneficiaryInfo.Expiration, rt.CurrEpoch())
+			builtin.RequirePredicate(rt, info.BeneficiaryInfo.Available().GreaterThan(big.Zero()), exitcode.ErrForbidden,
+				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryInfo.Quota, info.BeneficiaryInfo.UsedQuota, info.BeneficiaryInfo.Expiration, rt.CurrEpoch())
 			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), info.BeneficiaryInfo.Available())
 		}
 
@@ -3132,26 +3132,11 @@ type ChangeBeneficiaryParams struct {
 	NewExpiration  abi.ChainEpoch
 }
 
-// Do necessary parameter check for ChangeBeneficiary if NewBeneficiary is not owner
-//		NewQuota has to be a positive number
-//		newExpiration has to be greater than currEpoch height
-func checkNewBeneficialParam(rt Runtime, params *ChangeBeneficiaryParams) {
-	if params.NewExpiration <= rt.CurrEpoch() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire (%d) date must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
-	}
-
-	if params.NewQuota.LessThanEqual(big.NewInt(0)) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) should bigger than zero", params.NewQuota)
-	}
-}
-
 // ChangeBeneficiary proposal/approve beneficiary change
 func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
-	if params == nil {
-		rt.Abortf(exitcode.ErrIllegalArgument, "empty ChangeBeneficiary Paramenters")
-	}
-	if params.NewBeneficiary.Protocol() != addr.ID {
-		rt.Abortf(exitcode.ErrIllegalArgument, "NewBeneficiary address must be an ID address")
+	newBeneficiary, ok := rt.ResolveAddress(params.NewBeneficiary)
+	if !ok {
+		rt.Abortf(exitcode.ErrIllegalArgument, "unable to resolve address %v", params.NewBeneficiary)
 	}
 
 	var st State
@@ -3161,26 +3146,32 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 		// This is a ChangeBeneficiary proposal when the caller is Owner
 		if rt.Caller() == info.Owner {
 			rt.ValidateImmediateCallerIs(info.Owner)
-			if params.NewBeneficiary != info.Owner {
+			if newBeneficiary != info.Owner {
 				// No need to check others when the newBeneficiary is set back to owner
-				checkNewBeneficialParam(rt, params)
+				if params.NewExpiration <= rt.CurrEpoch() {
+					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire (%d) date must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
+				}
+
+				if params.NewQuota.LessThanEqual(big.NewInt(0)) {
+					rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) should bigger than zero", params.NewQuota)
+				}
 			}
 			if info.Beneficiary != info.Owner && info.BeneficiaryInfo.Effective(rt.CurrEpoch()) {
 				info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
-					NewBeneficiary: params.NewBeneficiary,
+					NewBeneficiary: newBeneficiary,
 					NewQuota:       params.NewQuota,
 					NewExpiration:  params.NewExpiration,
 					NextApprover:   info.Beneficiary,
 				}
-			} else if params.NewBeneficiary != info.Owner {
+			} else if newBeneficiary != info.Owner {
 				info.PendingBeneficiaryInfo = &PendingBeneficiaryChange{
-					NewBeneficiary: params.NewBeneficiary,
+					NewBeneficiary: newBeneficiary,
 					NewQuota:       params.NewQuota,
 					NewExpiration:  params.NewExpiration,
-					NextApprover:   params.NewBeneficiary,
+					NextApprover:   newBeneficiary,
 				}
 			} else {
-				info.Beneficiary = params.NewBeneficiary
+				info.Beneficiary = newBeneficiary
 				info.BeneficiaryInfo = BeneficiaryInfo{
 					Quota:      big.Zero(),
 					Expiration: 0,
@@ -3190,26 +3181,26 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			}
 		} else {
 			// Non-owner calls ChangeBeneficiary is to approve a pending proposal
-			builtin.RequireState(rt, info.PendingBeneficiaryInfo != nil, "No changeBeneficiary proposal exists")
+			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo != nil, exitcode.ErrForbidden, "No changeBeneficiary proposal exists")
 			rt.ValidateImmediateCallerIs(info.PendingBeneficiaryInfo.NextApprover)
 
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewBeneficiary == params.NewBeneficiary, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewBeneficiary, params.NewBeneficiary)
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewQuota.Equals(params.NewQuota), "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewQuota, params.NewQuota)
-			builtin.RequireParam(rt, info.PendingBeneficiaryInfo.NewExpiration == params.NewExpiration, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewExpiration, params.NewExpiration)
+			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewBeneficiary == newBeneficiary, exitcode.ErrForbidden, "new beneficiary address must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewBeneficiary, params.NewBeneficiary)
+			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewQuota.Equals(params.NewQuota), exitcode.ErrForbidden, "new beneficiary quota must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewQuota, params.NewQuota)
+			builtin.RequirePredicate(rt, info.PendingBeneficiaryInfo.NewExpiration == params.NewExpiration, exitcode.ErrForbidden, "new beneficiary expiredate must be equal expect %s, but got %s", info.PendingBeneficiaryInfo.NewExpiration, params.NewExpiration)
 
-			if params.NewBeneficiary != rt.Caller() && params.NewBeneficiary != info.Owner {
+			if newBeneficiary != rt.Caller() && newBeneficiary != info.Owner {
 				// We still need the NewBeneficiary to approve this proposal
-				info.PendingBeneficiaryInfo.NextApprover = params.NewBeneficiary
+				info.PendingBeneficiaryInfo.NextApprover = newBeneficiary
 			} else {
 				// All approved, Set BeneficiaryInfo
-				if params.NewBeneficiary == info.Owner {
+				if newBeneficiary == info.Owner {
 					// The beneficiary set back to owner
 					info.BeneficiaryInfo = BeneficiaryInfo{
 						Quota:      big.Zero(),
 						Expiration: 0,
 						UsedQuota:  big.Zero(),
 					}
-				} else if params.NewBeneficiary == info.Beneficiary {
+				} else if newBeneficiary == info.Beneficiary {
 					// the beneficiary keeps no change, keep UsedQuota
 					info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
 					info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
@@ -3222,8 +3213,16 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 					}
 				}
 
+				/*
+					替换上面的部分
+					info.BeneficiaryInfo.Quota = info.PendingBeneficiaryInfo.NewQuota
+					info.BeneficiaryInfo.Expiration = info.PendingBeneficiaryInfo.NewExpiration
+					if newBeneficiary != info.Beneficiary {
+						info.BeneficiaryInfo.UsedQuota = big.Zero()
+					}*/
+
 				// set Beneficiary to the NewBeneficiary
-				info.Beneficiary = params.NewBeneficiary
+				info.Beneficiary = newBeneficiary
 
 				// Clear the pending proposal
 				info.PendingBeneficiaryInfo = nil
