@@ -2,26 +2,28 @@ package test
 
 import (
 	"context"
+	"strings"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v7/actors/states"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/rt"
-	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 
-	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	miner6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
 	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
 	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
-	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/exported"
+	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
+	"github.com/filecoin-project/specs-actors/v7/support/ipld"
+	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 	"github.com/filecoin-project/specs-actors/v7/support/vm6Util"
 
 	"testing"
@@ -146,7 +148,7 @@ func createMinersAndSectorsV6(t *testing.T, ctx context.Context, ctxStore adt.St
 
 func TestNv15Migration(t *testing.T) {
 	ctx := context.Background()
-	bs := ipld2.NewSyncBlockStoreInMemory()
+	bs := ipld.NewBlockStoreInMemory()
 	v := vm6.NewVMWithSingletons(ctx, t, bs)
 	ctxStore := adt.WrapBlockStore(ctx, bs)
 	log := nv15.TestLogger{TB: t}
@@ -188,6 +190,14 @@ func TestNv15Migration(t *testing.T) {
 
 	networkStatsAfter := vm7.GetNetworkStats(t, v7)
 	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
+
+	stateTree, err := v7.GetStateTree()
+	require.NoError(t, err)
+	totalBalance, err := v7.GetTotalActorBalance()
+	require.NoError(t, err)
+	acc, err := states.CheckStateInvariants(stateTree, totalBalance, v7.GetEpoch()-1)
+	require.NoError(t, err)
+	require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 
 	// Compare miner states
 	for _, minerInfo := range minerInfos {
