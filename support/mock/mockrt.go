@@ -50,7 +50,7 @@ type Runtime struct {
 
 	// Actor state
 	state   cid.Cid
-	balance map[addr.Address]abi.TokenAmount
+	balance abi.TokenAmount
 
 	// VM implementation
 	store         map[cid.Cid][]byte
@@ -260,12 +260,7 @@ func (rt *Runtime) ValidateImmediateCallerType(types ...cid.Cid) {
 
 func (rt *Runtime) CurrentBalance() abi.TokenAmount {
 	rt.requireInCall()
-	if val, ok := rt.balance[rt.receiver]; ok {
-		return val
-	} else {
-		rt.balance[rt.receiver] = big.Zero()
-		return rt.balance[rt.receiver]
-	}
+	return rt.balance
 }
 
 func (rt *Runtime) BaseFee() abi.TokenAmount {
@@ -380,8 +375,7 @@ func (rt *Runtime) Send(toAddr addr.Address, methodNum abi.MethodNum, params cbo
 	// pop the expectedMessage from the queue and modify the mockrt balance to reflect the send.
 	defer func() {
 		rt.expectSends = rt.expectSends[1:]
-		rt.balance[rt.receiver] = big.Sub(rt.balance[rt.receiver], value)
-		rt.balance[toAddr] = big.Add(rt.BalanceOf(toAddr), value)
+		rt.balance = big.Sub(rt.balance, value)
 	}()
 
 	// populate the output argument
@@ -818,21 +812,7 @@ func (rt *Runtime) GetState(o cbor.Unmarshaler) {
 }
 
 func (rt *Runtime) Balance() abi.TokenAmount {
-	if val, ok := rt.balance[rt.receiver]; ok {
-		return val
-	} else {
-		rt.balance[rt.receiver] = big.Zero()
-		return rt.balance[rt.receiver]
-	}
-}
-
-func (rt *Runtime) BalanceOf(addr addr.Address) abi.TokenAmount {
-	if val, ok := rt.balance[addr]; ok {
-		return val
-	} else {
-		rt.balance[addr] = big.Zero()
-		return rt.balance[addr]
-	}
+	return rt.balance
 }
 
 func (rt *Runtime) Epoch() abi.ChainEpoch {
@@ -852,7 +832,7 @@ func (rt *Runtime) SetAddressActorType(address addr.Address, actorType cid.Cid) 
 }
 
 func (rt *Runtime) SetBalance(amt abi.TokenAmount) abi.TokenAmount {
-	rt.balance[rt.receiver] = amt
+	rt.balance = amt
 	return amt
 }
 

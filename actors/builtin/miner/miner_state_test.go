@@ -980,10 +980,10 @@ func constructStateHarness(t *testing.T, periodBoundary abi.ChainEpoch) *stateHa
 		Owner:       owner,
 		Worker:      worker,
 		Beneficiary: owner,
-		BeneficiaryInfo: miner.BeneficiaryInfo{
-			Quota:      abi.TokenAmount{},
+		BeneficiaryTerm: miner.BeneficiaryTerm{
+			Quota:      big.Zero(),
 			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		},
 		PendingWorkerKey:           nil,
 		PeerId:                     abi.PeerID("peer"),

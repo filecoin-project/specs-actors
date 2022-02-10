@@ -85,35 +85,40 @@ type State struct {
 const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
-type BeneficiaryInfo struct {
-	Quota      abi.TokenAmount
+type BeneficiaryTerm struct {
+	// Quota: The total amount the current beneficiary can withdraw. Monotonic, but reset when beneficiary changes.
+	Quota abi.TokenAmount
+	// Expiration: The epoch at which the beneficiary's rights expire and revert to the owner
 	Expiration abi.ChainEpoch
-	UsedQuota  abi.TokenAmount
+	// UsedQuota: The amount of quota the current beneficiary has already withdrawn
+	UsedQuota abi.TokenAmount
 }
 
-func (beneficiaryInfo BeneficiaryInfo) Effective(cur abi.ChainEpoch) bool {
-	return !beneficiaryInfo.IsExpire(cur) && !beneficiaryInfo.IsUsedUp()
+// IsUsedUp check whether beneficiary has use up all quota
+func (beneficiaryTerm *BeneficiaryTerm) IsUsedUp() bool {
+	return beneficiaryTerm.UsedQuota.GreaterThanEqual(beneficiaryTerm.Quota)
 }
 
-func (beneficiaryInfo BeneficiaryInfo) IsUsedUp() bool {
-	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
+// IsExpire check if the beneficiary is within the validity period
+func (beneficiaryTerm *BeneficiaryTerm) IsExpire(cur abi.ChainEpoch) bool {
+	return beneficiaryTerm.Expiration <= cur
 }
 
-func (beneficiaryInfo BeneficiaryInfo) IsExpire(cur abi.ChainEpoch) bool {
-	return beneficiaryInfo.Expiration < cur
-}
-
-func (beneficiaryInfo BeneficiaryInfo) Available() abi.TokenAmount {
+// Available get the amount that the beneficiary has not yet withdrawn
+func (beneficiaryTerm *BeneficiaryTerm) Available(cur abi.ChainEpoch) abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
-	// This could happen while there is a race when setting beneficialInfo.newQuota lower
-	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
+	if beneficiaryTerm.IsExpire(cur) {
+		return big.Zero()
+	}
+	return big.Max(big.Sub(beneficiaryTerm.Quota, beneficiaryTerm.UsedQuota), big.NewInt(0))
 }
 
 type PendingBeneficiaryChange struct {
-	NewBeneficiary addr.Address
-	NewQuota       abi.TokenAmount
-	NewExpiration  abi.ChainEpoch
-	NextApprover   addr.Address
+	NewBeneficiary        addr.Address
+	NewQuota              abi.TokenAmount
+	NewExpiration         abi.ChainEpoch
+	ApprovedByBeneficiary bool
+	ApprovedByNominee     bool
 }
 
 type MinerInfo struct {
@@ -131,9 +136,11 @@ type MinerInfo struct {
 
 	PendingWorkerKey *WorkerKeyChange
 
+	// Beneficiary account for receive miner benefits, withdraw on miner must send to this address,
+	// beneficiary set owner address by default when create miner
 	Beneficiary            addr.Address
-	BeneficiaryInfo        BeneficiaryInfo
-	PendingBeneficiaryInfo *PendingBeneficiaryChange
+	BeneficiaryTerm        BeneficiaryTerm
+	PendingBeneficiaryTerm *PendingBeneficiaryChange
 
 	// Byte array representing a Libp2p identity that should be used when connecting to this miner.
 	PeerId abi.PeerID
@@ -287,18 +294,14 @@ func ConstructMinerInfo(owner, worker addr.Address, controlAddrs []addr.Address,
 		Worker:           worker,
 		ControlAddresses: controlAddrs,
 
-		// Todo: a non-owner address could be set as the beneficiary in the contruction
-		// At the same time, the BeneficiaryInfo needs to be set too
-		// Here, just setting it to Owner to simplify the implementation,
-		// and, the owner can ChangeBeneficiary later.
 		Beneficiary: owner,
-		BeneficiaryInfo: BeneficiaryInfo{
-			Quota:      abi.TokenAmount{},
+		BeneficiaryTerm: BeneficiaryTerm{
+			Quota:      big.Zero(),
 			Expiration: 0,
-			UsedQuota:  abi.TokenAmount{},
+			UsedQuota:  big.Zero(),
 		},
 
-		PendingBeneficiaryInfo:     nil,
+		PendingBeneficiaryTerm:     nil,
 		PendingWorkerKey:           nil,
 		PeerId:                     pid,
 		Multiaddrs:                 multiAddrs,

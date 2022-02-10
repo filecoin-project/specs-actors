@@ -182,7 +182,7 @@ func main() {
 		miner.SectorOnChainInfo{},
 		miner.WorkerKeyChange{},
 		miner.ChangeBeneficiaryParams{},
-		miner.BeneficiaryInfo{},
+		miner.BeneficiaryTerm{},
 		miner.PendingBeneficiaryChange{},
 		miner.VestingFunds{},
 		miner.VestingFund{},

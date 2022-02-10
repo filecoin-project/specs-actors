@@ -373,13 +373,13 @@ func (t *MinerInfo) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.BeneficiaryInfo (miner.BeneficiaryInfo) (struct)
-	if err := t.BeneficiaryInfo.MarshalCBOR(w); err != nil {
+	// t.BeneficiaryTerm (miner.BeneficiaryTerm) (struct)
+	if err := t.BeneficiaryTerm.MarshalCBOR(w); err != nil {
 		return err
 	}
 
-	// t.PendingBeneficiaryInfo (miner.PendingBeneficiaryChange) (struct)
-	if err := t.PendingBeneficiaryInfo.MarshalCBOR(w); err != nil {
+	// t.PendingBeneficiaryTerm (miner.PendingBeneficiaryChange) (struct)
+	if err := t.PendingBeneficiaryTerm.MarshalCBOR(w); err != nil {
 		return err
 	}
 
@@ -552,16 +552,16 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 		}
 
 	}
-	// t.BeneficiaryInfo (miner.BeneficiaryInfo) (struct)
+	// t.BeneficiaryTerm (miner.BeneficiaryTerm) (struct)
 
 	{
 
-		if err := t.BeneficiaryInfo.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.BeneficiaryInfo: %w", err)
+		if err := t.BeneficiaryTerm.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.BeneficiaryTerm: %w", err)
 		}
 
 	}
-	// t.PendingBeneficiaryInfo (miner.PendingBeneficiaryChange) (struct)
+	// t.PendingBeneficiaryTerm (miner.PendingBeneficiaryChange) (struct)
 
 	{
 
@@ -573,9 +573,9 @@ func (t *MinerInfo) UnmarshalCBOR(r io.Reader) error {
 			if err := br.UnreadByte(); err != nil {
 				return err
 			}
-			t.PendingBeneficiaryInfo = new(PendingBeneficiaryChange)
-			if err := t.PendingBeneficiaryInfo.UnmarshalCBOR(br); err != nil {
-				return xerrors.Errorf("unmarshaling t.PendingBeneficiaryInfo pointer: %w", err)
+			t.PendingBeneficiaryTerm = new(PendingBeneficiaryChange)
+			if err := t.PendingBeneficiaryTerm.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.PendingBeneficiaryTerm pointer: %w", err)
 			}
 		}
 
@@ -2429,14 +2429,14 @@ func (t *ChangeBeneficiaryParams) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufBeneficiaryInfo = []byte{131}
+var lengthBufBeneficiaryTerm = []byte{131}
 
-func (t *BeneficiaryInfo) MarshalCBOR(w io.Writer) error {
+func (t *BeneficiaryTerm) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write(lengthBufBeneficiaryInfo); err != nil {
+	if _, err := w.Write(lengthBufBeneficiaryTerm); err != nil {
 		return err
 	}
 
@@ -2465,8 +2465,8 @@ func (t *BeneficiaryInfo) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
-	*t = BeneficiaryInfo{}
+func (t *BeneficiaryTerm) UnmarshalCBOR(r io.Reader) error {
+	*t = BeneficiaryTerm{}
 
 	br := cbg.GetPeeker(r)
 	scratch := make([]byte, 8)
@@ -2529,7 +2529,7 @@ func (t *BeneficiaryInfo) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufPendingBeneficiaryChange = []byte{132}
+var lengthBufPendingBeneficiaryChange = []byte{133}
 
 func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -2563,8 +2563,13 @@ func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.NextApprover (address.Address) (struct)
-	if err := t.NextApprover.MarshalCBOR(w); err != nil {
+	// t.ApprovedByBeneficiary (bool) (bool)
+	if err := cbg.WriteBool(w, t.ApprovedByBeneficiary); err != nil {
+		return err
+	}
+
+	// t.ApprovedByNominee (bool) (bool)
+	if err := cbg.WriteBool(w, t.ApprovedByNominee); err != nil {
 		return err
 	}
 	return nil
@@ -2584,7 +2589,7 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 4 {
+	if extra != 5 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -2631,14 +2636,39 @@ func (t *PendingBeneficiaryChange) UnmarshalCBOR(r io.Reader) error {
 
 		t.NewExpiration = abi.ChainEpoch(extraI)
 	}
-	// t.NextApprover (address.Address) (struct)
+	// t.ApprovedByBeneficiary (bool) (bool)
 
-	{
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.ApprovedByBeneficiary = false
+	case 21:
+		t.ApprovedByBeneficiary = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	// t.ApprovedByNominee (bool) (bool)
 
-		if err := t.NextApprover.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.NextApprover: %w", err)
-		}
-
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.ApprovedByNominee = false
+	case 21:
+		t.ApprovedByNominee = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
 	}
 	return nil
 }
