@@ -2045,7 +2045,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
 		code := rt.Send(info.Beneficiary, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
 		builtin.RequireSuccess(rt, code, "failed to withdraw balance")
-
 	}
 
 	burnFunds(rt, feeToBurn, BurnMethodWithdrawBalance)
@@ -3152,7 +3151,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			// This is a ChangeBeneficiary proposal when the caller is Owner
 			if newBeneficiary != info.Owner {
 				if params.NewExpiration <= rt.CurrEpoch() {
-					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire date (%d)  must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
+					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expiration (%d)  must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
 				}
 
 				if params.NewQuota.LessThanEqual(big.Zero()) {
@@ -3161,7 +3160,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			} else {
 				// Expiration/quota must set to 0 while change beneficiary to owner
 				if params.NewExpiration != 0 {
-					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expire date (%d)  must be zero", params.NewExpiration)
+					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expiration (%d)  must be zero", params.NewExpiration)
 				}
 
 				if !params.NewQuota.NilOrZero() {
