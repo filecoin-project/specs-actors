@@ -86,31 +86,31 @@ const PrecommitCleanUpAmtBitwidth = 6
 const SectorsAmtBitwidth = 5
 
 type BeneficiaryTerm struct {
-	//Quota: The total amount the current beneficiary can withdraw. Monotonic, but reset when beneficiary changes.
+	// Quota: The total amount the current beneficiary can withdraw. Monotonic, but reset when beneficiary changes.
 	Quota abi.TokenAmount
-	//Expiration: The epoch at which the beneficiary's rights expire and revert to the owner
+	// Expiration: The epoch at which the beneficiary's rights expire and revert to the owner
 	Expiration abi.ChainEpoch
-	//UsedQuota: The amount of quota the current beneficiary has already withdrawn
+	// UsedQuota: The amount of quota the current beneficiary has already withdrawn
 	UsedQuota abi.TokenAmount
 }
 
-//IsUsedUp check whether beneficiary has use up all quota
-func (beneficiaryInfo *BeneficiaryTerm) IsUsedUp() bool {
-	return beneficiaryInfo.UsedQuota.GreaterThanEqual(beneficiaryInfo.Quota)
+// IsUsedUp check whether beneficiary has use up all quota
+func (beneficiaryTerm *BeneficiaryTerm) IsUsedUp() bool {
+	return beneficiaryTerm.UsedQuota.GreaterThanEqual(beneficiaryTerm.Quota)
 }
 
-//IsExpire check if the beneficiary is within the validity period
-func (beneficiaryInfo *BeneficiaryTerm) IsExpire(cur abi.ChainEpoch) bool {
-	return beneficiaryInfo.Expiration <= cur
+// IsExpire check if the beneficiary is within the validity period
+func (beneficiaryTerm *BeneficiaryTerm) IsExpire(cur abi.ChainEpoch) bool {
+	return beneficiaryTerm.Expiration <= cur
 }
 
-//Available get the amount that the beneficiary has not yet withdrawn
-func (beneficiaryInfo *BeneficiaryTerm) Available(cur abi.ChainEpoch) abi.TokenAmount {
+// Available get the amount that the beneficiary has not yet withdrawn
+func (beneficiaryTerm *BeneficiaryTerm) Available(cur abi.ChainEpoch) abi.TokenAmount {
 	// Return 0 when the usedQuota > Quota for safe
-	if beneficiaryInfo.IsExpire(cur) {
+	if beneficiaryTerm.IsExpire(cur) {
 		return big.Zero()
 	}
-	return big.Max(big.Sub(beneficiaryInfo.Quota, beneficiaryInfo.UsedQuota), big.NewInt(0))
+	return big.Max(big.Sub(beneficiaryTerm.Quota, beneficiaryTerm.UsedQuota), big.NewInt(0))
 }
 
 type PendingBeneficiaryChange struct {

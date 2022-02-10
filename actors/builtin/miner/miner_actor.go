@@ -248,12 +248,16 @@ func (a Actor) ChangeOwnerAddress(rt Runtime, newAddress *addr.Address) *abi.Emp
 				rt.Abortf(exitcode.ErrIllegalArgument, "expected confirmation of %v, got %v",
 					info.PendingOwnerAddress, newAddress)
 			}
-			info.Owner = *info.PendingOwnerAddress
-			//change beneficiary address to new owner if current beneficiary address equal to old owner address
+
+			// Change beneficiary address to new owner if current beneficiary address equal to old owner address
 			if info.Beneficiary == info.Owner {
 				info.Beneficiary = *info.PendingOwnerAddress
 			}
+			// Cancel pending beneficiary term change when the owner changes
 			info.PendingBeneficiaryTerm = nil
+
+			// Set the new owner address
+			info.Owner = *info.PendingOwnerAddress
 		}
 
 		// Clear any resulting no-op change.
@@ -1977,7 +1981,7 @@ func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultPara
 type WithdrawBalanceParams = miner0.WithdrawBalanceParams
 
 // Attempt to withdraw the specified amount from the miner's available balance.
-// Only beneficiary key have permission to withdraw (to the beneficiary).
+// Only beneficiary key and owner key have permission to withdraw (to the beneficiary).
 // If less than the specified amount is available, yields the entire available balance.
 // Returns the amount withdrawn.
 func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.TokenAmount {
@@ -1994,8 +1998,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 	rt.StateTransaction(&st, func() {
 		var err error
 		info = getMinerInfo(rt, &st)
-		// Only the beneficiary is allowed to withdraw the balance
-		// and not the worker.
+		// Only the beneficiary and owner are allowed to withdraw the balance
 		rt.ValidateImmediateCallerIs(info.Owner, info.Beneficiary)
 		// Ensure we don't have any pending terminations.
 		if count, err := st.EarlyTerminations.Count(); err != nil {
@@ -2023,24 +2026,21 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 		feeToBurn = RepayDebtsOrAbort(rt, &st)
 
 		// To get the actual amount to be withdrawed
-		if info.Beneficiary == info.Owner {
-			amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
-		} else {
-			amountWithdrawn = info.BeneficiaryTerm.Available(rt.CurrEpoch())
-			builtin.RequirePredicate(rt, amountWithdrawn.GreaterThan(big.Zero()), exitcode.ErrForbidden,
-				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryTerm.Quota, info.BeneficiaryTerm.UsedQuota, info.BeneficiaryTerm.Expiration, rt.CurrEpoch())
-			amountWithdrawn = big.Min(big.Min(availableBalance, params.AmountRequested), amountWithdrawn)
-		}
-
+		amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
+		builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
+		builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 		if info.Beneficiary != info.Owner {
+			remainingQuota := info.BeneficiaryTerm.Available(rt.CurrEpoch())
+			builtin.RequirePredicate(rt, remainingQuota.GreaterThan(big.Zero()), exitcode.ErrForbidden,
+				"beneficiary(%s)  quota %s used quota %s expiration epoch %d  current epoch %d", info.Beneficiary, info.BeneficiaryTerm.Quota, info.BeneficiaryTerm.UsedQuota, info.BeneficiaryTerm.Expiration, rt.CurrEpoch())
+			amountWithdrawn = big.Min(remainingQuota, amountWithdrawn)
+
 			info.BeneficiaryTerm.UsedQuota = big.Add(info.BeneficiaryTerm.UsedQuota, amountWithdrawn)
 		}
+
 		err = st.SaveInfo(adt.AsStore(rt), info)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
-
-	builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
-	builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 
 	if amountWithdrawn.GreaterThan(abi.NewTokenAmount(0)) {
 		code := rt.Send(info.Beneficiary, builtin.MethodSend, nil, amountWithdrawn, &builtin.Discard{})
@@ -3138,7 +3138,7 @@ type ChangeBeneficiaryParams struct {
 	NewExpiration  abi.ChainEpoch
 }
 
-// ChangeBeneficiary proposal/approve beneficiary change
+// ChangeBeneficiary proposes/approves a beneficiary change
 func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
 	newBeneficiary, ok := rt.ResolveAddress(params.NewBeneficiary)
 	if !ok {
@@ -3151,7 +3151,6 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 		if rt.Caller() == info.Owner {
 			// This is a ChangeBeneficiary proposal when the caller is Owner
 			if newBeneficiary != info.Owner {
-				// No need to check others when the newBeneficiary is set back to owner
 				if params.NewExpiration <= rt.CurrEpoch() {
 					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expire date (%d)  must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
 				}
@@ -3160,7 +3159,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 					rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) must bigger than zero", params.NewQuota)
 				}
 			} else {
-				//expiration/quota must set to 0 while change beneficiary to owner
+				// Expiration/quota must set to 0 while change beneficiary to owner
 				if params.NewExpiration != 0 {
 					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expire date (%d)  must be zero", params.NewExpiration)
 				}
@@ -3177,7 +3176,7 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 			}
 
 			if info.BeneficiaryTerm.Available(rt.CurrEpoch()).Equals(big.Zero()) {
-				//set current beneficiary to approved when current beneficiary not effected
+				// Set current beneficiary to approved when current beneficiary is not effective
 				info.PendingBeneficiaryTerm.ApprovedByBeneficiary = true
 			}
 		} else {
