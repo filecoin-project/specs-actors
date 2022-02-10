@@ -2300,7 +2300,7 @@ func TestWithdrawBalance(t *testing.T) {
 
 		//change back to owner and should withdraw
 		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, big.Zero(), 0}, &actor.owner)
-		actor.withdrawFunds(rt, onePercentBalance, big.Add(onePercentBalance, onePercentBalance), big.Zero())
+		actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
 		actor.checkState(rt)
 	})
 }
