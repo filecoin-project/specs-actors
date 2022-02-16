@@ -2241,7 +2241,7 @@ func TestWithdrawBalance(t *testing.T) {
 		actor.checkState(rt)
 	})
 
-	t.Run("withdraw from other beneficiary address", func(t *testing.T) {
+	t.Run("withdraw successfully from other beneficiary address, and failure while used all quota ", func(t *testing.T) {
 		rt := builder.Build(t)
 		actor.constructAndVerify(rt)
 
@@ -2251,13 +2251,38 @@ func TestWithdrawBalance(t *testing.T) {
 		rt.SetAddressActorType(beneficiaryId, builtin.AccountActorCodeID)
 
 		actor.proposeAndApproveInitialBeneficiary(rt, beneficiaryId, miner.BeneficiaryTerm{
-			Quota:      bigBalance,
+			Quota:      onePercentBalance,
 			Expiration: periodOffset,
 			UsedQuota:  big.Zero(),
 		})
 		// withdraw 1% of balance
 		actor.withdrawFunds(rt, onePercentBalance, onePercentBalance, big.Zero())
 		actor.checkState(rt)
+
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.withdrawFunds(rt, onePercentBalance, big.Zero(), big.Zero())
+		})
+	})
+
+	t.Run("withdraw failure while beneficiary term has been expiration", func(t *testing.T) {
+		rt := builder.Build(t)
+		actor.constructAndVerify(rt)
+
+		beneficiaryAddr := tutil.NewBLSAddr(t, 999)
+		beneficiaryId := tutil.NewIDAddr(t, 556)
+		rt.AddIDAddress(beneficiaryAddr, beneficiaryId)
+		rt.SetAddressActorType(beneficiaryId, builtin.AccountActorCodeID)
+
+		actor.proposeAndApproveInitialBeneficiary(rt, beneficiaryId, miner.BeneficiaryTerm{
+			Quota:      onePercentBalance,
+			Expiration: periodOffset,
+			UsedQuota:  big.Zero(),
+		})
+		// make beneficiary expiration
+		rt.SetEpoch(periodOffset)
+		rt.ExpectAbort(exitcode.ErrForbidden, func() {
+			actor.withdrawFunds(rt, onePercentBalance, big.Zero(), big.Zero())
+		})
 	})
 
 	t.Run("withdraw more than beneficiary quota", func(t *testing.T) {
@@ -2687,7 +2712,7 @@ func TestChangeBeneficiary(t *testing.T) {
 	secondBeneficiaryId := tutil.NewIDAddr(t, 1999)
 	secondBeneficiary := tutil.NewBLSAddr(t, 1000)
 
-	setupFunc := func() (*mock.Runtime, *actorHarness) {
+	setupFunc := func(t *testing.T) (*mock.Runtime, *actorHarness) {
 		actor := newHarness(t, periodOffset)
 		builder := builderForHarness(actor).
 			WithBalance(bigBalance, big.NewInt(10000))
@@ -2699,7 +2724,7 @@ func TestChangeBeneficiary(t *testing.T) {
 	}
 
 	t.Run("successfully change beneficiary to another address", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		quota := abi.NewTokenAmount(100)
@@ -2711,6 +2736,9 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, quota, info.PendingBeneficiaryTerm.NewQuota)
 		require.EqualValues(t, firstBeneficiaryId, info.PendingBeneficiaryTerm.NewBeneficiary)
 
+		//withdraw and check if owner got the balance.
+		actor.withdrawFunds(rt, big.NewInt(1), big.NewInt(1), big.Zero())
+
 		rt.SetEpoch(periodOffset + 10)
 		actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{firstBeneficiaryId, quota, expiration}, &firstBeneficiary)
 
@@ -2721,8 +2749,30 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, firstBeneficiaryId, info.Beneficiary)
 	})
 
+	t.Run("successfully owner revoking unapprovel proposal and proposing back to owner", func(t *testing.T) {
+		rt, actor := setupFunc(t)
+		actor.constructAndVerify(rt)
+
+		quota := abi.NewTokenAmount(100)
+		expiration := periodOffset * 2
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiaryId, quota, expiration}, nil)
+		// assert change has been made in state
+		info := actor.getInfo(rt)
+		require.EqualValues(t, expiration, info.PendingBeneficiaryTerm.NewExpiration)
+		require.EqualValues(t, quota, info.PendingBeneficiaryTerm.NewQuota)
+		require.EqualValues(t, firstBeneficiaryId, info.PendingBeneficiaryTerm.NewBeneficiary)
+
+		//revoking unapprovel proposal
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, big.Zero(), 0}, &actor.owner)
+
+		// assert change has been made in state
+		info = actor.getInfo(rt)
+		require.Nil(t, info.PendingBeneficiaryTerm)
+		require.EqualValues(t, actor.owner, info.Beneficiary)
+	})
+
 	t.Run("successfully change back to owner address while used up quota, must work immediately", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		expiration := periodOffset * 2
@@ -2741,11 +2791,11 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, actor.owner, info.Beneficiary)
 		require.EqualValues(t, big.Zero(), info.BeneficiaryTerm.Quota)
 		require.EqualValues(t, 0, info.BeneficiaryTerm.Expiration)
-		require.True(t, info.PendingBeneficiaryTerm == nil)
+		require.Nil(t, info.PendingBeneficiaryTerm)
 	})
 
 	t.Run("successfully change back to owner address while exceed expiration, must work immediately", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		expiration := periodOffset * 2
@@ -2761,11 +2811,11 @@ func TestChangeBeneficiary(t *testing.T) {
 		// assert change has been made in state
 		info := actor.getInfo(rt)
 		require.EqualValues(t, actor.owner, info.Beneficiary)
-		require.True(t, info.PendingBeneficiaryTerm == nil)
+		require.Nil(t, info.PendingBeneficiaryTerm)
 	})
 
 	t.Run("successfully change back another address while used up/expiration, should work after confirm", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		expiration := periodOffset * 2
@@ -2801,7 +2851,7 @@ func TestChangeBeneficiary(t *testing.T) {
 	})
 
 	t.Run("successfully increase quota for used up , must work after confirm", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		expiration := periodOffset * 2
@@ -2816,7 +2866,7 @@ func TestChangeBeneficiary(t *testing.T) {
 		rt.SetEpoch(periodOffset + 1)
 		actor.withdrawFunds(rt, quota, quota, big.Zero())
 		info := actor.getInfo(rt)
-		require.EqualValues(t, true, info.BeneficiaryTerm.IsUsedUp())
+		require.True(t, info.BeneficiaryTerm.IsUsedUp())
 
 		//increase quota
 		increaseQuota := abi.NewTokenAmount(100)
@@ -2830,7 +2880,7 @@ func TestChangeBeneficiary(t *testing.T) {
 	})
 
 	t.Run("successfully change to another address while old beneficiary info is not effective", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		expiration := periodOffset * 2
@@ -2867,8 +2917,8 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, (*miner.PendingBeneficiaryChange)(nil), info.PendingBeneficiaryTerm)
 	})
 
-	t.Run("failure approval has different params", func(t *testing.T) {
-		rt, actor := setupFunc()
+	t.Run("failure approval message has different params", func(t *testing.T) {
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		quota := abi.NewTokenAmount(100)
@@ -2887,49 +2937,61 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		rt.SetEpoch(periodOffset + 10)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//expiration in approval message must equal with proposal
 			actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{firstBeneficiaryId, quota, expiration + 1}, &firstBeneficiary)
 		})
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//quota in approval message must equal with proposal
 			actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{firstBeneficiaryId, big.Add(quota, big.NewInt(1)), expiration}, &firstBeneficiary)
 		})
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{secondBeneficiaryId, big.Add(quota, big.NewInt(1)), expiration}, &firstBeneficiary)
+			//beneficiary in approval message must equal with proposal
+			actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{secondBeneficiaryId, quota, expiration}, &firstBeneficiary)
 		})
+		//successful call
+		actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{firstBeneficiaryId, quota, expiration}, &firstBeneficiary)
+		actor.checkState(rt)
 	})
 
-	t.Run("failure change beneficiary has wrong params", func(t *testing.T) {
-		rt, actor := setupFunc()
+	t.Run("failure change beneficiary has invalidated params", func(t *testing.T) {
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		rt.SetEpoch(periodOffset)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//expiration must less than current epoch while change beneficiary to address(not owner)
 			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiary, abi.NewTokenAmount(10), periodOffset - 10}, nil)
 		})
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//quota must bigger than zero while change beneficiary to address(not owner)
 			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiary, abi.NewTokenAmount(0), periodOffset + 10}, nil)
 		})
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiaryId, abi.NewTokenAmount(0), periodOffset + 10}, nil)
-		})
-
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//quota must be zero while change beneficiary to owner address
 			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, abi.NewTokenAmount(20), 0}, nil)
 		})
 
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
+			//expiration must be zero while change beneficiary to owner address
 			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, abi.NewTokenAmount(0), 1}, nil)
 		})
+
+		//successful call
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiary, abi.NewTokenAmount(20), periodOffset + 1}, nil)
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{actor.owner, big.Zero(), 0}, nil)
+		actor.checkState(rt)
+
 	})
 }
 
 func TestChangeWorkerAddress(t *testing.T) {
 	periodOffset := abi.ChainEpoch(100)
 
-	setupFunc := func() (*mock.Runtime, *actorHarness) {
+	setupFunc := func(t *testing.T) (*mock.Runtime, *actorHarness) {
 		actor := newHarness(t, periodOffset)
 		builder := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero())
@@ -2939,7 +3001,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	}
 
 	t.Run("successfully change ONLY the worker address", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		originalControlAddrs := actor.controlAddrs
 
@@ -2983,7 +3045,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("change cannot be overridden", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		originalControlAddrs := actor.controlAddrs
 
@@ -3020,7 +3082,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("successfully resolve AND change ONLY control addresses", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		c1Id := tutil.NewIDAddr(t, 555)
@@ -3044,7 +3106,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("successfully change both worker AND control addresses", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		newWorker := tutil.NewIDAddr(t, 999)
@@ -3074,7 +3136,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("successfully clear all control addresses", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		actor.changeWorkerAddress(rt, actor.worker, abi.ChainEpoch(-1), nil)
@@ -3088,7 +3150,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if control addresses length exceeds maximum limit", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 
 		controlAddrs := make([]addr.Address, 0, miner.MaxControlAddresses+1)
@@ -3103,7 +3165,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if unable to resolve control address", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		c1 := tutil.NewBLSAddr(t, 501)
 
@@ -3117,7 +3179,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if unable to resolve worker address", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		newWorker := tutil.NewBLSAddr(t, 999)
 		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
@@ -3132,7 +3194,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if worker public key is not BLS", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		newWorker := tutil.NewIDAddr(t, 999)
 		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)
@@ -3150,7 +3212,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if new worker address does not have a code", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		newWorker := tutil.NewIDAddr(t, 5001)
 
@@ -3164,7 +3226,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails if new worker is not an account actor", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		newWorker := tutil.NewIDAddr(t, 999)
 		rt.SetAddressActorType(newWorker, builtin.StorageMinerActorCodeID)
@@ -3179,7 +3241,7 @@ func TestChangeWorkerAddress(t *testing.T) {
 	})
 
 	t.Run("fails when caller is not the owner", func(t *testing.T) {
-		rt, actor := setupFunc()
+		rt, actor := setupFunc(t)
 		actor.constructAndVerify(rt)
 		newWorker := tutil.NewIDAddr(t, 999)
 		rt.SetAddressActorType(newWorker, builtin.AccountActorCodeID)

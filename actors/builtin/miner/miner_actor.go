@@ -2027,8 +2027,6 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 
 		// To get the actual amount to be withdrawed
 		amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
-		builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
-		builtin.RequireState(rt, amountWithdrawn.LessThanEqual(availableBalance), "amount to withdraw %v < available %v", amountWithdrawn, availableBalance)
 		if info.Beneficiary != info.Owner {
 			remainingQuota := info.BeneficiaryTerm.Available(rt.CurrEpoch())
 			builtin.RequirePredicate(rt, remainingQuota.GreaterThan(big.Zero()), exitcode.ErrForbidden,
@@ -3150,21 +3148,19 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 		if rt.Caller() == info.Owner {
 			// This is a ChangeBeneficiary proposal when the caller is Owner
 			if newBeneficiary != info.Owner {
-				if params.NewExpiration <= rt.CurrEpoch() {
-					rt.Abortf(exitcode.ErrIllegalArgument, "new beneficial expiration (%d)  must bigger than current epoch (%d)", params.NewExpiration, rt.CurrEpoch())
-				}
-
+				// When beneficiary is not owner, just check quota in params,
+				// Expiration maybe an expiration value, but wouldn't cause problem, just the new beneficiary never get any benefit
 				if params.NewQuota.LessThanEqual(big.Zero()) {
 					rt.Abortf(exitcode.ErrIllegalArgument, "beneficial quota (%s) must bigger than zero", params.NewQuota)
 				}
 			} else {
 				// Expiration/quota must set to 0 while change beneficiary to owner
-				if params.NewExpiration != 0 {
-					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expiration (%d)  must be zero", params.NewExpiration)
-				}
-
 				if !params.NewQuota.NilOrZero() {
 					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial quota (%s) must be zero", params.NewQuota)
+				}
+
+				if params.NewExpiration != 0 {
+					rt.Abortf(exitcode.ErrIllegalArgument, "owner beneficial expiration (%d)  must be zero", params.NewExpiration)
 				}
 			}
 
