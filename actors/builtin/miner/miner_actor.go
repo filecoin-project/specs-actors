@@ -2027,6 +2027,7 @@ func (a Actor) WithdrawBalance(rt Runtime, params *WithdrawBalanceParams) *abi.T
 
 		// To get the actual amount to be withdrawed
 		amountWithdrawn = big.Min(availableBalance, params.AmountRequested)
+		builtin.RequireState(rt, amountWithdrawn.GreaterThanEqual(big.Zero()), "negative amount to withdraw: %v", amountWithdrawn)
 		if info.Beneficiary != info.Owner {
 			remainingQuota := info.BeneficiaryTerm.Available(rt.CurrEpoch())
 			builtin.RequirePredicate(rt, remainingQuota.GreaterThan(big.Zero()), exitcode.ErrForbidden,
