@@ -2961,11 +2961,6 @@ func TestChangeBeneficiary(t *testing.T) {
 
 		rt.SetEpoch(periodOffset)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			//expiration must less than current epoch while change beneficiary to address(not owner)
-			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiary, abi.NewTokenAmount(10), periodOffset - 10}, nil)
-		})
-
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			//quota must bigger than zero while change beneficiary to address(not owner)
 			actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{firstBeneficiary, abi.NewTokenAmount(0), periodOffset + 10}, nil)
 		})
