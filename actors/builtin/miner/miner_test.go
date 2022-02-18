@@ -2935,7 +2935,6 @@ func TestChangeBeneficiary(t *testing.T) {
 		require.EqualValues(t, quota, info.PendingBeneficiaryTerm.NewQuota)
 		require.EqualValues(t, firstBeneficiaryId, info.PendingBeneficiaryTerm.NewBeneficiary)
 
-		rt.SetEpoch(periodOffset + 10)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			//expiration in approval message must equal with proposal
 			actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{firstBeneficiaryId, quota, expiration + 1}, &firstBeneficiary)
