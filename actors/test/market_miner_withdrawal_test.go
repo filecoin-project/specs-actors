@@ -91,9 +91,11 @@ func TestMinerWithdraw(t *testing.T) {
 	})
 
 	t.Run("withdraw 0", func(t *testing.T) {
-		threeFIL := big.Mul(big.NewInt(3), vm.FIL)
-
-		assertAddCollateralAndWithdraw(t, ctx, v, big.Zero(), big.Zero(), threeFIL, mAddr, owner)
+		params := &miner.WithdrawBalanceParams{
+			AmountRequested: big.Zero(),
+		}
+		res := vm.RequireApplyMessage(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.WithdrawBalance, params, t.Name())
+		assert.Equal(t, exitcode.SysErrForbidden, res.Code)
 	})
 
 	t.Run("withdraw from non-owner address fails", func(t *testing.T) {
