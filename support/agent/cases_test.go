@@ -23,7 +23,7 @@ import (
 
 func TestCreate20Miners(t *testing.T) {
 	ctx := context.Background()
-	initialBalance := big.Mul(big.NewInt(1000), big.NewInt(1e18))
+	initialBalance := big.Mul(big.NewInt(10000), big.NewInt(1e18))
 	minerCount := 20
 
 	rnd := rand.New(rand.NewSource(42))

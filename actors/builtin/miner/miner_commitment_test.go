@@ -101,7 +101,7 @@ func TestCommitments(t *testing.T) {
 			assert.Equal(t, precommitParams.DealIDs, precommit.Info.DealIDs)
 			assert.Equal(t, precommitParams.Expiration, precommit.Info.Expiration)
 
-			pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
+			pwrEstimate := miner.QAPowerMax(actor.sectorSize)
 			expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
 			assert.Equal(t, expectedDeposit, precommit.PreCommitDeposit)
 
@@ -546,7 +546,7 @@ func TestPreCommitBatch(t *testing.T) {
 					DealWeight:         dealWeight,
 					VerifiedDealWeight: verifiedDealWeight,
 				}
-				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, sectors[i].Expiration-precommitEpoch, dealWeight, verifiedDealWeight)
+				pwrEstimate := miner.QAPowerMax(actor.sectorSize)
 				deposits[i] = miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
 
 			}
@@ -583,8 +583,7 @@ func TestPreCommitBatch(t *testing.T) {
 				assert.Equal(t, sectors[i].DealIDs, precommits[i].Info.DealIDs)
 				assert.Equal(t, sectors[i].Expiration, precommits[i].Info.Expiration)
 
-				pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommits[i].Info.Expiration-precommitEpoch,
-					conf.sectorWeights[i].DealWeight, conf.sectorWeights[i].VerifiedDealWeight)
+				pwrEstimate := miner.QAPowerMax(actor.sectorSize)
 				expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
 				assert.Equal(t, expectedDeposit, precommits[i].PreCommitDeposit)
 			}
@@ -680,8 +679,7 @@ func TestProveCommit(t *testing.T) {
 		assert.Equal(t, dealWeight, precommit.DealWeight)
 		assert.Equal(t, verifiedDealWeight, precommit.VerifiedDealWeight)
 
-		pwrEstimate := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-precommitEpoch, precommit.DealWeight, precommit.VerifiedDealWeight)
-		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, pwrEstimate)
+		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, miner.QAPowerMax(actor.sectorSize))
 		assert.Equal(t, expectedDeposit, precommit.PreCommitDeposit)
 
 		// expect total precommit deposit to equal our new deposit
@@ -783,14 +781,10 @@ func TestProveCommit(t *testing.T) {
 		dealLifespan := sectorExpiration - proveCommitEpoch
 		verifiedDealWeight := big.Mul(big.NewIntUnsigned(dealSpace), big.NewInt(int64(dealLifespan)))
 
-		// Power estimates made a pre-commit time
-		noDealPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-precommitEpoch, big.Zero(), big.Zero())
-		fullDealPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, sectorExpiration-precommitEpoch, dealWeight, verifiedDealWeight)
-
 		deposits := []big.Int{
-			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, noDealPowerEstimate),
-			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, fullDealPowerEstimate),
-			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, fullDealPowerEstimate),
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, miner.QAPowerMax(actor.sectorSize)),
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, miner.QAPowerMax(actor.sectorSize)),
+			miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, miner.QAPowerMax(actor.sectorSize)),
 		}
 		conf := preCommitBatchConf{
 			sectorWeights: []market.SectorWeights{
@@ -1422,7 +1416,7 @@ func TestBatchMethodNetworkFees(t *testing.T) {
 
 		// Give miner enough balance to pay both and pcd
 		balance := big.Mul(big.NewInt(2), netFee)
-		oneSectorPowerEstimate := miner.QAPowerForWeight(actor.sectorSize, expiration-precommitEpoch, big.Zero(), big.Zero())
+		oneSectorPowerEstimate := miner.QAPowerMax(actor.sectorSize)
 		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, big.Mul(big.NewInt(4), oneSectorPowerEstimate))
 		balance = big.Add(balance, expectedDeposit)
 		rt.SetBalance(balance)

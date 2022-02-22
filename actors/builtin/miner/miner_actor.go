@@ -791,11 +791,8 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 				rt.Abortf(exitcode.ErrIllegalArgument, "deals too large to fit in sector %d > %d", dealWeight.DealSpace, info.SectorSize)
 			}
 
-			// Estimate the sector weight using the current epoch as an estimate for activation,
-			// and compute the pre-commit deposit using that weight.
-			// The sector's power will be recalculated when it's proven.
-			duration := precommit.Expiration - currEpoch
-			sectorWeight := QAPowerForWeight(info.SectorSize, duration, dealWeight.DealWeight, dealWeight.VerifiedDealWeight)
+			// For PreCommitDeposit we estimate maximum possible power of the sector
+			sectorWeight := QAPowerMax(info.SectorSize)
 			depositReq := PreCommitDepositForPower(rewardStats.ThisEpochRewardSmoothed, pwrTotal.QualityAdjPowerSmoothed, sectorWeight)
 
 			// Build on-chain record.

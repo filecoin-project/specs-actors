@@ -249,6 +249,13 @@ func QualityForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, 
 	return big.Div(big.Div(scaledUpWeightedSumSpaceTime, sectorSpaceTime), builtin.QualityBaseMultiplier)
 }
 
+func QAPowerMax(size abi.SectorSize) abi.StoragePower {
+	// return (size * VerifiedDealWeightMultiplier) / QualityBaseMultiplier
+	// order of operation to preserve maximum precision
+	// for efficiency we could change definition of VerifiedDealWeightMultiplier to be more efficient
+	return big.Div(big.Mul(big.NewIntUnsigned(uint64(size)), builtin.VerifiedDealWeightMultiplier), builtin.QualityBaseMultiplier)
+}
+
 // The power for a sector size, committed duration, and weight.
 func QAPowerForWeight(size abi.SectorSize, duration abi.ChainEpoch, dealWeight, verifiedWeight abi.DealWeight) abi.StoragePower {
 	quality := QualityForWeight(size, duration, dealWeight, verifiedWeight)

@@ -282,7 +282,7 @@ func TestMeasurePreCommitGas(t *testing.T) {
 	require.NoError(t, err)
 	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(100_000), vm.FIL))
 
 	// Advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -327,9 +327,9 @@ func TestMeasurePoRepGas(t *testing.T) {
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
 
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(100_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -620,14 +620,14 @@ func TestAggregateSizeLimits(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
 	v := vm.NewVMWithSingletons(ctx, t, blkStore)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), big.NewInt(1e18)), 93837778)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
 
 	// create miner
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(100_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
@@ -780,9 +780,9 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
 	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
 	require.NoError(t, err)
-	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), builtin.TokenPrecision), 93837778)
 	owner, worker := addrs[0], addrs[0]
-	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(100_000), vm.FIL))
 
 	// advance vm so we can have seal randomness epoch in the past
 	v, err = v.WithEpoch(abi.ChainEpoch(200))
