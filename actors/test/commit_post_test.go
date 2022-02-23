@@ -860,6 +860,39 @@ func TestMeasureAggregatePorepGas(t *testing.T) {
 	assert.True(t, networkStats.TotalPledgeCollateral.GreaterThan(big.Zero()))
 }
 
+func TestMultiaddrChange(t *testing.T) {
+	ctx := context.Background()
+	v := vm.NewVMWithSingletons(ctx, t, ipld.NewBlockStoreInMemory())
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	require.NoError(t, err)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(10_000), builtin.TokenPrecision), 93837778)
+	owner, worker := addrs[0], addrs[0]
+	params := power.CreateMinerParams{
+		Owner:               owner,
+		Worker:              worker,
+		WindowPoStProofType: wPoStProof,
+		Peer:                abi.PeerID("not really a peer id"),
+		Multiaddrs:          []abi.Multiaddrs{abi.Multiaddrs("not really a multi addr"), abi.Multiaddrs("also not really a multi addr")},
+	}
+	ret := vm.ApplyOk(t, v, worker, builtin.StoragePowerActorAddr, big.Zero(), builtin.MethodsPower.CreateMiner, &params)
+	mAddrs, ok := ret.(*power.CreateMinerReturn)
+	require.True(t, ok)
+
+	multaddr1 := []byte("new")
+	multaddr2 := []byte("also new")
+	params2 := miner.ChangeMultiaddrsParams{
+		NewMultiaddrs: []abi.Multiaddrs{multaddr1, multaddr2},
+	}
+	vm.ApplyOk(t, v, worker, mAddrs.IDAddress, big.Zero(), builtin.MethodsMiner.ChangeMultiaddrs, &params2)
+	var mState miner.State
+	require.NoError(t, v.GetState(mAddrs.IDAddress, &mState))
+	info, err := mState.GetInfo(v.Store())
+	require.NoError(t, err)
+	assert.Equal(t, info.Multiaddrs, []abi.Multiaddrs{multaddr1, multaddr2})
+}
+
 // Proves pre-committed sectors as batches of aggSize.
 func proveCommitSectors(t *testing.T, v *vm.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, aggSize int) {
 	for len(precommits) > 0 {
