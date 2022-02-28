@@ -2,7 +2,6 @@ package adt
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/exitcode"
@@ -17,7 +16,6 @@ type Store = adt2.Store
 
 // Adapts a vanilla IPLD store as an ADT store.
 func WrapStore(ctx context.Context, store ipldcbor.IpldStore) Store {
-	fmt.Printf("wrap store\n")
 	return &wstore{
 		ctx:       ctx,
 		IpldStore: store,
