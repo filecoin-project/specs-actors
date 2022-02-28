@@ -87,6 +87,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			acc.WithPrefix("power: ").AddAll(msgs)
 			powerSummary = summary
 		case builtin.StorageMinerActorCodeID:
+			fmt.Printf("checking storage miner actor: %s\n", key)
 			var st miner.State
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
 				return err
