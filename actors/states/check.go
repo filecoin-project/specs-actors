@@ -42,7 +42,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 
 	i := 0
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
-		if i%10000 == 0 {
+		if i%100 == 0 {
 			fmt.Printf("%d actors checked\n", i)
 		}
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
