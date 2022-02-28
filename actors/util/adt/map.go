@@ -3,6 +3,7 @@ package adt
 import (
 	"bytes"
 	"crypto/sha256"
+	"fmt"
 
 	hamt "github.com/filecoin-project/go-hamt-ipld/v3"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -33,6 +34,7 @@ type Map struct {
 // We could drop this parameter if https://github.com/filecoin-project/go-hamt-ipld/issues/79 is implemented.
 func AsMap(s Store, root cid.Cid, bitwidth int) (*Map, error) {
 	options := append(DefaultHamtOptions, hamt.UseTreeBitWidth(bitwidth))
+	fmt.Printf("loading the HAMT node\n")
 	nd, err := hamt.LoadNode(s.Context(), s, root, options...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load hamt node: %w", err)

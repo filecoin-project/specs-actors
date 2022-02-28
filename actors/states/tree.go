@@ -1,6 +1,8 @@
 package states
 
 import (
+	"fmt"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	states0 "github.com/filecoin-project/specs-actors/actors/states"
@@ -41,6 +43,7 @@ func NewTree(store adt.Store) (*Tree, error) {
 
 // Loads a tree from a root CID and store.
 func LoadTree(s adt.Store, r cid.Cid) (*Tree, error) {
+	fmt.Printf("loading the tree\n")
 	m, err := adt.AsMap(s, r, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return nil, err
