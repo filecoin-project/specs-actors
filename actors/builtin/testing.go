@@ -37,6 +37,7 @@ func (ma *MessageAccumulator) Messages() []string {
 
 // Adds messages to the accumulator.
 func (ma *MessageAccumulator) Add(msg string) {
+	fmt.Printf("adding error: %s\n", msg)
 	ma.initialize()
 	*ma.msgs = append(*ma.msgs, ma.prefix+msg)
 }

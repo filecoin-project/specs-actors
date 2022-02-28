@@ -2,6 +2,7 @@ package states
 
 import (
 	"bytes"
+	"fmt"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -39,7 +40,11 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 	var multisigSummaries []*multisig.StateSummary
 	minerSummaries := make(map[addr.Address]*miner.StateSummary)
 
+	i := 0
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
+		if i%10000 == 0 {
+			fmt.Printf("%d actors checked\n", i)
+		}
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
 		if key.Protocol() != addr.ID {
 			acc.Addf("unexpected address protocol in state tree root: %v", key)
