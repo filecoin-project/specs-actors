@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
@@ -23,15 +24,15 @@ import (
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
-	. "github.com/filecoin-project/specs-actors/v7/actors/util"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime/proof"
+	. "github.com/filecoin-project/specs-actors/v8/actors/util"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/smoothing"
 )
 
 type Runtime = runtime.Runtime
@@ -2057,21 +2058,9 @@ func (a Actor) RepayDebt(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	return nil
 }
 
-// New in v7
-type ReplicaUpdate struct {
-	SectorID           abi.SectorNumber
-	Deadline           uint64
-	Partition          uint64
-	NewSealedSectorCID cid.Cid `checked:"true"`
-	Deals              []abi.DealID
-	UpdateProofType    abi.RegisteredUpdateProof
-	ReplicaProof       []byte
-}
+type ReplicaUpdate = miner7.ReplicaUpdate
 
-// New in v7
-type ProveReplicaUpdatesParams struct {
-	Updates []ReplicaUpdate
-}
+type ProveReplicaUpdatesParams = miner7.ProveReplicaUpdatesParams
 
 func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams) *bitfield.BitField {
 	// Validate inputs

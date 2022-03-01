@@ -1,6 +1,7 @@
-package vm6Util
+package vm7Util
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"testing"
@@ -14,20 +15,20 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	xc "github.com/filecoin-project/go-state-types/exitcode"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin"
-	initactor "github.com/filecoin-project/specs-actors/v6/actors/builtin/init"
-	market6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/miner"
-	power6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v6/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v6/actors/util/adt"
-	tutil "github.com/filecoin-project/specs-actors/v6/support/testing"
-	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
+	initactor "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
+	market7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
+	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 	"github.com/stretchr/testify/require"
 )
 
-func MinerPower(t *testing.T, vm *vm6.VM, store adt.Store, minerIdAddr address.Address) miner.PowerPair {
-	var state power6.State
+func MinerPower(t *testing.T, vm *vm7.VM, store adt.Store, minerIdAddr address.Address) miner.PowerPair {
+	var state power7.State
 	err := vm.GetState(builtin.StoragePowerActorAddr, &state)
 	require.NoError(t, err)
 
@@ -38,7 +39,7 @@ func MinerPower(t *testing.T, vm *vm6.VM, store adt.Store, minerIdAddr address.A
 	return miner.NewPowerPair(claim.RawBytePower, claim.QualityAdjPower)
 }
 
-func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAddress, workerAddress address.Address) {
+func SubmitPoStForDeadline(t *testing.T, v *vm7.VM, ctxStore adt.Store, minerAddress, workerAddress address.Address) {
 	dlInfo := MinerDLInfo(t, v, minerAddress)
 	var minerState miner.State
 	err := v.GetState(minerAddress, &minerState)
@@ -71,13 +72,13 @@ func SubmitPoStForDeadline(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerAdd
 			PoStProof: abi.RegisteredPoStProof_StackedDrgWindow32GiBV1,
 		}},
 		ChainCommitEpoch: dlInfo.Challenge,
-		ChainCommitRand:  []byte(vm6.RandString),
+		ChainCommitRand:  []byte(vm7.RandString),
 	}
 
-	vm6.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
+	vm7.ApplyOk(t, v, workerAddress, minerAddress, big.Zero(), builtin.MethodsMiner.SubmitWindowedPoSt, &submitParams)
 }
 
-func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch, dealIDs []abi.DealID) []*miner.SectorPreCommitOnChainInfo {
+func PreCommitSectors(t *testing.T, v *vm7.VM, count, batchSize int, worker, mAddr address.Address, sealProof abi.RegisteredSealProof, sectorNumberBase abi.SectorNumber, expectCronEnrollment bool, expiration abi.ChainEpoch, dealIDs []abi.DealID) []*miner.SectorPreCommitOnChainInfo {
 	sectorIndex := 0
 	for sectorIndex < count {
 		// Prepare message.
@@ -108,11 +109,11 @@ func PreCommitSectors(t *testing.T, v *vm6.VM, count, batchSize int, worker, mAd
 			params.Sectors = params.Sectors[:sectorIndex%batchSize]
 		}
 
-		vm6.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
-		vm6.ExpectInvocation{
+		vm7.ApplyOk(t, v, worker, mAddr, big.Zero(), builtin.MethodsMiner.PreCommitSectorBatch, &params)
+		vm7.ExpectInvocation{
 			To:     mAddr,
 			Method: builtin.MethodsMiner.PreCommitSectorBatch,
-			Params: vm6.ExpectObject(&params),
+			Params: vm7.ExpectObject(&params),
 		}.Matches(t, v.LastInvocation())
 	}
 
@@ -187,7 +188,7 @@ func PrecommitSectorNumbers(precommits []*miner.SectorPreCommitOnChainInfo) bitf
 }
 
 // Proves pre-committed sectors as batches of aggSize.
-func ProveCommitSectors(t *testing.T, v *vm6.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, includesDeals bool) {
+func ProveCommitSectors(t *testing.T, v *vm7.VM, worker, actor address.Address, precommits []*miner.SectorPreCommitOnChainInfo, includesDeals bool) {
 	for len(precommits) > 0 {
 		batchSize := min(819, len(precommits)) // 819 is max aggregation size
 		toProve := precommits[:batchSize]
@@ -197,11 +198,11 @@ func ProveCommitSectors(t *testing.T, v *vm6.VM, worker, actor address.Address, 
 		proveCommitAggregateParams := miner.ProveCommitAggregateParams{
 			SectorNumbers: sectorNosBf,
 		}
-		vm6.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
-		vm6.ExpectInvocation{
+		vm7.ApplyOk(t, v, worker, actor, big.Zero(), builtin.MethodsMiner.ProveCommitAggregate, &proveCommitAggregateParams)
+		vm7.ExpectInvocation{
 			To:     actor,
 			Method: builtin.MethodsMiner.ProveCommitAggregate,
-			Params: vm6.ExpectObject(&proveCommitAggregateParams),
+			Params: vm7.ExpectObject(&proveCommitAggregateParams),
 		}.Matches(t, v.LastInvocation())
 	}
 }
@@ -213,7 +214,7 @@ func min(a, b int) int {
 	return b
 }
 
-func MinerDLInfo(t *testing.T, v *vm6.VM, minerIDAddr address.Address) *dline.Info {
+func MinerDLInfo(t *testing.T, v *vm7.VM, minerIDAddr address.Address) *dline.Info {
 	var minerState miner.State
 	err := v.GetState(minerIDAddr, &minerState)
 	require.NoError(t, err)
@@ -222,8 +223,8 @@ func MinerDLInfo(t *testing.T, v *vm6.VM, minerIDAddr address.Address) *dline.In
 }
 
 // Advances to the next epoch, running cron.
-func AdvanceOneEpochWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
-	vm6.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+func AdvanceOneEpochWithCron(t *testing.T, v *vm7.VM) *vm7.VM {
+	vm7.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	v, err := v.WithEpoch(v.GetEpoch() + 1)
 	require.NoError(t, err)
@@ -232,21 +233,21 @@ func AdvanceOneEpochWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
 
 // Advances by deadline until e is contained within the deadline period represented by the returned deadline info.
 // The VM returned will be set to the last deadline close, not at e.
-func AdvanceToEpochWithCron(t *testing.T, v *vm6.VM, e abi.ChainEpoch) *vm6.VM {
+func AdvanceToEpochWithCron(t *testing.T, v *vm7.VM, e abi.ChainEpoch) *vm7.VM {
 	for v.GetEpoch() < e {
 		v = AdvanceOneEpochWithCron(t, v)
 	}
 	return v
 }
 
-func AdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM) *vm6.VM {
+func AdvanceOneDeadlineWithCron(t *testing.T, v *vm7.VM) *vm7.VM {
 	for i := abi.ChainEpoch(0); i < miner.WPoStChallengeWindow; i++ {
 		v = AdvanceOneEpochWithCron(t, v)
 	}
 	return v
 }
 
-func PrintMinerInfos(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) {
+func PrintMinerInfos(t *testing.T, v *vm7.VM, ctxStore adt.Store, minerInfos []MinerInfo) {
 	var initState initactor.State
 	err := v.GetState(builtin.InitActorAddr, &initState)
 	require.NoError(t, err)
@@ -257,14 +258,14 @@ func PrintMinerInfos(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []M
 	}
 }
 
-func ProveThenAdvanceOneDeadlineWithCron(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm6.VM {
+func ProveThenAdvanceOneDeadlineWithCron(t *testing.T, v *vm7.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm7.VM {
 	for _, minerInfo := range minerInfos {
 		SubmitPoStForDeadline(t, v, ctxStore, minerInfo.MinerAddress, minerInfo.WorkerAddress)
 	}
 	return AdvanceOneDeadlineWithCron(t, v)
 }
 
-func AdvanceOneDayWhileProving(t *testing.T, v *vm6.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm6.VM {
+func AdvanceOneDayWhileProving(t *testing.T, v *vm7.VM, ctxStore adt.Store, minerInfos []MinerInfo) *vm7.VM {
 	for i := uint64(0); i < miner.WPoStPeriodDeadlines; i++ {
 		v = ProveThenAdvanceOneDeadlineWithCron(t, v, ctxStore, minerInfos)
 	}
@@ -276,12 +277,12 @@ type MinerInfo struct {
 	MinerAddress  address.Address
 }
 
-func CreateDeals(t *testing.T, numberOfDeals int, v *vm6.VM, clientAddress address.Address, workerAddress address.Address, minerAddress address.Address, sealProof abi.RegisteredSealProof) []abi.DealID {
+func CreateDeals(t *testing.T, numberOfDeals int, v *vm7.VM, clientAddress address.Address, workerAddress address.Address, minerAddress address.Address, sealProof abi.RegisteredSealProof) []abi.DealID {
 	// add market collateral for client and miner
-	collateral := big.Mul(big.NewInt(int64(3*numberOfDeals)), vm6.FIL)
-	vm6.ApplyOk(t, v, clientAddress, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &clientAddress)
-	collateral = big.Mul(big.NewInt(int64(64*numberOfDeals)), vm6.FIL)
-	vm6.ApplyOk(t, v, workerAddress, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddress)
+	collateral := big.Mul(big.NewInt(int64(3*numberOfDeals)), vm7.FIL)
+	vm7.ApplyOk(t, v, clientAddress, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &clientAddress)
+	collateral = big.Mul(big.NewInt(int64(64*numberOfDeals)), vm7.FIL)
+	vm7.ApplyOk(t, v, workerAddress, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddress)
 
 	var dealIDs []abi.DealID
 	for i := 0; i < numberOfDeals; i++ {
@@ -293,11 +294,11 @@ func CreateDeals(t *testing.T, numberOfDeals int, v *vm6.VM, clientAddress addre
 	return dealIDs
 }
 
-func publishDeal(t *testing.T, v *vm6.VM, provider, dealClient, minerID address.Address, dealLabel string,
+func publishDeal(t *testing.T, v *vm7.VM, provider, dealClient, minerID address.Address, dealLabel string,
 	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
-) *market6.PublishStorageDealsReturn {
-	deal := market6.DealProposal{
-		PieceCID:             tutil.MakeCID(dealLabel, &market6.PieceCIDPrefix),
+) *market7.PublishStorageDealsReturn {
+	deal := market7.DealProposal{
+		PieceCID:             tutil.MakeCID(dealLabel, &market7.PieceCIDPrefix),
 		PieceSize:            pieceSize,
 		VerifiedDeal:         verifiedDeal,
 		Client:               dealClient,
@@ -306,40 +307,44 @@ func publishDeal(t *testing.T, v *vm6.VM, provider, dealClient, minerID address.
 		StartEpoch:           dealStart,
 		EndEpoch:             dealStart + dealLifetime,
 		StoragePricePerEpoch: abi.NewTokenAmount(1 << 20),
-		ProviderCollateral:   big.Mul(big.NewInt(2), vm6.FIL),
-		ClientCollateral:     big.Mul(big.NewInt(1), vm6.FIL),
+		ProviderCollateral:   big.Mul(big.NewInt(2), vm7.FIL),
+		ClientCollateral:     big.Mul(big.NewInt(1), vm7.FIL),
 	}
 
-	publishDealParams := market6.PublishStorageDealsParams{
-		Deals: []market6.ClientDealProposal{{
+	paramBuf := new(bytes.Buffer)
+	require.NoError(t, deal.MarshalCBOR(paramBuf))
+
+	publishDealParams := market7.PublishStorageDealsParams{
+		Deals: []market7.ClientDealProposal{{
 			Proposal: deal,
 			ClientSignature: crypto.Signature{
 				Type: crypto.SigTypeBLS,
+				Data: paramBuf.Bytes(),
 			},
 		}},
 	}
-	result := vm6.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
+	result := vm7.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
 	require.Equal(t, exitcode.Ok, result.Code)
 
-	expectedPublishSubinvocations := []vm6.ExpectInvocation{
-		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm6.ExpectInvocation{}},
-		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm6.ExpectInvocation{}},
-		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm6.ExpectInvocation{}},
+	expectedPublishSubinvocations := []vm7.ExpectInvocation{
+		{To: minerID, Method: builtin.MethodsMiner.ControlAddresses, SubInvocations: []vm7.ExpectInvocation{}},
+		{To: builtin.RewardActorAddr, Method: builtin.MethodsReward.ThisEpochReward, SubInvocations: []vm7.ExpectInvocation{}},
+		{To: builtin.StoragePowerActorAddr, Method: builtin.MethodsPower.CurrentTotalPower, SubInvocations: []vm7.ExpectInvocation{}},
 	}
 
 	if verifiedDeal {
-		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm6.ExpectInvocation{
+		expectedPublishSubinvocations = append(expectedPublishSubinvocations, vm7.ExpectInvocation{
 			To:             builtin.VerifiedRegistryActorAddr,
 			Method:         builtin.MethodsVerifiedRegistry.UseBytes,
-			SubInvocations: []vm6.ExpectInvocation{},
+			SubInvocations: []vm7.ExpectInvocation{},
 		})
 	}
 
-	vm6.ExpectInvocation{
+	vm7.ExpectInvocation{
 		To:             builtin.StorageMarketActorAddr,
 		Method:         builtin.MethodsMarket.PublishStorageDeals,
 		SubInvocations: expectedPublishSubinvocations,
 	}.Matches(t, v.LastInvocation())
 
-	return result.Ret.(*market6.PublishStorageDealsReturn)
+	return result.Ret.(*market7.PublishStorageDealsReturn)
 }

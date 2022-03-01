@@ -1,10 +1,9 @@
 package proof
 
 import (
-	"github.com/filecoin-project/go-state-types/abi"
 	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
-	"github.com/ipfs/go-cid"
+	proof7 "github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 )
 
 ///
@@ -36,13 +35,7 @@ type AggregateSealVerifyProofAndInfos = proof5.AggregateSealVerifyProofAndInfos
 
 // Information needed to verify a replica update
 
-type ReplicaUpdateInfo struct {
-	UpdateProofType      abi.RegisteredUpdateProof
-	OldSealedSectorCID   cid.Cid
-	NewSealedSectorCID   cid.Cid
-	NewUnsealedSectorCID cid.Cid
-	Proof                []byte
-}
+type ReplicaUpdateInfo = proof7.ReplicaUpdateInfo
 
 ///
 /// PoSting
@@ -56,12 +49,7 @@ type ReplicaUpdateInfo struct {
 // }
 type SectorInfo = proof0.SectorInfo
 
-type ExtendedSectorInfo struct {
-	SealProof    abi.RegisteredSealProof // RegisteredProof used when sealing - needs to be mapped to PoSt registered proof when used to verify a PoSt
-	SectorNumber abi.SectorNumber
-	SectorKey    *cid.Cid
-	SealedCID    cid.Cid // CommR
-}
+type ExtendedSectorInfo = proof7.ExtendedSectorInfo
 
 //type PoStProof struct {
 //	PoStProof  abi.RegisteredPoStProof

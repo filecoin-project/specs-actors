@@ -10,8 +10,8 @@ import (
 	reward6 "github.com/filecoin-project/specs-actors/v6/actors/builtin/reward"
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime"
 )
 
 // PenaltyMultiplier is the factor miner penaltys are scaled up by

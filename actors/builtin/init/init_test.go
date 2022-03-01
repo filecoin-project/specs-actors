@@ -11,11 +11,11 @@ import (
 	cid "github.com/ipfs/go-cid"
 	assert "github.com/stretchr/testify/assert"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	init_ "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	init_ "github.com/filecoin-project/specs-actors/v8/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
 )
 
 func TestExports(t *testing.T) {
