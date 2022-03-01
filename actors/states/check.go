@@ -42,7 +42,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 
 	i := 0
 	if err := tree.ForEach(func(key addr.Address, actor *Actor) error {
-		if i%100 == 0 {
+		if i%10000 == 0 {
 			fmt.Printf("%d actors checked\n", i)
 		}
 		acc := acc.WithPrefix("%v ", key) // Intentional shadow
@@ -87,7 +87,6 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 			acc.WithPrefix("power: ").AddAll(msgs)
 			powerSummary = summary
 		case builtin.StorageMinerActorCodeID:
-			fmt.Printf("checking storage miner actor: %s\n", key)
 			var st miner.State
 			if err := tree.Store.Get(tree.Store.Context(), actor.Head, &st); err != nil {
 				return err
@@ -138,6 +137,7 @@ func CheckStateInvariants(tree *Tree, expectedBalanceTotal abi.TokenAmount, prio
 		default:
 			return xerrors.Errorf("unexpected actor code CID %v for address %v", actor.Code, key)
 		}
+		i++
 		return nil
 	}); err != nil {
 		return nil, err
