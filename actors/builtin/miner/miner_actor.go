@@ -2293,7 +2293,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 					powRet.QualityAdjPowerSmoothed, rt.TotalFilCircSupply())
 
 				rt.Log(rtt.ERROR, "Updating sector %d: %s => %s", updateWithDetails.update.SectorID, newSectorInfo.SectorKeyCID, newSectorInfo.SealedCID)
-				rt.Log(rtt.ERROR, "Updating sector %d: power: %s, oldIP: %s, newIP: %s\n", pwr, updateWithDetails.sectorInfo.InitialPledge, initialPledgeAtUpgrade)
+				rt.Log(rtt.ERROR, "Updating sector %d: power: %s, oldIP: %s, newIP: %s\n", updateWithDetails.update.SectorID, pwr, updateWithDetails.sectorInfo.InitialPledge, initialPledgeAtUpgrade)
 				if initialPledgeAtUpgrade.GreaterThan(updateWithDetails.sectorInfo.InitialPledge) {
 					deficit := big.Sub(initialPledgeAtUpgrade, updateWithDetails.sectorInfo.InitialPledge)
 
