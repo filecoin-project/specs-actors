@@ -578,6 +578,96 @@ func TestWrongPartitionIndexFailure(t *testing.T) {
 	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
 }
 
+// This test demonstrates a bug introduced in network v15. When this bug is fixed
+// this test should be modified so that the final ProveReplicaUpdate call is asserted
+// to pass instead of fail with `exitcode.ErrIllegalState`
+func TestProveReplicaUpdateMultiDline(t *testing.T) {
+	ctx := context.Background()
+	blkStore := ipld.NewBlockStoreInMemory()
+	v := vm.NewVMWithSingletons(ctx, t, blkStore)
+	addrs := vm.CreateAccounts(ctx, t, v, 1, big.Mul(big.NewInt(100_000), big.NewInt(1e18)), 93837778)
+	/* create miner */
+	sealProof := abi.RegisteredSealProof_StackedDrg32GiBV1_1
+	_, err := sealProof.SectorSize()
+	require.NoError(t, err)
+
+	wPoStProof, err := sealProof.RegisteredWindowPoStProof()
+	require.NoError(t, err)
+	owner, worker := addrs[0], addrs[0]
+	minerAddrs := createMiner(t, v, owner, worker, wPoStProof, big.Mul(big.NewInt(10_000), vm.FIL))
+
+	v, err = v.WithEpoch(abi.ChainEpoch(1440)) // something offset far away from deadline 0 and 1
+	require.NoError(t, err)
+
+	/* Commit enough sectors to pack two partitions */
+	moreThanOnePartition := 2400
+	batchSize := 100
+	firstSectorNumberP1 := abi.SectorNumber(0)
+	firstSectorNumberP2 := abi.SectorNumber(builtin.PoStProofPolicies[abi.RegisteredPoStProof_StackedDrgWindow32GiBV1].WindowPoStPartitionSectors)
+
+	newPrecommits := preCommitSectors(t, v, moreThanOnePartition, batchSize, worker, minerAddrs.IDAddress, sealProof, abi.SectorNumber(0), true, v.GetEpoch()+miner.MaxSectorExpirationExtension)
+	var precommits []*miner.SectorPreCommitOnChainInfo
+	precommits = append(precommits, newPrecommits...)
+	toProve := precommits
+
+	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
+	proveCommitSectors(t, v, worker, minerAddrs.IDAddress, toProve, batchSize)
+
+	/* This is a mess, but it just ensures activation of both partitions by posting, cronning and checking */
+
+	// advance to proving period and submit post for first partition
+	dlInfo, pIdx, v := vm.AdvanceTillProvingDeadline(t, v, minerAddrs.IDAddress, firstSectorNumberP1)
+
+	// first partition shouldn't be active until PoSt
+	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, firstSectorNumberP1))
+	vm.SubmitPoSt(t, v, minerAddrs.IDAddress, worker, dlInfo, pIdx)
+
+	// move into the next deadline so that the created sector is mutable
+	v, currDlInfo := vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStChallengeWindow)
+	assert.Equal(t, uint64(1), currDlInfo.Index)
+	v = vm.AdvanceOneEpochWithCron(t, v)
+
+	// hooray, first partition is now active
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, firstSectorNumberP1))
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, firstSectorNumberP1+1))
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, firstSectorNumberP1+2))
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, dlInfo.Index, pIdx, firstSectorNumberP1+2300))
+	// second partition shouldn't be active until PoSt
+	require.False(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, currDlInfo.Index, 0, firstSectorNumberP2))
+	vm.SubmitPoSt(t, v, minerAddrs.IDAddress, worker, currDlInfo, 0)
+	// move into the next deadline so that the created sector is mutable
+	v, _ = vm.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, v.GetEpoch()+miner.WPoStChallengeWindow)
+	v = vm.AdvanceOneEpochWithCron(t, v)
+	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, currDlInfo.Index, 0, firstSectorNumberP2))
+
+	/* Replica Update across two deadlines */
+	dealIDs := createDeals(t, 2, v, worker, worker, minerAddrs.IDAddress, sealProof)
+	replicaUpdate1 := miner.ReplicaUpdate{
+		SectorID:           firstSectorNumberP1,
+		Deadline:           0,
+		Partition:          0,
+		NewSealedSectorCID: tutil.MakeCID("replica1", &miner.SealedCIDPrefix),
+		Deals:              dealIDs[0:1],
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	replicaUpdate2 := miner.ReplicaUpdate{
+		SectorID:           firstSectorNumberP2,
+		Deadline:           1,
+		Partition:          0,
+		NewSealedSectorCID: tutil.MakeCID("replica2", &miner.SealedCIDPrefix),
+		Deals:              dealIDs[1:],
+		UpdateProofType:    abi.RegisteredUpdateProof_StackedDrg32GiBV1,
+	}
+
+	// When this bug is fixed this should become vm.ApplyOk
+	vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+		builtin.MethodsMiner.ProveReplicaUpdates,
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate1, replicaUpdate2}},
+		exitcode.ErrIllegalState)
+}
+
 func TestDealIncludedInMultipleSectors(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
