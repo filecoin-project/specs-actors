@@ -1367,7 +1367,7 @@ func (t *PowerPair) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
-var lengthBufSectorPreCommitOnChainInfo = []byte{133}
+var lengthBufSectorPreCommitOnChainInfo = []byte{131}
 
 func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1400,16 +1400,6 @@ func (t *SectorPreCommitOnChainInfo) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	}
-
-	// t.DealWeight (big.Int) (struct)
-	if err := t.DealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
-
-	// t.VerifiedDealWeight (big.Int) (struct)
-	if err := t.VerifiedDealWeight.MarshalCBOR(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1427,7 +1417,7 @@ func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 5 {
+	if extra != 3 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1474,28 +1464,10 @@ func (t *SectorPreCommitOnChainInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.PreCommitEpoch = abi.ChainEpoch(extraI)
 	}
-	// t.DealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.DealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.DealWeight: %w", err)
-		}
-
-	}
-	// t.VerifiedDealWeight (big.Int) (struct)
-
-	{
-
-		if err := t.VerifiedDealWeight.UnmarshalCBOR(br); err != nil {
-			return xerrors.Errorf("unmarshaling t.VerifiedDealWeight: %w", err)
-		}
-
-	}
 	return nil
 }
 
-var lengthBufSectorPreCommitInfo = []byte{138}
+var lengthBufSectorPreCommitInfo = []byte{135}
 
 func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 	if t == nil {
@@ -1567,27 +1539,16 @@ func (t *SectorPreCommitInfo) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.ReplaceCapacity (bool) (bool)
-	if err := cbg.WriteBool(w, t.ReplaceCapacity); err != nil {
-		return err
-	}
+	// t.UnsealedCID (cid.Cid) (struct)
 
-	// t.ReplaceSectorDeadline (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorDeadline)); err != nil {
-		return err
-	}
-
-	// t.ReplaceSectorPartition (uint64) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorPartition)); err != nil {
-		return err
-	}
-
-	// t.ReplaceSectorNumber (abi.SectorNumber) (uint64)
-
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.ReplaceSectorNumber)); err != nil {
-		return err
+	if t.UnsealedCID == nil {
+		if _, err := w.Write(cbg.CborNull); err != nil {
+			return err
+		}
+	} else {
+		if err := cbg.WriteCidBuf(scratch, w, *t.UnsealedCID); err != nil {
+			return xerrors.Errorf("failed to write cid field t.UnsealedCID: %w", err)
+		}
 	}
 
 	return nil
@@ -1607,7 +1568,7 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
-	if extra != 10 {
+	if extra != 7 {
 		return fmt.Errorf("cbor input had wrong number of fields")
 	}
 
@@ -1745,63 +1706,26 @@ func (t *SectorPreCommitInfo) UnmarshalCBOR(r io.Reader) error {
 
 		t.Expiration = abi.ChainEpoch(extraI)
 	}
-	// t.ReplaceCapacity (bool) (bool)
-
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-	if err != nil {
-		return err
-	}
-	if maj != cbg.MajOther {
-		return fmt.Errorf("booleans must be major type 7")
-	}
-	switch extra {
-	case 20:
-		t.ReplaceCapacity = false
-	case 21:
-		t.ReplaceCapacity = true
-	default:
-		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
-	}
-	// t.ReplaceSectorDeadline (uint64) (uint64)
+	// t.UnsealedCID (cid.Cid) (struct)
 
 	{
 
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		b, err := br.ReadByte()
 		if err != nil {
 			return err
 		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+
+			c, err := cbg.ReadCid(br)
+			if err != nil {
+				return xerrors.Errorf("failed to read cid field t.UnsealedCID: %w", err)
+			}
+
+			t.UnsealedCID = &c
 		}
-		t.ReplaceSectorDeadline = uint64(extra)
-
-	}
-	// t.ReplaceSectorPartition (uint64) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ReplaceSectorPartition = uint64(extra)
-
-	}
-	// t.ReplaceSectorNumber (abi.SectorNumber) (uint64)
-
-	{
-
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
-		if err != nil {
-			return err
-		}
-		if maj != cbg.MajUnsignedInt {
-			return fmt.Errorf("wrong type for uint64 field")
-		}
-		t.ReplaceSectorNumber = abi.SectorNumber(extra)
 
 	}
 	return nil

@@ -119,7 +119,7 @@ func main() {
 		// method params and returns
 		//paych.ConstructorParams{}, // Aliased from v0
 		paych.UpdateChannelStateParams{}, // Changed in v7
-		paych.SignedVoucher{}, // Changed in v7
+		paych.SignedVoucher{},            // Changed in v7
 		//paych.ModVerifyParams{}, // Aliased from v0
 		// other types
 		//paych.Merge{}, // Aliased from v0
@@ -152,7 +152,10 @@ func main() {
 		//market.WithdrawBalanceParams{}, // Aliased from v0
 		// market.PublishStorageDealsParams{}, // Aliased from v0
 		//market.PublishStorageDealsReturn{}, // Aliased from v6
-		//market.ActivateDealsParams{}, // Aliased from v0
+		market.ActivateDealsParams{},
+		market.ActivateDealsParamsInner{},
+		market.ActivateDealsReturn{},
+		market.ActivateDealsReturnInner{},
 		//market.VerifyDealsForActivationParams{}, // Aliased from v3
 		//market.VerifyDealsForActivationReturn{}, // Aliased from v3
 		//market.ComputeDataCommitmentParams{}, // Aliased from v5
@@ -230,9 +233,9 @@ func main() {
 		verifreg.RemoveDataCapParams{}, // New in v7
 		verifreg.RemoveDataCapReturn{}, // New in v7
 		// other types
-		verifreg.RemoveDataCapRequest{}, // New in v7
+		verifreg.RemoveDataCapRequest{},  // New in v7
 		verifreg.RemoveDataCapProposal{}, // New in v7
-		verifreg.RmDcProposalID{}, // New in v7
+		verifreg.RmDcProposalID{},        // New in v7
 	); err != nil {
 		panic(err)
 	}
