@@ -133,6 +133,7 @@ func TestCommitments(t *testing.T) {
 	})
 
 	t.Run("deal space exceeds sector space", func(t *testing.T) {
+		t.Skip("TODO needs to be moved to ProveCommit") //TODO
 		actor := newHarness(t, periodOffset)
 		rt := builderForHarness(actor).
 			WithBalance(bigBalance, big.Zero()).

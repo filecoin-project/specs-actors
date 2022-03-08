@@ -720,9 +720,9 @@ func (a Actor) preCommitSectorBatch2Inner(rt Runtime, params *PreCommitSectorBat
 
 	// Check per-sector preconditions before opening state transaction or sending other messages.
 	challengeEarliest := currEpoch - MaxPreCommitRandomnessLookback
-	sectorsDeals := make([]market.SectorDeals, len(params.Sectors))
+	sectorsDeals := make([]market.SectorDeals, 0)
 	sectorNumbers := bitfield.New()
-	for i, precommit := range params.Sectors {
+	for _, precommit := range params.Sectors {
 		// Bitfied.IsSet() is fast when there are only locally-set values.
 		set, err := sectorNumbers.IsSet(uint64(precommit.SectorNumber))
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "error checking sector number")
@@ -769,10 +769,11 @@ func (a Actor) preCommitSectorBatch2Inner(rt Runtime, params *PreCommitSectorBat
 		// This could make sector maximum lifetime validation more lenient if the maximum sector limit isn't hit first.
 		maxActivation := currEpoch + MaxProveCommitDuration[precommit.SealProof]
 		validateExpiration(rt, maxActivation, precommit.Expiration, precommit.SealProof)
-
-		sectorsDeals[i] = market.SectorDeals{
-			SectorExpiry: precommit.Expiration,
-			DealIDs:      precommit.DealIDs,
+		if len(precommit.DealIDs) > 0 {
+			sectorsDeals = append(sectorsDeals, market.SectorDeals{
+				SectorExpiry: precommit.Expiration,
+				DealIDs:      precommit.DealIDs,
+			})
 		}
 	}
 
@@ -780,7 +781,7 @@ func (a Actor) preCommitSectorBatch2Inner(rt Runtime, params *PreCommitSectorBat
 	rewardStats := requestCurrentEpochBlockReward(rt)
 	pwrTotal := requestCurrentTotalPower(rt)
 
-	if !newBehaviour {
+	if !newBehaviour && len(sectorsDeals) > 0 {
 		verifyDealsForActivation(rt, sectorsDeals)
 	}
 
