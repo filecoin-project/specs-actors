@@ -91,8 +91,6 @@ func TestCommitments(t *testing.T) {
 
 			// Check precommit expectations.
 			assert.Equal(t, precommitEpoch, precommit.PreCommitEpoch)
-			assert.Equal(t, dealWeight, precommit.DealWeight)
-			assert.Equal(t, verifiedDealWeight, precommit.VerifiedDealWeight)
 
 			assert.Equal(t, test.sectorNo, precommit.Info.SectorNumber)
 			assert.Equal(t, precommitParams.SealProof, precommit.Info.SealProof)
@@ -573,8 +571,6 @@ func TestPreCommitBatch(t *testing.T) {
 			st := getState(rt)
 			for i := 0; i < batchSize; i++ {
 				assert.Equal(t, precommitEpoch, precommits[i].PreCommitEpoch)
-				assert.Equal(t, conf.sectorWeights[i].DealWeight, precommits[i].DealWeight)
-				assert.Equal(t, conf.sectorWeights[i].VerifiedDealWeight, precommits[i].VerifiedDealWeight)
 
 				assert.Equal(t, sectorNos[i], precommits[i].Info.SectorNumber)
 				assert.Equal(t, sectors[i].SealProof, precommits[i].Info.SealProof)
@@ -675,10 +671,6 @@ func TestProveCommit(t *testing.T) {
 		}, true)
 
 		// Check precommit
-		// deal weights must be set in precommit onchain info
-		assert.Equal(t, dealWeight, precommit.DealWeight)
-		assert.Equal(t, verifiedDealWeight, precommit.VerifiedDealWeight)
-
 		expectedDeposit := miner.PreCommitDepositForPower(actor.epochRewardSmooth, actor.epochQAPowerSmooth, miner.QAPowerMax(actor.sectorSize))
 		assert.Equal(t, expectedDeposit, precommit.PreCommitDeposit)
 
@@ -696,8 +688,6 @@ func TestProveCommit(t *testing.T) {
 		assert.Equal(t, precommit.Info.DealIDs, sector.DealIDs)
 		assert.Equal(t, rt.Epoch(), sector.Activation)
 		assert.Equal(t, precommit.Info.Expiration, sector.Expiration)
-		assert.Equal(t, precommit.DealWeight, sector.DealWeight)
-		assert.Equal(t, precommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
 		// expect precommit to have been removed
 		st = getState(rt)
@@ -710,13 +700,9 @@ func TestProveCommit(t *testing.T) {
 
 		// The sector is exactly full with verified deals, so expect fully verified power.
 		expectedPower := big.Mul(big.NewInt(int64(actor.sectorSize)), big.Div(builtin.VerifiedDealWeightMultiplier, builtin.QualityBaseMultiplier))
-		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-rt.Epoch(), precommit.DealWeight, precommit.VerifiedDealWeight)
+		qaPower := miner.QAPowerForWeight(actor.sectorSize, precommit.Info.Expiration-rt.Epoch(), sector.DealWeight, sector.VerifiedDealWeight)
 		assert.Equal(t, expectedPower, qaPower)
 		sectorPower := miner.NewPowerPair(big.NewIntUnsigned(uint64(actor.sectorSize)), qaPower)
-
-		// expect deal weights to be transferred to on chain info
-		assert.Equal(t, precommit.DealWeight, sector.DealWeight)
-		assert.Equal(t, precommit.VerifiedDealWeight, sector.VerifiedDealWeight)
 
 		// expect initial plege of sector to be set, and be total pledge requirement
 		expectedInitialPledge := miner.InitialPledgeForPower(qaPower, actor.baselinePower, actor.epochRewardSmooth, actor.epochQAPowerSmooth, rt.TotalFilCircSupply())

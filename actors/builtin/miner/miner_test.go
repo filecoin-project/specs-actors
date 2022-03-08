@@ -4166,9 +4166,10 @@ func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf p
 		validPrecommits = append(validPrecommits, precommit)
 		if len(precommit.Info.DealIDs) > 0 {
 			vdParams := market.ActivateDealsParams{
-				DealIDs:      precommit.Info.DealIDs,
-				SectorExpiry: precommit.Info.Expiration,
-			}
+				Sectors: []market.ActivateDealsParamsInner{{
+					DealIDs:      precommit.Info.DealIDs,
+					SectorExpiry: precommit.Info.Expiration,
+				}}}
 			exit, found := conf.verifyDealsExit[precommit.Info.SectorNumber]
 			if found {
 				validPrecommits = validPrecommits[:len(validPrecommits)-1] // pop
@@ -4187,20 +4188,17 @@ func (h *actorHarness) confirmSectorProofsValidInternal(rt *mock.Runtime, conf p
 		expectRawPower := big.Zero()
 		for _, precommit := range validPrecommits {
 			precommitOnChain := h.getPreCommit(rt, precommit.Info.SectorNumber)
+			_ = precommitOnChain
 
 			duration := precommit.Info.Expiration - rt.Epoch()
 			if duration >= miner.MinSectorExpiration {
-				qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
+				//qaPowerDelta := miner.QAPowerForWeight(h.sectorSize, duration, precommitOnChain.DealWeight, precommitOnChain.VerifiedDealWeight)
+				// TODO DealWeight access during prove commit
+				qaPowerDelta := big.Zero()
 				expectQAPower = big.Add(expectQAPower, qaPowerDelta)
 				expectRawPower = big.Add(expectRawPower, big.NewIntUnsigned(uint64(h.sectorSize)))
 				pledge := miner.InitialPledgeForPower(qaPowerDelta, h.baselinePower, h.epochRewardSmooth,
 					h.epochQAPowerSmooth, rt.TotalFilCircSupply())
-
-				// if cc upgrade, pledge is max of new and replaced pledges
-				if precommitOnChain.Info.ReplaceCapacity {
-					replaced := h.getSector(rt, precommitOnChain.Info.ReplaceSectorNumber)
-					pledge = big.Max(pledge, replaced.InitialPledge)
-				}
 
 				expectPledge = big.Add(expectPledge, pledge)
 			}
