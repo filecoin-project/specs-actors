@@ -7,7 +7,6 @@ import (
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -2392,7 +2391,6 @@ type ChangeBeneficiaryParams struct {
 	NewExpiration  abi.ChainEpoch
 }
 
-
 // ChangeBeneficiary proposes/approves a beneficiary change
 func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
 	newBeneficiary, ok := rt.ResolveAddress(params.NewBeneficiary)
@@ -2463,6 +2461,33 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 	return nil
+}
+
+type BeneficiaryInfo struct {
+	Beneficiary addr.Address
+	BeneficiaryTerm
+}
+
+type GetBeneficiaryReturn struct {
+	Active   BeneficiaryInfo
+	Proposed *PendingBeneficiaryChange
+}
+
+// GetBeneficiary retrieves the currently active and proposed beneficiary information.
+// This method is for use by other actors (such as those acting as beneficiaries),
+// and to abstract the state representation for clients.
+func (a Actor) GetBeneficiary(rt Runtime, _ *abi.EmptyValue) *GetBeneficiaryReturn {
+	rt.ValidateImmediateCallerAcceptAny()
+	var st State
+	rt.StateReadonly(&st)
+	info := getMinerInfo(rt, &st)
+	return &GetBeneficiaryReturn{
+		Active: BeneficiaryInfo{
+			Beneficiary:     info.Beneficiary,
+			BeneficiaryTerm: info.BeneficiaryTerm,
+		},
+		Proposed: info.PendingBeneficiaryTerm,
+	}
 }
 
 //////////
