@@ -21,17 +21,17 @@ import (
 	"github.com/stretchr/testify/require"
 	cbg "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
-	"github.com/filecoin-project/specs-actors/v7/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/smoothing"
+	"github.com/filecoin-project/specs-actors/v8/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
 )
 
 var testPid abi.PeerID

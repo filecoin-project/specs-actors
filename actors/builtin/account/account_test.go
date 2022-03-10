@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/v7/support/mock"
-	tutil "github.com/filecoin-project/specs-actors/v7/support/testing"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v8/support/mock"
+	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
 )
 
 type constructorTestCase struct {

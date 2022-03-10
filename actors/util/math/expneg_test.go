@@ -8,7 +8,7 @@ import (
 
 	"github.com/xorcare/golden"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/math"
 )
 
 var Res big.Word

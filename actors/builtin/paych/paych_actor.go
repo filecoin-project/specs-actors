@@ -7,15 +7,15 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
-	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/exitcode"
 	paych0 "github.com/filecoin-project/specs-actors/actors/builtin/paych"
+	paych7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
 
 	"github.com/ipfs/go-cid"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 )
 
 const (
@@ -94,44 +94,9 @@ func (pca *Actor) resolveAccount(rt runtime.Runtime, raw addr.Address) (addr.Add
 ////////////////////////////////////////////////////////////////////////////////
 // Payment Channel state operations
 ////////////////////////////////////////////////////////////////////////////////
-// Changed in v7:
-// - SignedVoucher type changed
-type UpdateChannelStateParams struct {
-	Sv     SignedVoucher
-	Secret []byte
-}
 
-// A voucher is sent by `From` to `To` off-chain in order to enable
-// `To` to redeem payments on-chain in the future
-// Changed in v7:
-// - Renamed SecretPreImage to SecretHash
-type SignedVoucher struct {
-	// ChannelAddr is the address of the payment channel this signed voucher is valid for
-	ChannelAddr addr.Address
-	// TimeLockMin sets a min epoch before which the voucher cannot be redeemed
-	TimeLockMin abi.ChainEpoch
-	// TimeLockMax sets a max epoch beyond which the voucher cannot be redeemed
-	// TimeLockMax set to 0 means no timeout
-	TimeLockMax abi.ChainEpoch
-	// (optional) The SecretHash is used by `To` to validate
-	SecretHash []byte
-	// (optional) Extra can be specified by `From` to add a verification method to the voucher.
-	Extra *ModVerifyParams
-	// Specifies which lane the Voucher merges into (will be created if does not exist)
-	Lane uint64
-	// Nonce is set by `From` to prevent redemption of stale vouchers on a lane
-	Nonce uint64
-	// Amount voucher can be redeemed for
-	Amount big.Int
-	// (optional) MinSettleHeight can extend channel MinSettleHeight if needed
-	MinSettleHeight abi.ChainEpoch
-
-	// (optional) Set of lanes to be merged into `Lane`
-	Merges []Merge
-
-	// Sender's signature over the voucher
-	Signature *crypto.Signature
-}
+type UpdateChannelStateParams = paych7.UpdateChannelStateParams
+type SignedVoucher = paych7.SignedVoucher
 
 func VoucherSigningBytes(t *SignedVoucher) ([]byte, error) {
 	osv := *t

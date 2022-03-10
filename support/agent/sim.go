@@ -21,14 +21,14 @@ import (
 
 	adt2 "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v7/actors/states"
-	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
-	"github.com/filecoin-project/specs-actors/v7/support/ipld"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v8/actors/states"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/support/ipld"
+	"github.com/filecoin-project/specs-actors/v8/support/vm"
 )
 
 // Sim is a simulation framework to exercise actor code in a network-like environment.

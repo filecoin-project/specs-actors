@@ -5,7 +5,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	smoothing6 "github.com/filecoin-project/specs-actors/v6/actors/util/smoothing"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/util/math"
+	"github.com/filecoin-project/specs-actors/v8/actors/util/math"
 )
 
 var (

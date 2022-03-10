@@ -3,33 +3,31 @@ package main
 import (
 	gen "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/cron"
-	init_ "github.com/filecoin-project/specs-actors/v7/actors/builtin/init"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/paych"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
-	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v7/support/vm"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/cron"
+	init_ "github.com/filecoin-project/specs-actors/v8/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/paych"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/reward"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/system"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/v8/support/vm"
 )
 
 func main() {
 	// Common types
-	if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof",
-		//proof.SectorInfo{}, // Aliased from v0
-		proof.ExtendedSectorInfo{}, // New in v7
-		//proof.SealVerifyInfo{}, // Aliased from v0
-		//proof.PoStProof{}, // Aliased from v0
-		//proof.WindowPoStVerifyInfo{}, // Aliased from v0
-		// proof.WinningPoStVerifyInfo{}, // Aliased from v0
-	); err != nil {
-		panic(err)
-	}
+	//if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof"); //proof.SectorInfo{}, // Aliased from v0
+	//proof.ExtendedSectorInfo{}, // Aliased from v7
+	//proof.SealVerifyInfo{}, // Aliased from v0
+	//proof.PoStProof{}, // Aliased from v0
+	//proof.WindowPoStVerifyInfo{}, // Aliased from v0
+	// proof.WinningPoStVerifyInfo{}, // Aliased from v0
+	//err != nil {
+	//	panic(err)
+	//}
 
 	//if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 	//	//builtin.MinerAddrs{}, // Aliased from v0
@@ -118,8 +116,8 @@ func main() {
 		paych.LaneState{},
 		// method params and returns
 		//paych.ConstructorParams{}, // Aliased from v0
-		paych.UpdateChannelStateParams{}, // Changed in v7
-		paych.SignedVoucher{}, // Changed in v7
+		//paych.UpdateChannelStateParams{}, // Aliased from v7
+		//paych.SignedVoucher{},            // Aliased from v7
 		//paych.ModVerifyParams{}, // Aliased from v0
 		// other types
 		//paych.Merge{}, // Aliased from v0
@@ -206,14 +204,14 @@ func main() {
 		//miner.CronEventPayload{}, // Aliased from v0
 		// miner.DisputeWindowedPoStParams{}, // Aliased from v3
 		//miner.PreCommitSectorBatchParams{}, // Aliased from v5
-		miner.ProveReplicaUpdatesParams{}, // New in v7
+		//miner.ProveReplicaUpdatesParams{}, // Aliased from v7
 		// other types
 		//miner.FaultDeclaration{}, // Aliased from v0
 		//miner.RecoveryDeclaration{}, // Aliased from v0
 		//miner.ExpirationExtension{}, // Aliased from v0
 		//miner.TerminationDeclaration{}, // Aliased from v0
 		//miner.PoStPartition{}, // Aliased from v0
-		miner.ReplicaUpdate{}, // New in v7
+		//miner.ReplicaUpdate{}, // Aliased from v7
 	); err != nil {
 		panic(err)
 	}
@@ -230,9 +228,9 @@ func main() {
 		verifreg.RemoveDataCapParams{}, // New in v7
 		verifreg.RemoveDataCapReturn{}, // New in v7
 		// other types
-		verifreg.RemoveDataCapRequest{}, // New in v7
+		verifreg.RemoveDataCapRequest{},  // New in v7
 		verifreg.RemoveDataCapProposal{}, // New in v7
-		verifreg.RmDcProposalID{}, // New in v7
+		verifreg.RmDcProposalID{},        // New in v7
 	); err != nil {
 		panic(err)
 	}

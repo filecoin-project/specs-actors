@@ -13,7 +13,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 
 	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
+	"github.com/filecoin-project/specs-actors/v8/actors/runtime/proof"
 )
 
 // Interfaces for the runtime.
