@@ -140,10 +140,9 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ab
 	return nil
 }
 
-// type PublishStorageDealsParams struct {
-// 	Deals []ClientDealProposal
-// }
-type PublishStorageDealsParams = market0.PublishStorageDealsParams
+type PublishStorageDealsParams struct {
+	Deals []ClientDealProposal
+}
 
 //type PublishStorageDealsReturn struct {
 //	IDs        []abi.DealID
@@ -800,8 +799,8 @@ func validateDeal(rt Runtime, deal ClientDealProposal, networkRawPower, networkQ
 
 	proposal := deal.Proposal
 
-	if len(proposal.Label) > DealMaxLabelSize {
-		return xerrors.Errorf("deal label can be at most %d bytes, is %d", DealMaxLabelSize, len(proposal.Label))
+	if proposal.Label.Length() > DealMaxLabelSize {
+		return xerrors.Errorf("deal label can be at most %d bytes, is %d", DealMaxLabelSize, proposal.Label.Length())
 	}
 
 	if err := proposal.PieceSize.Validate(); err != nil {

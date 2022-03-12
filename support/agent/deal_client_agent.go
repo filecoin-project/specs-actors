@@ -155,14 +155,17 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 	}
 
 	dca.expectedMarketBalance = big.Sub(dca.expectedMarketBalance, storageFee)
-
+	label, err := market.NewDealLabelFromString(dca.account.String() + ":" + strconv.Itoa(dca.DealCount))
+	if err != nil {
+		return err
+	}
 	proposal := market.DealProposal{
 		PieceCID:             pieceCid,
 		PieceSize:            abi.PaddedPieceSize(pieceSize),
 		VerifiedDeal:         false,
 		Client:               dca.account,
 		Provider:             provider.Address(),
-		Label:                dca.account.String() + ":" + strconv.Itoa(dca.DealCount),
+		Label:                label,
 		StartEpoch:           dealStart,
 		EndEpoch:             dealEnd,
 		StoragePricePerEpoch: price,
