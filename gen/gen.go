@@ -183,6 +183,8 @@ func main() {
 		miner.WorkerKeyChange{},
 		miner.ChangeBeneficiaryParams{},
 		miner.BeneficiaryTerm{},
+		miner.GetBeneficiaryReturn{},
+		miner.ActiveBeneficiary{},
 		miner.PendingBeneficiaryChange{},
 		miner.VestingFunds{},
 		miner.VestingFund{},

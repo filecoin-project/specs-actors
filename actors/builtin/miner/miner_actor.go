@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/filecoin-project/go-bitfield"
+	"github.com/filecoin-project/go-state-types/exitcode"
 	"math"
 
 	addr "github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/dline"
-	"github.com/filecoin-project/go-state-types/exitcode"
 	rtt "github.com/filecoin-project/go-state-types/rt"
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
@@ -79,6 +79,7 @@ func (a Actor) Exports() []interface{} {
 		26:                        a.ProveCommitAggregate,
 		27:                        a.ProveReplicaUpdates,
 		28:                        a.ChangeBeneficiary,
+		29:                        a.GetBeneficiary,
 	}
 }
 
@@ -2392,7 +2393,6 @@ type ChangeBeneficiaryParams struct {
 	NewExpiration  abi.ChainEpoch
 }
 
-
 // ChangeBeneficiary proposes/approves a beneficiary change
 func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *abi.EmptyValue {
 	newBeneficiary, ok := rt.ResolveAddress(params.NewBeneficiary)
@@ -2463,6 +2463,33 @@ func (a Actor) ChangeBeneficiary(rt Runtime, params *ChangeBeneficiaryParams) *a
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "could not save miner info")
 	})
 	return nil
+}
+
+type ActiveBeneficiary struct {
+	Beneficiary addr.Address
+	Term        BeneficiaryTerm
+}
+
+type GetBeneficiaryReturn struct {
+	Active   ActiveBeneficiary
+	Proposed *PendingBeneficiaryChange
+}
+
+// GetBeneficiary retrieves the currently active and proposed beneficiary information.
+// This method is for use by other actors (such as those acting as beneficiaries),
+// and to abstract the state representation for clients.
+func (a Actor) GetBeneficiary(rt Runtime, _ *abi.EmptyValue) *GetBeneficiaryReturn {
+	rt.ValidateImmediateCallerAcceptAny()
+	var st State
+	rt.StateReadonly(&st)
+	info := getMinerInfo(rt, &st)
+	return &GetBeneficiaryReturn{
+		Active: ActiveBeneficiary{
+			Beneficiary: info.Beneficiary,
+			Term:        info.BeneficiaryTerm,
+		},
+		Proposed: info.PendingBeneficiaryTerm,
+	}
 }
 
 //////////

@@ -377,7 +377,88 @@ func TestControlAddresses(t *testing.T) {
 		assert.Equal(t, actor.controlAddrs, control)
 		actor.checkState(rt)
 	})
+}
 
+// Tests for fetching and manipulating miner addresses.
+func TestGetBeneficiary(t *testing.T) {
+	periodOffset := abi.ChainEpoch(100)
+	firstBeneficiaryId := tutil.NewIDAddr(t, 999)
+	firstBeneficiary := tutil.NewBLSAddr(t, 100)
+	secondBeneficiaryId := tutil.NewIDAddr(t, 1999)
+	secondBeneficiary := tutil.NewBLSAddr(t, 1000)
+
+	actor := newHarness(t, periodOffset)
+	builder := builderForHarness(actor).
+		WithBalance(bigBalance, big.NewInt(10000))
+
+	t.Run("successfully change beneficiary to another address", func(t *testing.T) {
+		rt := builder.Build(t)
+		rt.AddIDAddress(firstBeneficiary, firstBeneficiaryId)
+		rt.AddIDAddress(secondBeneficiary, secondBeneficiaryId)
+		actor.constructAndVerify(rt)
+
+		//initial beneficiary
+		beneficiaryReturn := actor.getBeneficiary(rt)
+		assert.Equal(t, actor.owner, beneficiaryReturn.Active.Beneficiary)
+		assert.Equal(t, big.Zero(), beneficiaryReturn.Active.Term.Quota)
+		assert.Equal(t, abi.ChainEpoch(0), beneficiaryReturn.Active.Term.Expiration)
+		assert.Nil(t, beneficiaryReturn.Proposed)
+
+		expiration := periodOffset * 2
+		firstQuota := abi.NewTokenAmount(1000)
+		actor.proposeAndApproveInitialBeneficiary(rt, firstBeneficiaryId, miner.BeneficiaryTerm{
+			Quota:      firstQuota,
+			Expiration: expiration,
+			UsedQuota:  big.Zero(),
+		})
+
+		beneficiaryReturn = actor.getBeneficiary(rt)
+		assert.Equal(t, firstBeneficiaryId, beneficiaryReturn.Active.Beneficiary)
+		assert.Equal(t, firstQuota, beneficiaryReturn.Active.Term.Quota)
+		assert.Equal(t, expiration, beneficiaryReturn.Active.Term.Expiration)
+		assert.Nil(t, beneficiaryReturn.Proposed)
+
+		//change beneficiary from non owner address to non owner address
+		rt.SetEpoch(periodOffset + 10)
+		secondQuota := abi.NewTokenAmount(100)
+		secondExpiation := periodOffset + 20
+		actor.changeBeneficiary(rt, actor.owner, beneficiaryChange{secondBeneficiaryId, secondQuota, secondExpiation}, nil)
+		beneficiaryReturn = actor.getBeneficiary(rt)
+		assert.Equal(t, firstBeneficiaryId, beneficiaryReturn.Active.Beneficiary)
+		assert.Equal(t, firstQuota, beneficiaryReturn.Active.Term.Quota)
+		assert.Equal(t, expiration, beneficiaryReturn.Active.Term.Expiration)
+		assert.Equal(t, secondBeneficiaryId, beneficiaryReturn.Proposed.NewBeneficiary)
+		assert.Equal(t, secondExpiation, beneficiaryReturn.Proposed.NewExpiration)
+		assert.Equal(t, secondQuota, beneficiaryReturn.Proposed.NewQuota)
+		assert.Equal(t, false, beneficiaryReturn.Proposed.ApprovedByBeneficiary)
+		assert.Equal(t, false, beneficiaryReturn.Proposed.ApprovedByNominee)
+
+		//confirm by old beneficiary address
+		actor.changeBeneficiary(rt, firstBeneficiary, beneficiaryChange{secondBeneficiaryId, secondQuota, secondExpiation}, nil)
+		beneficiaryReturn = actor.getBeneficiary(rt)
+		assert.Equal(t, firstBeneficiaryId, beneficiaryReturn.Active.Beneficiary)
+		assert.Equal(t, firstQuota, beneficiaryReturn.Active.Term.Quota)
+		assert.Equal(t, expiration, beneficiaryReturn.Active.Term.Expiration)
+		assert.Equal(t, secondBeneficiaryId, beneficiaryReturn.Proposed.NewBeneficiary)
+		assert.Equal(t, secondExpiation, beneficiaryReturn.Proposed.NewExpiration)
+		assert.Equal(t, secondQuota, beneficiaryReturn.Proposed.NewQuota)
+		assert.Equal(t, true, beneficiaryReturn.Proposed.ApprovedByBeneficiary)
+		assert.Equal(t, false, beneficiaryReturn.Proposed.ApprovedByNominee)
+
+		//confirm by new beneficiary address and worked
+		actor.changeBeneficiary(rt, secondBeneficiary, beneficiaryChange{secondBeneficiaryId, secondQuota, secondExpiation}, &secondBeneficiaryId)
+		beneficiaryReturn = actor.getBeneficiary(rt)
+		assert.Equal(t, secondBeneficiaryId, beneficiaryReturn.Active.Beneficiary)
+		assert.Equal(t, secondQuota, beneficiaryReturn.Active.Term.Quota)
+		assert.Equal(t, secondExpiation, beneficiaryReturn.Active.Term.Expiration)
+		assert.Nil(t, beneficiaryReturn.Proposed)
+
+		withdrawAmount := big.NewInt(10)
+		actor.withdrawFunds(rt, withdrawAmount, withdrawAmount, big.Zero())
+		beneficiaryReturn = actor.getBeneficiary(rt)
+		assert.Equal(t, withdrawAmount, beneficiaryReturn.Active.Term.UsedQuota)
+		actor.checkState(rt)
+	})
 }
 
 func TestWindowPost(t *testing.T) {
@@ -4297,6 +4378,14 @@ func (h *actorHarness) controlAddresses(rt *mock.Runtime) (owner, worker addr.Ad
 	require.NotNil(h.t, ret)
 	rt.Verify()
 	return ret.Owner, ret.Worker, ret.ControlAddrs
+}
+
+func (h *actorHarness) getBeneficiary(rt *mock.Runtime) *miner.GetBeneficiaryReturn {
+	rt.ExpectValidateCallerAny()
+	ret := rt.Call(h.a.GetBeneficiary, nil).(*miner.GetBeneficiaryReturn)
+	require.NotNil(h.t, ret)
+	rt.Verify()
+	return ret
 }
 
 // Options for preCommitSector behaviour.

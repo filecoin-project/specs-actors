@@ -2529,6 +2529,140 @@ func (t *BeneficiaryTerm) UnmarshalCBOR(r io.Reader) error {
 	return nil
 }
 
+var lengthBufGetBeneficiaryReturn = []byte{130}
+
+func (t *GetBeneficiaryReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufGetBeneficiaryReturn); err != nil {
+		return err
+	}
+
+	// t.Active (miner.ActiveBeneficiary) (struct)
+	if err := t.Active.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Proposed (miner.PendingBeneficiaryChange) (struct)
+	if err := t.Proposed.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *GetBeneficiaryReturn) UnmarshalCBOR(r io.Reader) error {
+	*t = GetBeneficiaryReturn{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Active (miner.ActiveBeneficiary) (struct)
+
+	{
+
+		if err := t.Active.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Active: %w", err)
+		}
+
+	}
+	// t.Proposed (miner.PendingBeneficiaryChange) (struct)
+
+	{
+
+		b, err := br.ReadByte()
+		if err != nil {
+			return err
+		}
+		if b != cbg.CborNull[0] {
+			if err := br.UnreadByte(); err != nil {
+				return err
+			}
+			t.Proposed = new(PendingBeneficiaryChange)
+			if err := t.Proposed.UnmarshalCBOR(br); err != nil {
+				return xerrors.Errorf("unmarshaling t.Proposed pointer: %w", err)
+			}
+		}
+
+	}
+	return nil
+}
+
+var lengthBufActiveBeneficiary = []byte{130}
+
+func (t *ActiveBeneficiary) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufActiveBeneficiary); err != nil {
+		return err
+	}
+
+	// t.Beneficiary (address.Address) (struct)
+	if err := t.Beneficiary.MarshalCBOR(w); err != nil {
+		return err
+	}
+
+	// t.Term (miner.BeneficiaryTerm) (struct)
+	if err := t.Term.MarshalCBOR(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *ActiveBeneficiary) UnmarshalCBOR(r io.Reader) error {
+	*t = ActiveBeneficiary{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.Beneficiary (address.Address) (struct)
+
+	{
+
+		if err := t.Beneficiary.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Beneficiary: %w", err)
+		}
+
+	}
+	// t.Term (miner.BeneficiaryTerm) (struct)
+
+	{
+
+		if err := t.Term.UnmarshalCBOR(br); err != nil {
+			return xerrors.Errorf("unmarshaling t.Term: %w", err)
+		}
+
+	}
+	return nil
+}
+
 var lengthBufPendingBeneficiaryChange = []byte{133}
 
 func (t *PendingBeneficiaryChange) MarshalCBOR(w io.Writer) error {
