@@ -578,9 +578,6 @@ func TestWrongPartitionIndexFailure(t *testing.T) {
 	require.NotEqual(t, replicaUpdate.NewSealedSectorCID, newSectorInfo.SealedCID)
 }
 
-// This test demonstrates a bug introduced in network v15. When this bug is fixed
-// this test should be modified so that the final ProveReplicaUpdate call is asserted
-// to pass instead of fail with `exitcode.ErrIllegalState`
 func TestProveReplicaUpdateMultiDline(t *testing.T) {
 	ctx := context.Background()
 	blkStore := ipld.NewBlockStoreInMemory()
@@ -642,6 +639,9 @@ func TestProveReplicaUpdateMultiDline(t *testing.T) {
 	require.True(t, vm.CheckSectorActive(t, v, minerAddrs.IDAddress, currDlInfo.Index, 0, firstSectorNumberP2))
 
 	/* Replica Update across two deadlines */
+	oldSectorCommRP1 := vm.SectorInfo(t, v, minerAddrs.RobustAddress, firstSectorNumberP1).SealedCID
+	oldSectorCommRP2 := vm.SectorInfo(t, v, minerAddrs.RobustAddress, firstSectorNumberP2).SealedCID
+
 	dealIDs := createDeals(t, 2, v, worker, worker, minerAddrs.IDAddress, sealProof)
 	replicaUpdate1 := miner.ReplicaUpdate{
 		SectorID:           firstSectorNumberP1,
@@ -662,10 +662,32 @@ func TestProveReplicaUpdateMultiDline(t *testing.T) {
 	}
 
 	// When this bug is fixed this should become vm.ApplyOk
-	vm.ApplyCode(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
+	ret := vm.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(),
 		builtin.MethodsMiner.ProveReplicaUpdates,
-		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate1, replicaUpdate2}},
-		exitcode.ErrIllegalState)
+		&miner.ProveReplicaUpdatesParams{Updates: []miner.ReplicaUpdate{replicaUpdate1, replicaUpdate2}})
+
+	updatedSectors, ok := ret.(*bitfield.BitField)
+	require.True(t, ok)
+	count, err := updatedSectors.Count()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), count)
+
+	isSet, err := updatedSectors.IsSet(uint64(firstSectorNumberP1))
+	require.NoError(t, err)
+	require.True(t, isSet)
+
+	isSet, err = updatedSectors.IsSet(uint64(firstSectorNumberP2))
+	require.NoError(t, err)
+	require.True(t, isSet)
+
+	newSectorInfoP1 := vm.SectorInfo(t, v, minerAddrs.RobustAddress, firstSectorNumberP1)
+	require.Equal(t, dealIDs[0], newSectorInfoP1.DealIDs[0])
+	require.Equal(t, oldSectorCommRP1, *newSectorInfoP1.SectorKeyCID)
+	require.Equal(t, replicaUpdate1.NewSealedSectorCID, newSectorInfoP1.SealedCID)
+	newSectorInfoP2 := vm.SectorInfo(t, v, minerAddrs.RobustAddress, firstSectorNumberP2)
+	require.Equal(t, dealIDs[1], newSectorInfoP2.DealIDs[0])
+	require.Equal(t, oldSectorCommRP2, *newSectorInfoP2.SectorKeyCID)
+	require.Equal(t, replicaUpdate2.NewSealedSectorCID, newSectorInfoP2.SealedCID)
 }
 
 func TestDealIncludedInMultipleSectors(t *testing.T) {

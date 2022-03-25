@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 	"math"
+
+	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -2229,7 +2230,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 		deadlines, err := st.LoadDeadlines(store)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
-		newSectors := make([]*SectorOnChainInfo, len(validatedUpdates))
+		newSectors := make([]*SectorOnChainInfo, 0)
 		for _, dlIdx := range deadlinesToLoad {
 			deadline, err := deadlines.LoadDeadline(store, dlIdx)
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", dlIdx)
@@ -2239,7 +2240,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 
 			quant := st.QuantSpecForDeadline(dlIdx)
 
-			for i, updateWithDetails := range declsByDeadline[dlIdx] {
+			for _, updateWithDetails := range declsByDeadline[dlIdx] {
 				updateProofType, err := updateWithDetails.sectorInfo.SealProof.RegisteredUpdateProof()
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "couldn't load update proof type")
 				builtin.RequirePredicate(rt, updateWithDetails.update.UpdateProofType == updateProofType, exitcode.ErrIllegalArgument, "unsupported update proof type %d", updateWithDetails.update.UpdateProofType)
@@ -2321,7 +2322,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 					updateWithDetails.update.Deadline,
 					updateWithDetails.update.Partition)
 
-				newSectors[i] = &newSectorInfo
+				newSectors = append(newSectors, &newSectorInfo)
 				succeededSectors.Set(uint64(newSectorInfo.SectorNumber))
 			}
 
