@@ -26,5 +26,5 @@ func TestConstruction(t *testing.T) {
 	var st system.State
 	rt.GetState(&st)
 
-	require.Equal(t, system.State{}, st)
+	require.Equal(t, system.State{BuiltinActors: system.UndefinedBuiltinActors}, st)
 }
