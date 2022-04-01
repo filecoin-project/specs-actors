@@ -14,7 +14,8 @@ import (
 	"github.com/filecoin-project/go-state-types/rt"
 	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	states7 "github.com/filecoin-project/specs-actors/v7/actors/states"
-	builtin8 "github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	manifest8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
+	system8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/system"
 	states8 "github.com/filecoin-project/specs-actors/v8/actors/states"
 	adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 
@@ -66,38 +67,62 @@ func ActorHeadKey(addr address.Address, head cid.Cid) string {
 
 // Migrates the filecoin state tree starting from the global state tree and upgrading all actor state.
 // The store must support concurrent writes (even if the configured worker count is 1).
-func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config, log Logger, cache MigrationCache) (cid.Cid, error) {
+func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest cid.Cid, actorsRootIn cid.Cid, priorEpoch abi.ChainEpoch, cfg Config, log Logger, cache MigrationCache) (cid.Cid, error) {
 	if cfg.MaxWorkers <= 0 {
 		return cid.Undef, xerrors.Errorf("invalid migration config with %d workers", cfg.MaxWorkers)
 	}
 
+	adtStore := adt8.WrapStore(ctx, store)
+
+	// load manifest
+	var manifest manifest8.Manifest
+	if err := adtStore.Get(ctx, actorsManifest, &manifest); err != nil {
+		return cid.Undef, xerrors.Errorf("error reading actor manifest: %w", err)
+	}
+
+	if err := manifest.Load(ctx, adtStore); err != nil {
+		return cid.Undef, xerrors.Errorf("error loading actor manifest: %w", err)
+	}
+
 	// Maps prior version code CIDs to migration functions.
-	var migrations = map[cid.Cid]actorMigration{
-		builtin7.AccountActorCodeID:          nilMigrator{builtin8.AccountActorCodeID},
-		builtin7.CronActorCodeID:             nilMigrator{builtin8.CronActorCodeID},
-		builtin7.InitActorCodeID:             nilMigrator{builtin8.InitActorCodeID},
-		builtin7.MultisigActorCodeID:         nilMigrator{builtin8.MultisigActorCodeID},
-		builtin7.PaymentChannelActorCodeID:   nilMigrator{builtin8.PaymentChannelActorCodeID},
-		builtin7.RewardActorCodeID:           nilMigrator{builtin8.RewardActorCodeID},
-		builtin7.StorageMarketActorCodeID:    nilMigrator{builtin8.StorageMarketActorCodeID},
-		builtin7.StorageMinerActorCodeID:     nilMigrator{builtin8.StorageMinerActorCodeID},
-		builtin7.StoragePowerActorCodeID:     nilMigrator{builtin8.StoragePowerActorCodeID},
-		builtin7.SystemActorCodeID:           nilMigrator{builtin8.SystemActorCodeID},
-		builtin7.VerifiedRegistryActorCodeID: nilMigrator{builtin8.VerifiedRegistryActorCodeID},
+	migrations := make(map[cid.Cid]actorMigration)
+
+	// simple code migrations
+	var simpleMigrations = map[string]cid.Cid{
+		"init":             builtin7.InitActorCodeID,
+		"cron":             builtin7.CronActorCodeID,
+		"account":          builtin7.AccountActorCodeID,
+		"storagepower":     builtin7.StoragePowerActorCodeID,
+		"storageminer":     builtin7.StorageMinerActorCodeID,
+		"storagemarket":    builtin7.StorageMarketActorCodeID,
+		"paymentchannel":   builtin7.PaymentChannelActorCodeID,
+		"multisig":         builtin7.MultisigActorCodeID,
+		"reward":           builtin7.RewardActorCodeID,
+		"verifiedregistry": builtin7.VerifiedRegistryActorCodeID,
 	}
 
-	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.
-	var deferredCodeIDs = map[cid.Cid]struct{}{
-		// None
+	for name, code7Cid := range simpleMigrations {
+		code8Cid, ok := manifest.Get(name)
+		if !ok {
+			return cid.Undef, xerrors.Errorf("code cid for %s actor not found in manifest", name)
+		}
+
+		migrations[code7Cid] = codeMigrator{code8Cid}
 	}
 
-	if len(migrations)+len(deferredCodeIDs) != 11 {
+	// migrations that migrate both code and state
+	system8Cid, ok := manifest.Get("system")
+	if !ok {
+		return cid.Undef, xerrors.Errorf("code cid for system actor not found in manifet")
+	}
+	migrations[builtin7.SystemActorCodeID] = systemActorMigrator{system8Cid, manifest.Data}
+
+	if len(migrations) != 11 {
 		panic(fmt.Sprintf("incomplete migration specification with %d code CIDs", len(migrations)))
 	}
 	startTime := time.Now()
 
 	// Load input and output state trees
-	adtStore := adt8.WrapStore(ctx, store)
 	actorsIn, err := states7.LoadTree(adtStore, actorsRootIn)
 	if err != nil {
 		return cid.Undef, err
@@ -121,9 +146,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsRootIn ci
 		defer close(jobCh)
 		log.Log(rt.INFO, "Creating migration jobs for tree %s", actorsRootIn)
 		if err = actorsIn.ForEach(func(addr address.Address, actorIn *states7.Actor) error {
-			if _, ok := deferredCodeIDs[actorIn.Code]; ok {
-				return nil // Deferred for explicit migration later.
-			}
 			migration, ok := migrations[actorIn.Code]
 			if !ok {
 				return xerrors.Errorf("actor with code %s has no registered migration function", actorIn.Code)
@@ -249,7 +271,6 @@ type actorMigration interface {
 	// Loads an actor's state from an input store and writes new state to an output store.
 	// Returns the new state head CID.
 	migrateState(ctx context.Context, store cbor.IpldStore, input actorMigrationInput) (result *actorMigrationResult, err error)
-	migratedCodeCID() cid.Cid
 }
 
 type migrationJob struct {
@@ -289,17 +310,33 @@ func (job *migrationJob) run(ctx context.Context, store cbor.IpldStore, priorEpo
 }
 
 // Migrator which preserves the head CID and provides a fixed result code CID.
-type nilMigrator struct {
+type codeMigrator struct {
 	OutCodeCID cid.Cid
 }
 
-func (n nilMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+func (n codeMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
 	return &actorMigrationResult{
 		newCodeCID: n.OutCodeCID,
 		newHead:    in.head,
 	}, nil
 }
 
-func (n nilMigrator) migratedCodeCID() cid.Cid {
-	return n.OutCodeCID
+// System Actor migrator
+type systemActorMigrator struct {
+	OutCodeCID   cid.Cid
+	ManifestData cid.Cid
+}
+
+func (m systemActorMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+	state := system8.State{m.ManifestData}
+	stateHead, err := store.Put(ctx, &state)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &actorMigrationResult{
+		newCodeCID: m.OutCodeCID,
+		newHead:    stateHead,
+	}, nil
 }
