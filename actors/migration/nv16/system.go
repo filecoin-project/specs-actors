@@ -15,7 +15,7 @@ type systemActorMigrator struct {
 }
 
 func (m systemActorMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	state := system8.State{m.ManifestData}
+	state := system8.State{BuiltinActors: m.ManifestData}
 	stateHead, err := store.Put(ctx, &state)
 
 	if err != nil {

@@ -100,7 +100,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 		"verifiedregistry": builtin7.VerifiedRegistryActorCodeID,
 	}
 
-	for name, code7Cid := range simpleMigrations {
+	for name, code7Cid := range simpleMigrations { //nolint:nomaprange
 		code8Cid, ok := manifest.Get(name)
 		if !ok {
 			return cid.Undef, xerrors.Errorf("code cid for %s actor not found in manifest", name)
