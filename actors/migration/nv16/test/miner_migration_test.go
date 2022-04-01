@@ -4,9 +4,6 @@ import (
 	"context"
 	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 	"github.com/filecoin-project/specs-actors/v8/support/vm7Util"
-	"strings"
-
-	"github.com/filecoin-project/specs-actors/v8/actors/states"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -19,6 +16,7 @@ import (
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/exported"
+	manifest8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	miner8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
 	power8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/verifreg"
@@ -28,6 +26,8 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
+	cbor "github.com/ipfs/go-ipld-cbor"
+	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -146,11 +146,48 @@ func createMinersAndSectorsV7(t *testing.T, ctx context.Context, ctxStore adt.St
 	return append(minersToProve, minerInfos...), v
 }
 
+func makeManifest(t *testing.T, store cbor.IpldStore) cid.Cid {
+	adtStore := adt.WrapStore(context.Background(), store)
+	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
+
+	manifestData := manifest8.ManifestData{}
+	for _, name := range []string{"system", "init", "cron", "account", "storagepower", "storageminer", "storagemarket", "paymentchannel", "multisig", "reward", "verifiedregistry"} {
+		codeCid, err := builder.Sum([]byte(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		manifestData.Entries = append(manifestData.Entries,
+			manifest8.ManifestEntry{
+				Name: name,
+				Code: codeCid,
+			})
+	}
+
+	manifestDataCid, err := adtStore.Put(context.Background(), &manifestData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := manifest8.Manifest{
+		Version: 1,
+		Data:    manifestDataCid,
+	}
+
+	manifestCid, err := adtStore.Put(context.Background(), &manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return manifestCid
+}
+
 func TestNv16Migration(t *testing.T) {
 	ctx := context.Background()
 	bs := ipld.NewBlockStoreInMemory()
 	v := vm7.NewVMWithSingletons(ctx, t, bs)
 	ctxStore := adt.WrapBlockStore(ctx, bs)
+	manifestCid := makeManifest(t, ctxStore)
 	log := nv16.TestLogger{TB: t}
 
 	v = vm7Util.AdvanceToEpochWithCron(t, v, 200)
@@ -164,7 +201,7 @@ func TestNv16Migration(t *testing.T) {
 
 	startRoot := v.StateRoot()
 	cache := nv16.NewMemMigrationCache()
-	_, err := nv16.MigrateStateTree(ctx, ctxStore, startRoot, v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, cache)
+	_, err := nv16.MigrateStateTree(ctx, ctxStore, manifestCid, startRoot, v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
 
 	minerInfos, v = createMinersAndSectorsV7(t, ctx, ctxStore, v, 100, 100, 0, false, nil)
@@ -172,11 +209,11 @@ func TestNv16Migration(t *testing.T) {
 	v = vm7Util.AdvanceOneDayWhileProving(t, v, ctxStore, minerInfos)
 	minerInfos = append(minerInfos, lazyMinerInfos...)
 
-	cacheRoot, err := nv16.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, cache)
+	cacheRoot, err := nv16.MigrateStateTree(ctx, ctxStore, manifestCid, v.StateRoot(), v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, cache)
 	require.NoError(t, err)
 
 	networkStatsBefore := vm7.GetNetworkStats(t, v)
-	noCacheRoot, err := nv16.MigrateStateTree(ctx, ctxStore, v.StateRoot(), v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, nv16.NewMemMigrationCache())
+	noCacheRoot, err := nv16.MigrateStateTree(ctx, ctxStore, manifestCid, v.StateRoot(), v.GetEpoch(), nv16.Config{MaxWorkers: 1}, log, nv16.NewMemMigrationCache())
 	require.NoError(t, err)
 	require.True(t, cacheRoot.Equals(noCacheRoot))
 
@@ -190,14 +227,6 @@ func TestNv16Migration(t *testing.T) {
 
 	networkStatsAfter := vm8.GetNetworkStats(t, v8)
 	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
-
-	stateTree, err := v8.GetStateTree()
-	require.NoError(t, err)
-	totalBalance, err := v8.GetTotalActorBalance()
-	require.NoError(t, err)
-	acc, err := states.CheckStateInvariants(stateTree, totalBalance, v8.GetEpoch()-1)
-	require.NoError(t, err)
-	require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 
 	// Compare miner states
 	for _, minerInfo := range minerInfos {
