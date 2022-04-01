@@ -38,4 +38,6 @@ func (a Actor) Constructor(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValu
 	return nil
 }
 
-type State struct{}
+type State struct {
+	BuiltinActors cid.Cid
+}
