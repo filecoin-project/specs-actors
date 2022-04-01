@@ -15,7 +15,6 @@ import (
 	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	states7 "github.com/filecoin-project/specs-actors/v7/actors/states"
 	manifest8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
-	system8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/system"
 	states8 "github.com/filecoin-project/specs-actors/v8/actors/states"
 	adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 
@@ -318,25 +317,5 @@ func (n codeMigrator) migrateState(_ context.Context, _ cbor.IpldStore, in actor
 	return &actorMigrationResult{
 		newCodeCID: n.OutCodeCID,
 		newHead:    in.head,
-	}, nil
-}
-
-// System Actor migrator
-type systemActorMigrator struct {
-	OutCodeCID   cid.Cid
-	ManifestData cid.Cid
-}
-
-func (m systemActorMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
-	state := system8.State{m.ManifestData}
-	stateHead, err := store.Put(ctx, &state)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &actorMigrationResult{
-		newCodeCID: m.OutCodeCID,
-		newHead:    stateHead,
 	}, nil
 }
