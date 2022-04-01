@@ -1,7 +1,9 @@
 package manifest
 
 import (
-	//adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
+	"context"
+
+	adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 
 	"github.com/ipfs/go-cid"
 )
@@ -22,8 +24,17 @@ type ManifestData struct {
 	Entries []ManifestEntry
 }
 
-func (m *Manifest) Load() error {
-	// TODO
+func (m *Manifest) Load(ctx context.Context, store adt8.Store) error {
+	data := ManifestData{}
+	if err := store.Get(ctx, m.Data, &data); err != nil {
+		return err
+	}
+
+	m.entries = make(map[string]cid.Cid)
+	for _, e := range data.Entries {
+		m.entries[e.Name] = e.Code
+	}
+
 	return nil
 }
 
