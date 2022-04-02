@@ -15,7 +15,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/ipfs/go-cid"
 	ipldcbor "github.com/ipfs/go-ipld-cbor"
-	mh "github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/cron"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/exported"
 	initactor "github.com/filecoin-project/specs-actors/v8/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/power"
@@ -40,19 +40,12 @@ import (
 
 var FIL = big.NewInt(1e18)
 var VerifregRoot address.Address
-var BogusBuiltinActors cid.Cid
 
 func init() {
 	var err error
 	VerifregRoot, err = address.NewIDAddress(80)
 	if err != nil {
 		panic("could not create id address 80")
-	}
-
-	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
-	BogusBuiltinActors, err = builder.Sum([]byte("bogus"))
-	if err != nil {
-		panic(err)
 	}
 }
 
@@ -70,7 +63,12 @@ func NewVMWithSingletons(ctx context.Context, t testing.TB, bs ipldcbor.IpldBloc
 	store := adt.WrapBlockStore(ctx, bs)
 	vm := NewVM(ctx, lookup, store)
 
-	initializeActor(ctx, t, vm, &system.State{BuiltinActors: BogusBuiltinActors}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
+	manifestDataCid, err := store.Put(ctx, &manifest.ManifestData{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initializeActor(ctx, t, vm, &system.State{BuiltinActors: manifestDataCid}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
 	initState, err := initactor.ConstructState(store, "scenarios")
 	require.NoError(t, err)
