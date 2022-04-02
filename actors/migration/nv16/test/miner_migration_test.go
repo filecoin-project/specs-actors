@@ -2,6 +2,9 @@ package test
 
 import (
 	"context"
+	"fmt"
+	"strings"
+
 	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 	"github.com/filecoin-project/specs-actors/v8/support/vm7Util"
 
@@ -13,6 +16,7 @@ import (
 	miner7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/miner"
 	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/v7/actors/util/adt"
+	"github.com/filecoin-project/specs-actors/v8/actors/states"
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/exported"
@@ -152,7 +156,7 @@ func makeManifest(t *testing.T, store cbor.IpldStore) cid.Cid {
 
 	manifestData := manifest8.ManifestData{}
 	for _, name := range []string{"system", "init", "cron", "account", "storagepower", "storageminer", "storagemarket", "paymentchannel", "multisig", "reward", "verifiedregistry"} {
-		codeCid, err := builder.Sum([]byte(name))
+		codeCid, err := builder.Sum([]byte(fmt.Sprintf("fil/8/%s", name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -227,6 +231,14 @@ func TestNv16Migration(t *testing.T) {
 
 	networkStatsAfter := vm8.GetNetworkStats(t, v8)
 	compareNetworkStats(t, networkStatsBefore, networkStatsAfter)
+
+	stateTree, err := v8.GetStateTree()
+	require.NoError(t, err)
+	totalBalance, err := v8.GetTotalActorBalance()
+	require.NoError(t, err)
+	acc, err := states.CheckStateInvariants(stateTree, totalBalance, v8.GetEpoch()-1)
+	require.NoError(t, err)
+	require.True(t, acc.IsEmpty(), strings.Join(acc.Messages(), "\n"))
 
 	// Compare miner states
 	for _, minerInfo := range minerInfos {
