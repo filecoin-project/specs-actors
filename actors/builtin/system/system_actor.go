@@ -4,18 +4,11 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/ipfs/go-cid"
-	mh "github.com/multiformats/go-multihash"
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	"github.com/filecoin-project/specs-actors/v8/actors/runtime"
 )
-
-var UndefinedBuiltinActors cid.Cid
-
-func init() {
-	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
-	UndefinedBuiltinActors, _ = builder.Sum([]byte("undefined"))
-}
 
 type Actor struct{}
 
@@ -42,7 +35,8 @@ var _ runtime.VMActor = Actor{}
 func (a Actor) Constructor(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.SystemActorAddr)
 
-	rt.StateCreate(&State{BuiltinActors: UndefinedBuiltinActors})
+	empty := rt.StorePut(&manifest.ManifestData{})
+	rt.StateCreate(&State{BuiltinActors: empty})
 	return nil
 }
 
