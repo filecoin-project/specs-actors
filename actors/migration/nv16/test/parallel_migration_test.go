@@ -27,7 +27,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 
 	// Run migration
 	adtStore := adt7.WrapStore(ctx, cbor.NewCborStore(bs))
-	manifestCid := makeManifest(t, adtStore)
+	manifestCid := makeTestManifest(t, adtStore)
 	startRoot := vm.StateRoot()
 	endRootSerial, err := nv16.MigrateStateTree(ctx, adtStore, manifestCid, startRoot, abi.ChainEpoch(0), nv16.Config{MaxWorkers: 1}, log, nv16.NewMemMigrationCache())
 	require.NoError(t, err)
