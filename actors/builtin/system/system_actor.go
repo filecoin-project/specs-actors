@@ -41,5 +41,5 @@ func (a Actor) Constructor(rt runtime.Runtime, _ *abi.EmptyValue) *abi.EmptyValu
 }
 
 type State struct {
-	BuiltinActors cid.Cid
+	BuiltinActors cid.Cid // ManifestData
 }
