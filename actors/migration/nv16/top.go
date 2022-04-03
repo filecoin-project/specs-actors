@@ -86,6 +86,11 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 	// Maps prior version code CIDs to migration functions.
 	migrations := make(map[cid.Cid]actorMigration)
 
+	// Set of prior version code CIDs for actors to defer during iteration, for explicit migration afterwards.
+	var deferredCodeIDs = map[cid.Cid]struct{}{
+		// None
+	}
+
 	// simple code migrations
 	var simpleMigrations = map[string]cid.Cid{
 		"init":             builtin7.InitActorCodeID,
@@ -116,7 +121,7 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 	}
 	migrations[builtin7.SystemActorCodeID] = systemActorMigrator{system8Cid, manifest.Data}
 
-	if len(migrations) != 11 {
+	if len(migrations)+len(deferredCodeIDs) != 11 {
 		panic(fmt.Sprintf("incomplete migration specification with %d code CIDs", len(migrations)))
 	}
 	startTime := time.Now()
@@ -145,6 +150,10 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 		defer close(jobCh)
 		log.Log(rt.INFO, "Creating migration jobs for tree %s", actorsRootIn)
 		if err = actorsIn.ForEach(func(addr address.Address, actorIn *states7.Actor) error {
+			if _, ok := deferredCodeIDs[actorIn.Code]; ok {
+				return nil
+			}
+
 			migration, ok := migrations[actorIn.Code]
 			if !ok {
 				return xerrors.Errorf("actor with code %s has no registered migration function", actorIn.Code)
