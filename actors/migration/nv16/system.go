@@ -15,6 +15,7 @@ type systemActorMigrator struct {
 }
 
 func (m systemActorMigrator) migrateState(ctx context.Context, store cbor.IpldStore, in actorMigrationInput) (*actorMigrationResult, error) {
+	// The ManifestData itself is already in the blockstore
 	state := system8.State{BuiltinActors: m.ManifestData}
 	stateHead, err := store.Put(ctx, &state)
 
