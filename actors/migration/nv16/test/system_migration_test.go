@@ -28,8 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var seed = int64(93837778)
-
 func makeTestManifest(t *testing.T, store cbor.IpldStore) cid.Cid {
 	adtStore := adt.WrapStore(context.Background(), store)
 	builder := cid.V1Builder{Codec: cid.Raw, MhType: mh.IDENTITY}
