@@ -170,9 +170,8 @@ func main() {
 		// other types
 		market.DealProposal{},       // Changed in v7
 		market.ClientDealProposal{}, // Changed in v7
-		market.SectorDeals{},
-		market.SectorWeights{},
-		market.DealState{},
+		// market.SectorDeals{},     // Aliased from v3
+		// market.SectorWeights{},   // Aliased from v3
 	); err != nil {
 		panic(err)
 	}
