@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/account"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/cron"
 	init_ "github.com/filecoin-project/specs-actors/v8/actors/builtin/init"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/multisig"
@@ -43,6 +44,16 @@ func main() {
 	// ); err != nil {
 	// 	panic(err)
 	// }
+
+	// Actor manifest
+	if err := gen.WriteTupleEncodersToFile("./actors/builtin/manifest/cbor_gen.go", "manifest",
+		// actor manifest
+		manifest.Manifest{},
+		manifest.ManifestEntry{},
+		manifest.ManifestData{},
+	); err != nil {
+		panic(err)
+	}
 
 	// Actors
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/system/cbor_gen.go", "system",

@@ -3,9 +3,8 @@ package system_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v8/support/mock"
 )
@@ -26,5 +25,12 @@ func TestConstruction(t *testing.T) {
 	var st system.State
 	rt.GetState(&st)
 
-	require.Equal(t, system.State{}, st)
+	var manifestData manifest.ManifestData
+	if ok := rt.StoreGet(st.BuiltinActors, &manifestData); !ok {
+		t.Fatal("missing manifest data")
+	}
+
+	if len(manifestData.Entries) != 0 {
+		t.Fatal("expected empty manifest data")
+	}
 }

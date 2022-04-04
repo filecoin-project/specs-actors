@@ -62,7 +62,9 @@ func NewVMWithSingletons(ctx context.Context, t testing.TB, bs ipldcbor.IpldBloc
 	store := adt.WrapBlockStore(ctx, bs)
 	vm := NewVM(ctx, lookup, store)
 
-	initializeActor(ctx, t, vm, &system.State{}, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
+	systemState, err := system.ConstructState(store)
+	require.NoError(t, err)
+	initializeActor(ctx, t, vm, systemState, builtin.SystemActorCodeID, builtin.SystemActorAddr, big.Zero())
 
 	initState, err := initactor.ConstructState(store, "scenarios")
 	require.NoError(t, err)
