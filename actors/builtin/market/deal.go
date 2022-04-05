@@ -36,7 +36,7 @@ type DealLabel struct {
 // DealLabel{nil, nil}, (*DealLabel(nil), and DealLabel{&"", nil})
 var EmptyDealLabel = DealLabel{s: nil, bs: nil}
 
-func NewDealLabelFromString(s string) (DealLabel, error) {
+func NewLabelFromString(s string) (DealLabel, error) {
 	if len(s) > DealMaxLabelSize {
 		return EmptyDealLabel, xerrors.Errorf("provided string is too large to be a label (%d), max length (%d)", len(s), DealMaxLabelSize)
 	}
@@ -48,7 +48,7 @@ func NewDealLabelFromString(s string) (DealLabel, error) {
 	}, nil
 }
 
-func NewDealLabelFromBytes(b []byte) (DealLabel, error) {
+func NewLabelFromBytes(b []byte) (DealLabel, error) {
 	if len(b) > DealMaxLabelSize {
 		return EmptyDealLabel, xerrors.Errorf("provided bytes are too large to be a label (%d), max length (%d)", len(b), DealMaxLabelSize)
 	}

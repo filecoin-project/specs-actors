@@ -2415,7 +2415,7 @@ func TestMarketActorDeals(t *testing.T) {
 		rt.Verify()
 	}
 
-	label, err := market.NewDealLabelFromString("foo")
+	label, err := market.NewLabelFromString("foo")
 	assert.NoError(t, err)
 
 	dealProposal.Label = label
@@ -2446,7 +2446,7 @@ func TestMaxDealLabelSize(t *testing.T) {
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
 
-	label, err := market.NewDealLabelFromString(string(make([]byte, market.DealMaxLabelSize)))
+	label, err := market.NewLabelFromString(string(make([]byte, market.DealMaxLabelSize)))
 	assert.NoError(t, err)
 
 	dealProposal.Label = label
@@ -3275,7 +3275,7 @@ func (h *marketActorTestHarness) generateAndPublishDealForPiece(rt *mock.Runtime
 	clientCollateral := big.NewInt(10)
 	providerCollateral := big.NewInt(10)
 
-	label, err := market.NewDealLabelFromString("label")
+	label, err := market.NewLabelFromString("label")
 	assert.NoError(h.t, err)
 
 	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: label, StartEpoch: startEpoch,
@@ -3329,7 +3329,7 @@ func generateDealProposalWithCollateral(client, provider address.Address, provid
 	pieceCid := tutil.MakeCID("1", &market.PieceCIDPrefix)
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
-	label, err := market.NewDealLabelFromString("label")
+	label, err := market.NewLabelFromString("label")
 	if err != nil {
 		panic(err)
 	}
