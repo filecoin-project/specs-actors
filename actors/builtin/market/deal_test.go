@@ -51,12 +51,12 @@ func TestDealLabel(t *testing.T) {
 	assert.False(t, label2.IsEmpty() || label2.IsBytes())
 	str, err = label2.ToString()
 	assert.NoError(t, err)
-	assert.Equal(t, "i am a label, turn me into cbor maj type 3 plz", str)
+	assert.Equal(t, "i am a label, turn me into cbor maj typ 3 plz", str)
 
 	// invalid utf8 string
 	_, err = market.NewLabelFromString(string([]byte{0xde, 0xad, 0xbe, 0xef}))
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not valid utf8")
+	assert.Contains(t, err.Error(), "invalid utf8")
 
 }
 
