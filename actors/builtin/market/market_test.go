@@ -2462,7 +2462,7 @@ func TestMaxDealLabelSize(t *testing.T) {
 	bs = append(bs, 'b')
 	assert.Equal(t, market.DealMaxLabelSize+1, len(bs))
 	badStr := string(bs)
-	label, err = market.NewLabelFromString(badStr)
+	_, err = market.NewLabelFromString(badStr)
 	assert.Error(t, err)
 }
 

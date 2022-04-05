@@ -99,8 +99,6 @@ func (label DealLabel) Length() int {
 	}
 	// empty
 	return 0
-
-	return len(*label.bs)
 }
 func (l DealLabel) Equals(o DealLabel) bool {
 	if l.IsString() && o.IsString() {
