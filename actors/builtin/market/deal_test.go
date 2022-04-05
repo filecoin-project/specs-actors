@@ -34,11 +34,44 @@ func TestDealLabel(t *testing.T) {
 
 func TestDealLabelFromCBOR(t *testing.T) {
 	// empty string
+	// b011_00000
+	emptyCBORText := []byte{0x60}
+	var label1 market.DealLabel
+	require.NoError(t, label1.UnmarshalCBOR(bytes.NewReader(emptyCBORText)))
 
-	// emtpy bytes
+	// valid utf8 string
+	// b011_00100 "deadbeef"
+	cborTestValid := append([]byte{0x64}, []byte("deadbeef")...)
+	var label2 market.DealLabel
+	require.NoError(t, label2.UnmarshalCBOR(bytes.NewReader(cborTestValid)))
+
+	// invalid utf8 string
+	// b011_00100 0xde 0xad 0xbe 0xef
+	cborText := []byte{0x64, 0xde, 0xad, 0xbe, 0xef}
+	var label3 market.DealLabel
+	err := label3.UnmarshalCBOR(bytes.NewReader(cborText))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid utf8")
+
+	// empty bytes
+	// b010_00000
+	emptyCBORBytes := []byte{0x40}
+	var label4 market.DealLabel
+	require.NoError(t, label4.UnmarshalCBOR(bytes.NewReader(emptyCBORBytes)))
+
+	// bytes
+	// b010_00100 0xde 0xad 0xbe 0xef
+	cborBytes := []byte{0x44, 0xde, 0xad, 0xbe, 0xef}
+	var label5 market.DealLabel
+	require.NoError(t, label5.UnmarshalCBOR(bytes.NewReader(cborBytes)))
 
 	// bad major type
-
+	// array of empty array b100_00001 b100_00000
+	arrayBytes := []byte{0x81, 0x80}
+	var label6 market.DealLabel
+	err = label6.UnmarshalCBOR(bytes.NewReader(arrayBytes))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unexpected major tag")
 }
 
 func TestSerializeProposal(t *testing.T) {
