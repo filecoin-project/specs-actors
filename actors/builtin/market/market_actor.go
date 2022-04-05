@@ -454,8 +454,8 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *abi.Empty
 
 			err = msm.dealStates.Set(dealID, &DealState{
 				SectorStartEpoch: currEpoch,
-				LastUpdatedEpoch: epochUndefined,
-				SlashEpoch:       epochUndefined,
+				LastUpdatedEpoch: EpochUndefined,
+				SlashEpoch:       EpochUndefined,
 			})
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to set deal state %d", dealID)
 		}
@@ -557,7 +557,7 @@ func (a Actor) OnMinerSectorsTerminate(rt Runtime, params *OnMinerSectorsTermina
 			}
 
 			// if a deal is already slashed, we don't need to do anything here.
-			if state.SlashEpoch != epochUndefined {
+			if state.SlashEpoch != EpochUndefined {
 				rt.Log(rtt.INFO, "deal %d already slashed", dealID)
 				continue
 			}
@@ -626,7 +626,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 				}
 
 				// if this is the first cron tick for the deal, it should be in the pending state.
-				if state.LastUpdatedEpoch == epochUndefined {
+				if state.LastUpdatedEpoch == EpochUndefined {
 					pdErr := msm.pendingDeals.Delete(abi.CidKey(dcid))
 					builtin.RequireNoErr(rt, pdErr, exitcode.ErrIllegalState, "failed to delete pending proposal %v", dcid)
 				}
@@ -635,7 +635,7 @@ func (a Actor) CronTick(rt Runtime, _ *abi.EmptyValue) *abi.EmptyValue {
 				builtin.RequireState(rt, slashAmount.GreaterThanEqual(big.Zero()), "computed negative slash amount %v for deal %d", slashAmount, dealID)
 
 				if removeDeal {
-					builtin.RequireState(rt, nextEpoch == epochUndefined, "removed deal %d should have no scheduled epoch (got %d)", dealID, nextEpoch)
+					builtin.RequireState(rt, nextEpoch == EpochUndefined, "removed deal %d should have no scheduled epoch (got %d)", dealID, nextEpoch)
 					amountSlashed = big.Add(amountSlashed, slashAmount)
 
 					// Delete proposal and state simultaneously.
