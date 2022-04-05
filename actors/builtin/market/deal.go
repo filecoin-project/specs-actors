@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"unicode/utf8"
 
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -23,22 +24,27 @@ import (
 //}
 var PieceCIDPrefix = market0.PieceCIDPrefix
 
-// The DealLabel is a "kinded union" -- can either be a String or a byte slice, but not both
-// TODO: What represents the empty label and how do we marshall it?
+// The DealLabel is a kinded union of string or byte slice.
+// It serializes to a CBOR string or CBOR byte string depending on which form it takes.
+// The empty label is serialized as an empty CBOR string (maj type 3).
 type DealLabel struct {
-	labelString string
-	labelBytes  []byte
+	s  *string
+	bs *[]byte
 }
 
-var EmptyDealLabel = DealLabel{}
+// Zero value of DealLabel is canonical EmptyDealLabel but three different values serialize the same way:
+// DealLabel{nil, nil}, (*DealLabel(nil), and DealLabel{&"", nil})
+var EmptyDealLabel = DealLabel{s: nil, bs: nil}
 
 func NewDealLabelFromString(s string) (DealLabel, error) {
 	if len(s) > DealMaxLabelSize {
 		return EmptyDealLabel, xerrors.Errorf("provided string is too large to be a label (%d), max length (%d)", len(s), DealMaxLabelSize)
 	}
-	// TODO: Check UTF-8
+	if !utf8.ValidString(s) {
+		return EmptyDealLabel, xerrors.Errorf("provided string is invalid utf8")
+	}
 	return DealLabel{
-		labelString: s,
+		s: &s,
 	}, nil
 }
 
@@ -46,73 +52,100 @@ func NewDealLabelFromBytes(b []byte) (DealLabel, error) {
 	if len(b) > DealMaxLabelSize {
 		return EmptyDealLabel, xerrors.Errorf("provided bytes are too large to be a label (%d), max length (%d)", len(b), DealMaxLabelSize)
 	}
-	// TODO: nilcheck? See note about emptiness.
+
 	return DealLabel{
-		labelBytes: b,
+		bs: &b,
 	}, nil
 }
 
-func (label DealLabel) IsStringSet() bool {
-	return label.labelString == ""
+func (label DealLabel) IsEmpty() bool {
+	return label.s == nil && label.bs == nil
 }
 
-func (label DealLabel) IsBytesSet() bool {
-	return len(label.labelBytes) != 0
+func (label DealLabel) IsString() bool {
+	return label.s != nil
+}
+
+func (label DealLabel) IsBytes() bool {
+	return label.bs != nil
 }
 
 func (label DealLabel) ToString() (string, error) {
-	if label.IsBytesSet() {
-		return "", xerrors.Errorf("label has bytes set")
+	if !label.IsString() {
+		return "", xerrors.Errorf("label is not string")
 	}
 
-	return label.labelString, nil
+	return *label.s, nil
 }
 
-func (label DealLabel) ToBytes() ([]byte, error) {
-	if label.IsStringSet() {
-		return nil, xerrors.Errorf("label has string set")
+func (label DealLabel) ToBytes() []byte {
+	if label.IsBytes() {
+		return *label.bs
 	}
+	if label.IsString() {
+		return []byte(*label.s)
 
-	return label.labelBytes, nil
+	}
+	// empty label, bytes are those of empty string
+	return []byte("")
 }
 
 func (label DealLabel) Length() int {
-	if label.IsStringSet() {
-		return len(label.labelString)
+	if label.IsString() {
+		return len(*label.s)
 	}
+	if label.IsBytes() {
+		return len(*label.bs)
+	}
+	// empty
+	return 0
 
-	return len(label.labelBytes)
+	return len(*label.bs)
 }
 func (l DealLabel) Equals(o DealLabel) bool {
-	return l.labelString == o.labelString && bytes.Equal(l.labelBytes, o.labelBytes)
+	if l.IsString() && o.IsString() {
+		return *l.s == *o.s
+	} else if l.IsBytes() && o.IsBytes() {
+		return bytes.Equal(*l.bs, *o.bs)
+	} else if l.IsEmpty() && o.IsEmpty() {
+		return true
+	} else {
+		return false
+	}
 }
 
 func (label *DealLabel) MarshalCBOR(w io.Writer) error {
-	// TODO: Whait if nil?
-	if label.IsStringSet() && label.IsBytesSet() {
-		return fmt.Errorf("dealLabel cannot have both string and bytes set")
-	}
-
 	scratch := make([]byte, 9)
 
-	if label.IsBytesSet() {
-		if len(label.labelBytes) > cbg.ByteArrayMaxLen {
-			return xerrors.Errorf("labelBytes is too long to marshal (%d), max allowed (%d)", len(label.labelBytes), cbg.ByteArrayMaxLen)
+	// nil *DealLabel counts as EmptyLabel
+	// on chain structures should never have a pointer to a DealLabel but the case is included for completeness
+	if label == nil || label.IsEmpty() {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, 0); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, string("")); err != nil {
+			return err
+		}
+		return nil
+	} else if label.IsString() && label.IsBytes() {
+		return fmt.Errorf("dealLabel cannot have both string and bytes set")
+	} else if label.IsBytes() {
+		if len(*label.bs) > cbg.ByteArrayMaxLen {
+			return xerrors.Errorf("labelBytes is too long to marshal (%d), max allowed (%d)", len(*label.bs), cbg.ByteArrayMaxLen)
 		}
 
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(label.labelBytes))); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(*label.bs))); err != nil {
 			return err
 		}
 
-		if _, err := w.Write(label.labelBytes[:]); err != nil {
+		if _, err := w.Write((*label.bs)[:]); err != nil {
 			return err
 		}
-	} else {
-		// "Empty" labels (empty strings and nil bytes) get marshaled as empty strings
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(label.labelString))); err != nil {
+	} else { // label.IsString()
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(*label.s))); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, label.labelString); err != nil {
+		if _, err := io.WriteString(w, *label.s); err != nil {
 			return err
 		}
 	}
@@ -121,7 +154,13 @@ func (label *DealLabel) MarshalCBOR(w io.Writer) error {
 }
 
 func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
-	// TODO: Whait if nil?
+	if label == nil {
+		return xerrors.Errorf("cannot unmarshal into nil pointer")
+	}
+
+	// reset fields
+	label.s = nil
+	label.bs = nil
 
 	scratch := make([]byte, 8)
 
@@ -131,7 +170,7 @@ func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
 	}
 
 	if maj == cbg.MajTextString {
-		label.labelBytes = nil
+
 		if length > cbg.MaxLength {
 			return fmt.Errorf("label string was too long (%d), max allowed (%d)", length, cbg.MaxLength)
 		}
@@ -141,20 +180,21 @@ func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
 		if err != nil {
 			return err
 		}
-
-		// TODO: Check UTF-8 here too
-		label.labelString = string(buf)
+		s := string(buf)
+		if !utf8.ValidString(s) {
+			return fmt.Errorf("label string not valid utf8")
+		}
+		label.s = &s
 	} else if maj == cbg.MajByteString {
-		label.labelString = ""
+
 		if length > cbg.ByteArrayMaxLen {
 			return fmt.Errorf("label bytes was too long (%d), max allowed (%d)", length, cbg.ByteArrayMaxLen)
 		}
 
-		if length > 0 {
-			label.labelBytes = make([]uint8, length)
-		}
+		bs := make([]uint8, length)
+		label.bs = &bs
 
-		if _, err := io.ReadFull(br, label.labelBytes[:]); err != nil {
+		if _, err := io.ReadFull(br, bs[:]); err != nil {
 			return err
 		}
 	} else {
