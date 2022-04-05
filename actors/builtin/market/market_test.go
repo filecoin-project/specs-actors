@@ -2417,7 +2417,6 @@ func TestMarketActorDeals(t *testing.T) {
 
 	label, err := market.NewLabelFromString("foo")
 	assert.NoError(t, err)
-
 	dealProposal.Label = label
 	// Same deal with a different label should work
 	{
@@ -2445,12 +2444,13 @@ func TestMaxDealLabelSize(t *testing.T) {
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
-
-	label, err := market.NewLabelFromString(string(make([]byte, market.DealMaxLabelSize)))
+	bs := make([]byte, market.DealMaxLabelSize)
+	for i := 0; i < len(bs); i++ {
+		bs[i] = 's' // 00 is also utf8 but set to something obvious for clarity
+	}
+	label, err := market.NewLabelFromString(string(bs))
 	assert.NoError(t, err)
-
 	dealProposal.Label = label
-	//params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
 
 	// DealLabel at max size should work.
 	{
@@ -2458,25 +2458,12 @@ func TestMaxDealLabelSize(t *testing.T) {
 		actor.publishDeals(rt, minerAddrs, publishDealReq{deal: dealProposal})
 	}
 
-	//label, err = market.NewDealLabelFromString(string(make([]byte, market.DealMaxLabelSize+1)))
-	//assert.NoError(t, err)
-	//
-	//dealProposal.Label = label
-
-	// DealLabel greater than max size should fail.
-	//{
-	//	rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-	//	rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
-	//	expectQueryNetworkInfo(rt, actor)
-	//	rt.ExpectVerifySignature(crypto.Signature{}, client, mustCbor(&params.Deals[0].Proposal), nil)
-	//	rt.SetCaller(worker, builtin.AccountActorCodeID)
-	//	rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-	//		rt.Call(actor.PublishStorageDeals, params)
-	//	})
-	//
-	//	rt.Verify()
-	//}
-	//actor.checkState(rt)
+	// using label type prevents even getting a handle to a label exceeding max size
+	bs = append(bs, 'b')
+	assert.Equal(t, market.DealMaxLabelSize+1, len(bs))
+	badStr := string(bs)
+	label, err = market.NewLabelFromString(badStr)
+	assert.Error(t, err)
 }
 
 func TestComputeDataCommitment(t *testing.T) {

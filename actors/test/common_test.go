@@ -3,8 +3,9 @@ package test
 import (
 	"bytes"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/miner"
@@ -109,7 +110,7 @@ func createMiner(t *testing.T, v *vm.VM, owner, worker addr.Address, wPoStProof 
 func publishDeal(t *testing.T, v *vm.VM, provider, dealClient, minerID addr.Address, dealLabel string,
 	pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart abi.ChainEpoch, dealLifetime abi.ChainEpoch,
 ) *market.PublishStorageDealsReturn {
-	label, err := market.NewDealLabelFromString("label")
+	label, err := market.NewLabelFromString("label")
 	assert.NoError(t, err)
 
 	deal := market.DealProposal{
@@ -179,7 +180,7 @@ func newDealBatcher(v *vm.VM) *dealBatcher {
 
 func (db *dealBatcher) stage(t *testing.T, dealClient, dealProvider addr.Address, dealLabel string, pieceSize abi.PaddedPieceSize, verifiedDeal bool, dealStart,
 	dealLifetime abi.ChainEpoch, pricePerEpoch, providerCollateral, clientCollateral abi.TokenAmount) {
-	label, err := market.NewDealLabelFromString("label")
+	label, err := market.NewLabelFromString("label")
 	assert.NoError(t, err)
 
 	deal := market.DealProposal{

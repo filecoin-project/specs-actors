@@ -142,6 +142,10 @@ func (label *DealLabel) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 	} else { // label.IsString()
+		if len(*label.s) > cbg.MaxLength {
+			return xerrors.Errorf("labelString is too long to marshal (%d), max allowed (%d)", len(*label.s), cbg.MaxLength)
+		}
+
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(*label.s))); err != nil {
 			return err
 		}

@@ -155,7 +155,7 @@ func (dca *DealClientAgent) createDeal(s SimState, provider DealProvider) error 
 	}
 
 	dca.expectedMarketBalance = big.Sub(dca.expectedMarketBalance, storageFee)
-	label, err := market.NewDealLabelFromString(dca.account.String() + ":" + strconv.Itoa(dca.DealCount))
+	label, err := market.NewLabelFromString(dca.account.String() + ":" + strconv.Itoa(dca.DealCount))
 	if err != nil {
 		return err
 	}
