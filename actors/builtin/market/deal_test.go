@@ -22,7 +22,7 @@ func TestDealLabel(t *testing.T) {
 	label2 := &market.DealLabel{}
 	require.NoError(t, label2.UnmarshalCBOR(bytes.NewReader(ser)))
 	assert.True(t, label2.IsString())
-	assert.False(t, label2.IsEmpty() || label2.IsBytes())
+	assert.False(t, label2.IsBytes())
 	str, err := label2.ToString()
 	assert.NoError(t, err)
 	assert.Equal(t, "", str)
@@ -36,7 +36,7 @@ func TestDealLabel(t *testing.T) {
 	label2 = &market.DealLabel{}
 	require.NoError(t, label2.UnmarshalCBOR(bytes.NewReader(ser)))
 	assert.True(t, label2.IsBytes())
-	assert.False(t, label2.IsEmpty() || label2.IsString())
+	assert.False(t, label2.IsString())
 	bs, err := label2.ToBytes()
 	require.NoError(t, err)
 	assert.Equal(t, []byte{0xca, 0xfe, 0xb0, 0x0a}, bs)
@@ -50,7 +50,7 @@ func TestDealLabel(t *testing.T) {
 	label2 = &market.DealLabel{}
 	require.NoError(t, label2.UnmarshalCBOR(bytes.NewReader(ser)))
 	assert.True(t, label2.IsString())
-	assert.False(t, label2.IsEmpty() || label2.IsBytes())
+	assert.False(t, label2.IsBytes())
 	str, err = label2.ToString()
 	assert.NoError(t, err)
 	assert.Equal(t, "i am a label, turn me into cbor maj typ 3 plz", str)
@@ -82,6 +82,7 @@ func TestDealLabelFromCBOR(t *testing.T) {
 	str, err = label2.ToString()
 	assert.NoError(t, err)
 	assert.Equal(t, "deadbeef", str)
+
 	// invalid utf8 string
 	// b011_00100 0xde 0xad 0xbe 0xef
 	cborText := []byte{0x64, 0xde, 0xad, 0xbe, 0xef}
@@ -133,7 +134,7 @@ func TestSerializeProposal(t *testing.T) {
 
 	empty2 := market.DealProposal{}
 	assert.NoError(t, empty2.UnmarshalCBOR(bytes.NewReader(ser)))
-	// zero values in general change between serialize deserialize (label and big int) so
+	// zero values in general change between serialize deserialize (big int) so
 	// assert.Equal(t, empty, empty2) will fail.  But bytes output by both should be identical
 
 	buf = bytes.Buffer{}
