@@ -99,31 +99,23 @@ func (label *DealLabel) MarshalCBOR(w io.Writer) error {
 		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, 0); err != nil {
 			return err
 		}
-		if _, err := io.WriteString(w, string("")); err != nil {
-			return err
-		}
-		return nil
-	} else {
-		if len(label.bs) > cbg.ByteArrayMaxLen {
-			return xerrors.Errorf("label is too long to marshal (%d), max allowed (%d)", len(label.bs), cbg.ByteArrayMaxLen)
-		}
-
-		var majorType byte
-		if label.IsString() {
-			majorType = cbg.MajTextString
-		} else {
-			majorType = cbg.MajByteString
-		}
-
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, majorType, uint64(len(label.bs))); err != nil {
-			return err
-		}
-		if _, err := w.Write(label.bs); err != nil {
-			return err
-		}
+		_, err := io.WriteString(w, string(""))
+		return err
+	}
+	if len(label.bs) > cbg.ByteArrayMaxLen {
+		return xerrors.Errorf("label is too long to marshal (%d), max allowed (%d)", len(label.bs), cbg.ByteArrayMaxLen)
 	}
 
-	return nil
+	majorType := byte(cbg.MajByteString)
+	if label.IsString() {
+		majorType = cbg.MajTextString
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, majorType, uint64(len(label.bs))); err != nil {
+		return err
+	}
+	_, err := w.Write(label.bs)
+	return err
 }
 
 func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
@@ -153,11 +145,8 @@ func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
 	}
 	label.bs = buf
 	label.notString = maj != cbg.MajTextString
-	if !label.notString {
-		s := string(buf)
-		if !utf8.ValidString(s) {
-			return fmt.Errorf("label string not valid utf8")
-		}
+	if !label.notString && !utf8.ValidString(string(buf)) {
+		return fmt.Errorf("label string not valid utf8")
 	}
 
 	return nil
