@@ -60,11 +60,6 @@ func NewLabelFromBytes(b []byte) (DealLabel, error) {
 	}, nil
 }
 
-// // True iff neither bytes nor string is set
-// func (label DealLabel) IsEmpty() bool {
-// 	return label.s == nil && label.bs == nil
-// }
-
 func (label DealLabel) IsString() bool {
 	return !label.notString
 }
