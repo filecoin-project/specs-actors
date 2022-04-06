@@ -98,7 +98,6 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 		"account":          builtin7.AccountActorCodeID,
 		"storagepower":     builtin7.StoragePowerActorCodeID,
 		"storageminer":     builtin7.StorageMinerActorCodeID,
-		"storagemarket":    builtin7.StorageMarketActorCodeID,
 		"paymentchannel":   builtin7.PaymentChannelActorCodeID,
 		"multisig":         builtin7.MultisigActorCodeID,
 		"reward":           builtin7.RewardActorCodeID,
@@ -120,6 +119,11 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 		return cid.Undef, xerrors.Errorf("code cid for system actor not found in manifet")
 	}
 	migrations[builtin7.SystemActorCodeID] = systemActorMigrator{system8Cid, manifest.Data}
+	market8Cid, ok := manifest.Get("storagemarket")
+	if !ok {
+		return cid.Undef, xerrors.Errorf("code cid for market actor not found in manifest")
+	}
+	migrations[builtin7.StorageMarketActorCodeID] = marketMigrator{market8Cid}
 
 	if len(migrations)+len(deferredCodeIDs) != 11 {
 		panic(fmt.Sprintf("incomplete migration specification with %d code CIDs", len(migrations)))

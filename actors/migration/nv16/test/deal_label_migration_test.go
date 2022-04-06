@@ -1,7 +1,9 @@
 package test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/filecoin-project/go-state-types/abi"
@@ -18,6 +20,7 @@ import (
 	market7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
 	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 
+	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
@@ -70,6 +73,7 @@ func TestDealLabelMigration(t *testing.T) {
 	// create 3 deals
 	dealIDs := []abi.DealID{}
 	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
+	fmt.Printf("worker: %s, client: %s, minerid: %s\n", worker, client, minerAddrs.IDAddress)
 	deals := publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal1-activatedcronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal2-activateduncronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
@@ -153,13 +157,13 @@ func TestDealLabelMigration(t *testing.T) {
 		lookup[ba.Code()] = ba
 	}
 
-	v6, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
+	v8, err := vm.NewVMAtEpoch(ctx, lookup, v.Store(), nextRoot, v.GetEpoch()+1)
 	require.NoError(t, err)
 
 	// now do the assertions again about what's in pendingproposals/proposals
 	// getting various AMTs out of things
 	var marketState market.State
-	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &marketState))
+	require.NoError(t, v8.GetState(builtin.StorageMarketActorAddr, &marketState))
 	proposals, err := adt.AsArray(adtStore, marketState.Proposals, market.ProposalsAmtBitwidth)
 	require.NoError(t, err)
 	states, err := adt.AsArray(adtStore, marketState.States, market.StatesAmtBitwidth)
@@ -179,8 +183,8 @@ func TestDealLabelMigration(t *testing.T) {
 	require.NoError(t, checkSameLabel(oldProposals, proposals, deal3ID))
 
 	var market6State market.State
-	require.NoError(t, v6.GetState(builtin.StorageMarketActorAddr, &market6State))
-	market.CheckStateInvariants(&market6State, v6.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
+	require.NoError(t, v8.GetState(builtin.StorageMarketActorAddr, &market6State))
+	market.CheckStateInvariants(&market6State, v8.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
 
 }
 
@@ -201,14 +205,25 @@ func publishDealv7(t *testing.T, v *vm7.VM, provider, dealClient, minerID addr.A
 		ClientCollateral:     big.Mul(big.NewInt(1), vm.FIL),
 	}
 
+	// fake signature syscall wants sig data == provided data
+	buf := bytes.Buffer{}
+	deal.MarshalCBOR(&buf)
 	publishDealParams := market7.PublishStorageDealsParams{
 		Deals: []market7.ClientDealProposal{{
 			Proposal: deal,
 			ClientSignature: crypto.Signature{
 				Type: crypto.SigTypeBLS,
+				Data: buf.Bytes(),
 			},
 		}},
 	}
+
+	fmt.Printf("provider: %s\n", minerID)
+	act, found, err := v.GetActor(provider)
+	require.True(t, found)
+	require.NoError(t, err)
+	fmt.Printf("provider code id: %s, miner v7 code id: %s\n", act.Code, builtin7.StorageMinerActorCodeID)
+	fmt.Printf("provider name: %s\n", builtin7.ActorNameByCode(act.Code))
 	result := vm7.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
 	require.Equal(t, exitcode.Ok, result.Code)
 
@@ -236,31 +251,31 @@ func publishDealv7(t *testing.T, v *vm7.VM, provider, dealClient, minerID addr.A
 }
 
 func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *adt.Array, pendingProposals *adt.Set,
-	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool, isv6 bool) {
-	var dealprop6 market.DealProposal
-	var dealprop5 market7.DealProposal
+	dealID abi.DealID, inProposals bool, inStates bool, inPendingProposals bool, isv8 bool) {
+	var dealprop8 market.DealProposal
+	var dealprop7 market7.DealProposal
 	var found bool
 	var err error
-	if isv6 {
-		found, err = proposals.Get(uint64(dealID), &dealprop6)
+	if isv8 {
+		found, err = proposals.Get(uint64(dealID), &dealprop8)
 	} else {
-		found, err = proposals.Get(uint64(dealID), &dealprop5)
+		found, err = proposals.Get(uint64(dealID), &dealprop7)
 	}
 	require.NoError(t, err)
-	require.Equal(t, found, inProposals)
+	require.Equal(t, inProposals, found)
 	found, err = states.Get(uint64(dealID), nil)
 	require.NoError(t, err)
-	require.Equal(t, found, inStates)
+	require.Equal(t, inStates, found)
 	var dealpropcid cid.Cid
-	if isv6 {
-		dealpropcid, err = dealprop6.Cid()
+	if isv8 {
+		dealpropcid, err = dealprop8.Cid()
 	} else {
-		dealpropcid, err = dealprop5.Cid()
+		dealpropcid, err = dealprop7.Cid()
 	}
 	require.NoError(t, err)
 	found, err = pendingProposals.Has(abi.CidKey(dealpropcid))
 	require.NoError(t, err)
-	require.Equal(t, found, inPendingProposals)
+	require.Equal(t, inPendingProposals, found)
 }
 
 func checkSameLabel(v7Proposals *adt.Array, v8Proposals *adt.Array, dealID abi.DealID) error {
