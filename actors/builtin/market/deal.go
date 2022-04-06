@@ -33,7 +33,7 @@ type DealLabel struct {
 }
 
 // Zero value of DealLabel is canonical EmptyDealLabel but three different values serialize the same way:
-// DealLabel{nil, nil}, (*DealLabel(nil), and DealLabel{&"", nil})
+// DealLabel{nil, nil}, (*DealLabel)(nil), and DealLabel{&"", nil}
 var EmptyDealLabel = DealLabel{s: nil, bs: nil}
 
 func NewLabelFromString(s string) (DealLabel, error) {
@@ -58,6 +58,7 @@ func NewLabelFromBytes(b []byte) (DealLabel, error) {
 	}, nil
 }
 
+// True iff neither bytes nor string is set
 func (label DealLabel) IsEmpty() bool {
 	return label.s == nil && label.bs == nil
 }
@@ -78,16 +79,11 @@ func (label DealLabel) ToString() (string, error) {
 	return *label.s, nil
 }
 
-func (label DealLabel) ToBytes() []byte {
-	if label.IsBytes() {
-		return *label.bs
+func (label DealLabel) ToBytes() ([]byte, error) {
+	if !label.IsBytes() {
+		return nil, xerrors.Errorf("label is not bytes")
 	}
-	if label.IsString() {
-		return []byte(*label.s)
-
-	}
-	// empty label, bytes are those of empty string
-	return []byte("")
+	return *label.bs, nil
 }
 
 func (label DealLabel) Length() int {

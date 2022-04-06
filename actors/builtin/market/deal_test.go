@@ -37,7 +37,9 @@ func TestDealLabel(t *testing.T) {
 	require.NoError(t, label2.UnmarshalCBOR(bytes.NewReader(ser)))
 	assert.True(t, label2.IsBytes())
 	assert.False(t, label2.IsEmpty() || label2.IsString())
-	assert.Equal(t, []byte{0xca, 0xfe, 0xb0, 0x0a}, label2.ToBytes())
+	bs, err := label2.ToBytes()
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0xca, 0xfe, 0xb0, 0x0a}, bs)
 
 	// string label
 	label1, err = market.NewLabelFromString("i am a label, turn me into cbor maj typ 3 plz")
@@ -80,7 +82,6 @@ func TestDealLabelFromCBOR(t *testing.T) {
 	str, err = label2.ToString()
 	assert.NoError(t, err)
 	assert.Equal(t, "deadbeef", str)
-
 	// invalid utf8 string
 	// b011_00100 0xde 0xad 0xbe 0xef
 	cborText := []byte{0x64, 0xde, 0xad, 0xbe, 0xef}
@@ -95,7 +96,8 @@ func TestDealLabelFromCBOR(t *testing.T) {
 	var label4 market.DealLabel
 	require.NoError(t, label4.UnmarshalCBOR(bytes.NewReader(emptyCBORBytes)))
 	assert.True(t, label4.IsBytes())
-	bs := label4.ToBytes()
+	bs, err := label4.ToBytes()
+	require.NoError(t, err)
 	assert.Equal(t, []byte{}, bs)
 
 	// bytes
@@ -104,7 +106,8 @@ func TestDealLabelFromCBOR(t *testing.T) {
 	var label5 market.DealLabel
 	require.NoError(t, label5.UnmarshalCBOR(bytes.NewReader(cborBytes)))
 	assert.True(t, label5.IsBytes())
-	bs = label5.ToBytes()
+	bs, err = label5.ToBytes()
+	require.NoError(t, err)
 	assert.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, bs)
 
 	// bad major type
