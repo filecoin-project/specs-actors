@@ -104,29 +104,22 @@ func (label *DealLabel) MarshalCBOR(w io.Writer) error {
 			return err
 		}
 		return nil
-	} else if label.IsString() && label.IsBytes() {
-		return fmt.Errorf("dealLabel cannot have both string and bytes set")
-	} else if label.IsBytes() {
+	} else {
 		if len(label.bs) > cbg.ByteArrayMaxLen {
-			return xerrors.Errorf("labelBytes is too long to marshal (%d), max allowed (%d)", len(label.bs), cbg.ByteArrayMaxLen)
+			return xerrors.Errorf("label is too long to marshal (%d), max allowed (%d)", len(label.bs), cbg.ByteArrayMaxLen)
 		}
 
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajByteString, uint64(len(label.bs))); err != nil {
-			return err
+		var majorType byte
+		if label.IsString() {
+			majorType = cbg.MajTextString
+		} else {
+			majorType = cbg.MajByteString
 		}
 
-		if _, err := w.Write((label.bs)[:]); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, majorType, uint64(len(label.bs))); err != nil {
 			return err
 		}
-	} else { // label.IsString()
-		if len(label.bs) > cbg.MaxLength {
-			return xerrors.Errorf("labelString is too long to marshal (%d), max allowed (%d)", len(label.bs), cbg.MaxLength)
-		}
-
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajTextString, uint64(len(label.bs))); err != nil {
-			return err
-		}
-		if _, err := w.Write((label.bs)[:]); err != nil {
+		if _, err := w.Write(label.bs); err != nil {
 			return err
 		}
 	}
@@ -148,38 +141,24 @@ func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
 	if err != nil {
 		return err
 	}
-
-	if maj == cbg.MajTextString {
-
-		if length > cbg.MaxLength {
-			return fmt.Errorf("label string was too long (%d), max allowed (%d)", length, cbg.MaxLength)
-		}
-
-		buf := make([]byte, length)
-		_, err = io.ReadAtLeast(br, buf, int(length))
-		if err != nil {
-			return err
-		}
+	if maj != cbg.MajTextString && maj != cbg.MajByteString {
+		return fmt.Errorf("unexpected major tag (%d) when unmarshaling DealLabel: only textString (%d) or byteString (%d) expected", maj, cbg.MajTextString, cbg.MajByteString)
+	}
+	if length > cbg.ByteArrayMaxLen {
+		return fmt.Errorf("label was too long (%d), max allowed (%d)", length, cbg.ByteArrayMaxLen)
+	}
+	buf := make([]byte, length)
+	_, err = io.ReadAtLeast(br, buf, int(length))
+	if err != nil {
+		return err
+	}
+	label.bs = buf
+	label.notString = maj != cbg.MajTextString
+	if !label.notString {
 		s := string(buf)
 		if !utf8.ValidString(s) {
 			return fmt.Errorf("label string not valid utf8")
 		}
-		label.bs = buf
-		label.notString = false
-	} else if maj == cbg.MajByteString {
-
-		if length > cbg.ByteArrayMaxLen {
-			return fmt.Errorf("label bytes was too long (%d), max allowed (%d)", length, cbg.ByteArrayMaxLen)
-		}
-
-		bs := make([]uint8, length)
-		label.bs = bs
-		label.notString = true
-		if _, err := io.ReadFull(br, bs[:]); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("unexpected major tag (%d) when unmarshaling DealLabel: only textString (%d) or byteString (%d) expected", maj, cbg.MajTextString, cbg.MajByteString)
 	}
 
 	return nil

@@ -60,6 +60,19 @@ func TestDealLabel(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid utf8")
 
+	// nil label marshals
+	labelPtr := (*market.DealLabel)(nil)
+	buf = bytes.Buffer{}
+	require.NoError(t, labelPtr.MarshalCBOR(&buf), "failed to marshal empty deal label")
+	ser = buf.Bytes()
+	assert.Equal(t, []byte{0x60}, ser) // cbor empty str (maj type 3)
+
+	// nil label unmarshal fails nicely
+	labelPtr = (*market.DealLabel)(nil)
+	err = labelPtr.UnmarshalCBOR(bytes.NewReader(ser))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot unmarshal into nil pointer")
+
 }
 
 func TestDealLabelFromCBOR(t *testing.T) {
