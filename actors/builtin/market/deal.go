@@ -26,14 +26,13 @@ var PieceCIDPrefix = market0.PieceCIDPrefix
 
 // The DealLabel is a kinded union of string or byte slice.
 // It serializes to a CBOR string or CBOR byte string depending on which form it takes.
-// The empty label is serialized as an empty CBOR string (maj type 3).
+// The zero value is serialized as an empty CBOR string (maj type 3).
 type DealLabel struct {
 	bs        []byte
 	notString bool
 }
 
-// Zero value of DealLabel is canonical EmptyDealLabel but three different values serialize the same way:
-// DealLabel{nil, nil}, (*DealLabel)(nil), and DealLabel{&"", nil}
+// Zero value of DealLabel is canonical EmptyDealLabel
 var EmptyDealLabel = DealLabel{}
 
 func NewLabelFromString(s string) (DealLabel, error) {
