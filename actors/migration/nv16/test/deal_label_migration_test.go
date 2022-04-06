@@ -277,10 +277,14 @@ func checkSameLabel(v7Proposals *adt.Array, v8Proposals *adt.Array, dealID abi.D
 	var prop8LabelString string
 	if dealprop8.Label.IsString() {
 		prop8LabelString, err = dealprop8.Label.ToString()
-		require.NoError(t, err)
+		if err != nil {
+			return err
+		}
 	} else { // dealprop8.Label.IsBytes()
 		bs, err := dealprop8.Label.ToBytes()
-		require.NoError(t, err)
+		if err != nil {
+			return err
+		}
 		prop8LabelString = string(bs)
 	}
 
