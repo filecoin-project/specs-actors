@@ -2415,8 +2415,9 @@ func TestMarketActorDeals(t *testing.T) {
 		rt.Verify()
 	}
 
-	dealProposal.Label = "foo"
-
+	label, err := market.NewLabelFromString("foo")
+	assert.NoError(t, err)
+	dealProposal.Label = label
 	// Same deal with a different label should work
 	{
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
@@ -2443,31 +2444,26 @@ func TestMaxDealLabelSize(t *testing.T) {
 	actor.addParticipantFunds(rt, client, abi.NewTokenAmount(20000000))
 
 	dealProposal := generateDealProposal(client, provider, abi.ChainEpoch(1), abi.ChainEpoch(200*builtin.EpochsInDay))
-	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize))
-	params := &market.PublishStorageDealsParams{Deals: []market.ClientDealProposal{{Proposal: dealProposal}}}
+	bs := make([]byte, market.DealMaxLabelSize)
+	for i := 0; i < len(bs); i++ {
+		bs[i] = 's' // 00 is also utf8 but set to something obvious for clarity
+	}
+	label, err := market.NewLabelFromString(string(bs))
+	assert.NoError(t, err)
+	dealProposal.Label = label
 
-	// Label at max size should work.
+	// DealLabel at max size should work.
 	{
 		rt.SetCaller(worker, builtin.AccountActorCodeID)
 		actor.publishDeals(rt, minerAddrs, publishDealReq{deal: dealProposal})
 	}
 
-	dealProposal.Label = string(make([]byte, market.DealMaxLabelSize+1))
-
-	// Label greater than max size should fail.
-	{
-		rt.ExpectValidateCallerType(builtin.AccountActorCodeID, builtin.MultisigActorCodeID)
-		rt.ExpectSend(provider, builtin.MethodsMiner.ControlAddresses, nil, abi.NewTokenAmount(0), &miner.GetControlAddressesReturn{Worker: worker, Owner: owner}, 0)
-		expectQueryNetworkInfo(rt, actor)
-		rt.ExpectVerifySignature(crypto.Signature{}, client, mustCbor(&params.Deals[0].Proposal), nil)
-		rt.SetCaller(worker, builtin.AccountActorCodeID)
-		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
-			rt.Call(actor.PublishStorageDeals, params)
-		})
-
-		rt.Verify()
-	}
-	actor.checkState(rt)
+	// using label type prevents even getting a handle to a label exceeding max size
+	bs = append(bs, 'b')
+	assert.Equal(t, market.DealMaxLabelSize+1, len(bs))
+	badStr := string(bs)
+	_, err = market.NewLabelFromString(badStr)
+	assert.Error(t, err)
 }
 
 func TestComputeDataCommitment(t *testing.T) {
@@ -3266,7 +3262,10 @@ func (h *marketActorTestHarness) generateAndPublishDealForPiece(rt *mock.Runtime
 	clientCollateral := big.NewInt(10)
 	providerCollateral := big.NewInt(10)
 
-	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: "label", StartEpoch: startEpoch,
+	label, err := market.NewLabelFromString("label")
+	assert.NoError(h.t, err)
+
+	deal := market.DealProposal{PieceCID: pieceCID, PieceSize: pieceSize, Client: client, Provider: minerAddrs.provider, Label: label, StartEpoch: startEpoch,
 		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
 
 	// add funds
@@ -3317,8 +3316,12 @@ func generateDealProposalWithCollateral(client, provider address.Address, provid
 	pieceCid := tutil.MakeCID("1", &market.PieceCIDPrefix)
 	pieceSize := abi.PaddedPieceSize(2048)
 	storagePerEpoch := big.NewInt(10)
+	label, err := market.NewLabelFromString("label")
+	if err != nil {
+		panic(err)
+	}
 
-	return market.DealProposal{PieceCID: pieceCid, PieceSize: pieceSize, Client: client, Provider: provider, Label: "label", StartEpoch: startEpoch,
+	return market.DealProposal{PieceCID: pieceCid, PieceSize: pieceSize, Client: client, Provider: provider, Label: label, StartEpoch: startEpoch,
 		EndEpoch: endEpoch, StoragePricePerEpoch: storagePerEpoch, ProviderCollateral: providerCollateral, ClientCollateral: clientCollateral}
 }
 

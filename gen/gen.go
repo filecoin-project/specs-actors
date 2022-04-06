@@ -159,7 +159,7 @@ func main() {
 		market.DealState{},
 		// method params and returns
 		//market.WithdrawBalanceParams{}, // Aliased from v0
-		// market.PublishStorageDealsParams{}, // Aliased from v0
+		market.PublishStorageDealsParams{},
 		//market.PublishStorageDealsReturn{}, // Aliased from v6
 		//market.ActivateDealsParams{}, // Aliased from v0
 		//market.VerifyDealsForActivationParams{}, // Aliased from v3
@@ -168,11 +168,10 @@ func main() {
 		//market.ComputeDataCommitmentReturn{}, // Aliased from v5
 		//market.OnMinerSectorsTerminateParams{}, // Aliased from v0
 		// other types
-		//market.DealProposal{}, // Aliased from v0
-		//market.ClientDealProposal{},
-		//market.SectorDeals{}, // Aliased from v3
-		//market.SectorWeights{}, // Aliased from v3
-		//market.SectorDataSpec{}, // Aliased from v5
+		market.DealProposal{},       // Changed in v7
+		market.ClientDealProposal{}, // Changed in v7
+		// market.SectorDeals{},     // Aliased from v3
+		// market.SectorWeights{},   // Aliased from v3
 	); err != nil {
 		panic(err)
 	}
