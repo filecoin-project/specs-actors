@@ -3,10 +3,13 @@ package manifest
 import (
 	"context"
 	"fmt"
+	"io"
 
 	adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
 
 	"github.com/ipfs/go-cid"
+
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 type Manifest struct {
@@ -46,4 +49,34 @@ func (m *Manifest) Load(ctx context.Context, store adt8.Store) error {
 func (m *Manifest) Get(name string) (cid.Cid, bool) {
 	c, ok := m.entries[name]
 	return c, ok
+}
+
+// this is a flat tuple, so we need to write this by hand
+func (d *ManifestData) UnmarshalCBOR(r io.Reader) error {
+	*d = ManifestData{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	entries := int(extra)
+	d.Entries = make([]ManifestEntry, 0, entries)
+
+	for i := 0; i < entries; i++ {
+		entry := ManifestEntry{}
+		if err := entry.UnmarshalCBOR(r); err != nil {
+			return fmt.Errorf("error unmarsnalling manifest entry: %w", err)
+		}
+
+		d.Entries = append(d.Entries, entry)
+	}
+
+	return nil
 }
