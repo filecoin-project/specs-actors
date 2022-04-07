@@ -31,12 +31,12 @@ func (m marketMigrator) migrateState(ctx context.Context, store cbor.IpldStore, 
 	}
 	wrappedStore := adt.WrapStore(ctx, store)
 
-	proposalsCidOut, changedProposalCIDs, err := MapProposals(ctx, wrappedStore, inState.Proposals)
+	proposalsCidOut, updates, err := UpdateProposals(ctx, wrappedStore, inState.Proposals, inState.States)
 	if err != nil {
 		return nil, err
 	}
 
-	pendingProposalsCidOut, err := CreateNewPendingProposals(ctx, wrappedStore, changedProposalCIDs, proposalsCidOut, inState.States, inState.PendingProposals)
+	pendingProposalsCidOut, err := UpdatePendingProposals(ctx, wrappedStore, updates, inState.PendingProposals)
 	if err != nil {
 		return nil, err
 	}
@@ -68,38 +68,32 @@ type cidSwap struct {
 }
 
 // MapProposals converts proposals with invalid i.e. non-utf8 string label serializations into proposals with
-// byte label serializations.  It returns a map from old proposal cid to new proposal cid for those proposals
-// whose serialization has changed
-func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (cid.Cid, map[int64]cidSwap, error) {
+// byte label serializations.  For those proposals with
+//   (1) a serialization that changed
+//   (2) a cid in pending proposals map
+// it returns a map from deal id to (old cid, new cid)
+func UpdateProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid, statesRoot cid.Cid) (cid.Cid, map[int64]cidSwap, error) {
 	changedProposalCIDs := make(map[int64]cidSwap)
-	oldProposals, err := adt.AsArray(store, proposalsRoot, market7.ProposalsAmtBitwidth)
+	states, err := adt.AsArray(store, statesRoot, market7.StatesAmtBitwidth)
 	if err != nil {
 		return cid.Undef, nil, err
 	}
 
-	newProposals, err := adt.MakeEmptyArray(store, market.ProposalsAmtBitwidth)
+	proposals, err := adt.AsArray(store, proposalsRoot, market7.ProposalsAmtBitwidth)
 	if err != nil {
 		return cid.Undef, nil, err
 	}
 
 	var dealprop7 market7.DealProposal
-
-	err = oldProposals.ForEach(&dealprop7, func(key int64) error {
-		var newLabel market.DealLabel
+	err = proposals.ForEach(&dealprop7, func(key int64) error {
 		if utf8.ValidString(dealprop7.Label) {
-			newLabel, err = market.NewLabelFromString(dealprop7.Label)
-			if err != nil {
-				return err
-			}
-		} else {
-			// serialization changes
-			if err != nil {
-				return err
-			}
-			newLabel, err = market.NewLabelFromBytes([]byte(dealprop7.Label))
-			if err != nil {
-				return err
-			}
+			return nil // no update needed
+		}
+
+		// serialization of proposal updated here
+		newLabel, err := market.NewLabelFromBytes([]byte(dealprop7.Label))
+		if err != nil {
+			return err
 		}
 
 		dealprop8 := market.DealProposal{
@@ -115,7 +109,14 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 			ProviderCollateral:   dealprop7.ProviderCollateral,
 			ClientCollateral:     dealprop7.ClientCollateral,
 		}
-		if newLabel.IsBytes() {
+
+		// only calculate hashes if pending proposals tracks this deal and needs update
+		var dealstate market.DealState
+		has, err := states.Get(uint64(key), &dealstate)
+		if err != nil {
+			return err
+		}
+		if (has && dealstate.LastUpdatedEpoch == market.EpochUndefined) || !has { // condition for inclusion in pending proposals
 			old, err := dealprop7.Cid()
 			if err != nil {
 				return err
@@ -126,13 +127,13 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 			}
 			changedProposalCIDs[key] = cidSwap{old: old, new: new}
 		}
-		return newProposals.Set(uint64(key), &dealprop8)
+		return proposals.Set(uint64(key), &dealprop8)
 	})
 	if err != nil {
 		return cid.Undef, nil, err
 	}
 
-	newProposalsCid, err := newProposals.Root()
+	newProposalsCid, err := proposals.Root()
 	if err != nil {
 		return cid.Undef, nil, err
 	}
@@ -142,44 +143,20 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 
 // This rebuilds pendingproposals after all the CIDs have changed when the labels are of a different type in dealProposal.
 // A proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
-// Precondition: proposalsRoot is new proposals as computed in MapProposals
-func CreateNewPendingProposals(ctx context.Context, store adt.Store, changedProposalCIDs map[int64]cidSwap, proposalsRoot cid.Cid, statesRoot cid.Cid, pendingProposalsRoot cid.Cid) (cid.Cid, error) {
-	proposals, err := adt.AsArray(store, proposalsRoot, market7.ProposalsAmtBitwidth)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	states, err := adt.AsArray(store, statesRoot, market7.StatesAmtBitwidth)
-	if err != nil {
-		return cid.Undef, err
-	}
-
+func UpdatePendingProposals(ctx context.Context, store adt.Store, changedProposalCIDs map[int64]cidSwap, pendingProposalsRoot cid.Cid) (cid.Cid, error) {
 	pendingProposals, err := adt.AsSet(store, pendingProposalsRoot, builtin.DefaultHamtBitwidth)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	err = proposals.ForEach(nil, func(key int64) error {
-		// only process deals whose serialization has changed
-		swap, ok := changedProposalCIDs[key]
-		if !ok {
-			return nil
+	for _, swap := range changedProposalCIDs {
+		if err := pendingProposals.Delete(abi.CidKey(swap.old)); err != nil {
+			return cid.Undef, err
 		}
-		var dealstate market.DealState
-		has, err := states.Get(uint64(key), &dealstate)
-		if err != nil {
-			return err
+		if err := pendingProposals.Put(abi.CidKey(swap.new)); err != nil {
+			return cid.Undef, err
 		}
-
-		// Only process deals that have a cid in pending proposals
-		if (has && dealstate.LastUpdatedEpoch == market.EpochUndefined) || !has {
-			if err := pendingProposals.Delete(abi.CidKey(swap.old)); err != nil {
-				return err
-			}
-			return pendingProposals.Put(abi.CidKey(swap.new))
-		}
-		return nil
-	})
+	}
 	if err != nil {
 		return cid.Undef, err
 	}
