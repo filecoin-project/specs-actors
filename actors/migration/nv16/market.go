@@ -149,7 +149,7 @@ func UpdatePendingProposals(ctx context.Context, store adt.Store, changedProposa
 		return cid.Undef, err
 	}
 
-	for _, swap := range changedProposalCIDs {
+	for _, swap := range changedProposalCIDs { //nolint:nomaprange
 		if err := pendingProposals.Delete(abi.CidKey(swap.old)); err != nil {
 			return cid.Undef, err
 		}
