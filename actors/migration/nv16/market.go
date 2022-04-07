@@ -140,9 +140,9 @@ func MapProposals(ctx context.Context, store adt.Store, proposalsRoot cid.Cid) (
 	return newProposalsCid, changedProposalCIDs, nil
 }
 
-// This rebuilds pendingproposals after all the CIDs have changed because the labels are of a different type in dealProposal
-// a proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
-// Precondition proposalsRoot is new proposals as computed in MapProposals
+// This rebuilds pendingproposals after all the CIDs have changed when the labels are of a different type in dealProposal.
+// A proposal in Proposals is pending if its dealID is not a member of States, or if the LastUpdatedEpoch field is market.EpochUndefined.
+// Precondition: proposalsRoot is new proposals as computed in MapProposals
 func CreateNewPendingProposals(ctx context.Context, store adt.Store, changedProposalCIDs map[int64]cidSwap, proposalsRoot cid.Cid, statesRoot cid.Cid, pendingProposalsRoot cid.Cid) (cid.Cid, error) {
 	proposals, err := adt.AsArray(store, proposalsRoot, market7.ProposalsAmtBitwidth)
 	if err != nil {
@@ -159,8 +159,7 @@ func CreateNewPendingProposals(ctx context.Context, store adt.Store, changedProp
 		return cid.Undef, err
 	}
 
-	var dealprop market.DealProposal
-	err = proposals.ForEach(&dealprop, func(key int64) error {
+	err = proposals.ForEach(nil, func(key int64) error {
 		// only process deals whose serialization has changed
 		swap, ok := changedProposalCIDs[key]
 		if !ok {

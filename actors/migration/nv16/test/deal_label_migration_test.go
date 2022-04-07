@@ -3,8 +3,8 @@ package test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -20,7 +20,6 @@ import (
 	market7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/market"
 	power7 "github.com/filecoin-project/specs-actors/v7/actors/builtin/power"
 
-	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	vm7 "github.com/filecoin-project/specs-actors/v7/support/vm"
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin"
@@ -70,25 +69,43 @@ func TestDealLabelMigration(t *testing.T) {
 	vm7.ApplyOk(t, v, client, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &client)
 	vm7.ApplyOk(t, v, worker, builtin.StorageMarketActorAddr, collateral, builtin.MethodsMarket.AddBalance, &minerAddrs.IDAddress)
 
-	// create 3 deals
+	// create 6 deals
 	dealIDs := []abi.DealID{}
 	dealStart := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
-	fmt.Printf("worker: %s, client: %s, minerid: %s\n", worker, client, minerAddrs.IDAddress)
-	deals := publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal1-activatedcronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+
+	invalidLabel1 := "deal2-activated-cronned-invalidUTF8" + string([]byte{0xff})
+	invalidLabel2 := "deal4-activateduncronned-invalidUTF8" + string([]byte{0xff})
+	invalidLabel3 := "deal6-unactivated-invalidUTF8" + string([]byte{0xff})
+	require.True(t, !utf8.ValidString(invalidLabel1) && !utf8.ValidString(invalidLabel2) && !utf8.ValidString(invalidLabel3))
+
+	deals := publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal1-activatedcronned-validUTF8", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal2-activateduncronned", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, invalidLabel1, 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
-	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal3-unactivated", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal3-activateduncronned-validUTF8", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	dealIDs = append(dealIDs, deals.IDs...)
+	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, invalidLabel2, 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	dealIDs = append(dealIDs, deals.IDs...)
+	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, "deal5-unactivated-validUTF8", 1<<30, false, dealStart, 365*builtin.EpochsInDay)
+	dealIDs = append(dealIDs, deals.IDs...)
+	deals = publishDealv7(t, v, worker, client, minerAddrs.IDAddress, invalidLabel3, 1<<30, false, dealStart, 365*builtin.EpochsInDay)
 	dealIDs = append(dealIDs, deals.IDs...)
 
 	deal1ID := dealIDs[0]
 	deal2ID := dealIDs[1]
 	deal3ID := dealIDs[2]
+	deal4ID := dealIDs[3]
+	deal5ID := dealIDs[4]
+	deal6ID := dealIDs[5]
 
 	deal1CronTime := market.GenRandNextEpoch(dealStart, deal1ID)
 	deal2CronTime := market.GenRandNextEpoch(dealStart, deal2ID)
 	deal3CronTime := market.GenRandNextEpoch(dealStart, deal3ID)
+	deal4CronTime := market.GenRandNextEpoch(dealStart, deal4ID)
+	deal5CronTime := market.GenRandNextEpoch(dealStart, deal5ID)
+	deal6CronTime := market.GenRandNextEpoch(dealStart, deal6ID)
 	require.True(t, deal1CronTime < deal2CronTime && deal2CronTime < deal3CronTime)
+	require.True(t, deal3CronTime < deal4CronTime && deal4CronTime < deal5CronTime && deal5CronTime < deal6CronTime)
 	require.True(t, v.GetEpoch() < dealStart && dealStart < deal1CronTime)
 
 	// precommit sector with deals
@@ -99,7 +116,7 @@ func TestDealLabelMigration(t *testing.T) {
 		SectorNumber:  sectorNumber,
 		SealedCID:     sealedCid,
 		SealRandEpoch: v.GetEpoch() - 1,
-		DealIDs:       dealIDs[:2],
+		DealIDs:       dealIDs[:4],
 		Expiration:    v.GetEpoch() + 400*builtin.EpochsInDay,
 	}
 	vm7.ApplyOk(t, v, addrs[0], minerAddrs.RobustAddress, big.Zero(), builtin.MethodsMiner.PreCommitSector, &preCommitParams)
@@ -108,7 +125,7 @@ func TestDealLabelMigration(t *testing.T) {
 	proveTime := v.GetEpoch() + miner.MaxProveCommitDuration[sealProof]
 	v, _ = vm7.AdvanceByDeadlineTillEpoch(t, v, minerAddrs.IDAddress, proveTime)
 
-	// Prove commit sector after max seal duration- deal1 and deal2 get activated here
+	// Prove commit sector after max seal duration- deal1, deal2, deal3 and deal4 get activated here
 	v, err := v.WithEpoch(proveTime)
 	require.NoError(t, err)
 	proveCommitParams := miner.ProveCommitSectorParams{
@@ -119,10 +136,13 @@ func TestDealLabelMigration(t *testing.T) {
 	// In the same epoch, trigger cron to validate prove commit
 	vm7.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
-	// advance time to when deal1 will be cronned
+	// advance time to when deal1 will be cronned and cron deal 1
 	v, err = v.WithEpoch(deal1CronTime)
 	require.NoError(t, err)
-	// run market cron to cron deal1, but not deal2 yet
+	vm7.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
+	// advance time to when deal2 will be cronned and cron deal 2.  deals 3 and above uncronned
+	v, err = v.WithEpoch(deal2CronTime)
+	require.NoError(t, err)
 	vm7.ApplyOk(t, v, builtin.SystemActorAddr, builtin.CronActorAddr, big.Zero(), builtin.MethodsCron.EpochTick, nil)
 
 	// now do some assertions about what's in pendingproposals/proposals
@@ -136,12 +156,15 @@ func TestDealLabelMigration(t *testing.T) {
 	require.NoError(t, err)
 	oldPendingProposals, err := adt.AsSet(adtStore, market7State.PendingProposals, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
-	// deal1 will just be in states and proposals and not pendingproposals
+	// deal1, deal2 will just be in states and proposals and not pendingproposals
 	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal1ID, true, true, false, false)
-	// deal2 will be in proposals pendingproposals and in states
-	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal2ID, true, true, true, false)
-	// deal3 will be in proposals and pendingproposals but not in states
-	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal3ID, true, false, true, false)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal2ID, true, true, false, false)
+	// deal3, deal4 will be in proposals pendingproposals and in states
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal3ID, true, true, true, false)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal4ID, true, true, true, false)
+	// deal5, deal6 will be in proposals and pendingproposals but not in states
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal5ID, true, false, true, false)
+	checkMarketProposalsEtcState(t, oldProposals, oldStates, oldPendingProposals, deal6ID, true, false, true, false)
 
 	oldMarketActor, found, err := v.GetActor(builtin.StorageMarketActorAddr)
 	require.NoError(t, err)
@@ -170,21 +193,27 @@ func TestDealLabelMigration(t *testing.T) {
 	require.NoError(t, err)
 	pendingProposals, err := adt.AsSet(adtStore, marketState.PendingProposals, builtin.DefaultHamtBitwidth)
 	require.NoError(t, err)
-	// deal1 will just be in states and proposals and not pendingproposals
+	// deal1, deal2 will just be in states and proposals and not pendingproposals
 	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal1ID, true, true, false, true)
-	// deal2 will be in proposals pendingproposals and in states
-	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal2ID, true, true, true, true)
-	// deal3 will be in proposals and pendingproposals but not in states
-	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal3ID, true, false, true, true)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal2ID, true, true, false, true)
+	// deal3, deal4 will be in proposals pendingproposals and in states
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal3ID, true, true, true, true)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal4ID, true, true, true, true)
+	// deal5, deal6 will be in proposals and pendingproposals but not in states
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal5ID, true, false, true, true)
+	checkMarketProposalsEtcState(t, proposals, states, pendingProposals, deal6ID, true, false, true, true)
 
-	// check that all three's labels are the same, just with changed types, before and after.
-	require.NoError(t, checkSameLabel(oldProposals, proposals, deal1ID))
-	require.NoError(t, checkSameLabel(oldProposals, proposals, deal2ID))
-	require.NoError(t, checkSameLabel(oldProposals, proposals, deal3ID))
+	// check that labels are the same, just with potentially changed types, before and after.
+	require.NoError(t, checkLabel(oldProposals, proposals, deal1ID))
+	require.NoError(t, checkLabel(oldProposals, proposals, deal2ID))
+	require.NoError(t, checkLabel(oldProposals, proposals, deal3ID))
+	require.NoError(t, checkLabel(oldProposals, proposals, deal4ID))
+	require.NoError(t, checkLabel(oldProposals, proposals, deal5ID))
+	require.NoError(t, checkLabel(oldProposals, proposals, deal6ID))
 
-	var market6State market.State
-	require.NoError(t, v8.GetState(builtin.StorageMarketActorAddr, &market6State))
-	market.CheckStateInvariants(&market6State, v8.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
+	var market8State market.State
+	require.NoError(t, v8.GetState(builtin.StorageMarketActorAddr, &market8State))
+	market.CheckStateInvariants(&market8State, v8.Store(), oldMarketActor.Balance, v.GetEpoch()+1)
 
 }
 
@@ -207,7 +236,7 @@ func publishDealv7(t *testing.T, v *vm7.VM, provider, dealClient, minerID addr.A
 
 	// fake signature syscall wants sig data == provided data
 	buf := bytes.Buffer{}
-	deal.MarshalCBOR(&buf)
+	require.NoError(t, deal.MarshalCBOR(&buf))
 	publishDealParams := market7.PublishStorageDealsParams{
 		Deals: []market7.ClientDealProposal{{
 			Proposal: deal,
@@ -218,12 +247,6 @@ func publishDealv7(t *testing.T, v *vm7.VM, provider, dealClient, minerID addr.A
 		}},
 	}
 
-	fmt.Printf("provider: %s\n", minerID)
-	act, found, err := v.GetActor(provider)
-	require.True(t, found)
-	require.NoError(t, err)
-	fmt.Printf("provider code id: %s, miner v7 code id: %s\n", act.Code, builtin7.StorageMinerActorCodeID)
-	fmt.Printf("provider name: %s\n", builtin7.ActorNameByCode(act.Code))
 	result := vm7.RequireApplyMessage(t, v, provider, builtin.StorageMarketActorAddr, big.Zero(), builtin.MethodsMarket.PublishStorageDeals, &publishDealParams, t.Name())
 	require.Equal(t, exitcode.Ok, result.Code)
 
@@ -278,7 +301,7 @@ func checkMarketProposalsEtcState(t *testing.T, proposals *adt.Array, states *ad
 	require.Equal(t, inPendingProposals, found)
 }
 
-func checkSameLabel(v7Proposals *adt.Array, v8Proposals *adt.Array, dealID abi.DealID) error {
+func checkLabel(v7Proposals *adt.Array, v8Proposals *adt.Array, dealID abi.DealID) error {
 	var dealprop7 market7.DealProposal
 	var dealprop8 market.DealProposal
 	found, err := v7Proposals.Get(uint64(dealID), &dealprop7)
@@ -289,22 +312,29 @@ func checkSameLabel(v7Proposals *adt.Array, v8Proposals *adt.Array, dealID abi.D
 	if !found || err != nil {
 		return xerrors.Errorf("failed to look up dealID %v in validating deal label", dealID)
 	}
-	var prop8LabelString string
 	if dealprop8.Label.IsString() {
-		prop8LabelString, err = dealprop8.Label.ToString()
+		prop8LabelString, err := dealprop8.Label.ToString()
 		if err != nil {
 			return err
+		}
+		if !utf8.ValidString(prop8LabelString) {
+			return xerrors.Errorf("migration incorrectly kept invalid utf8 string as string in label")
+		}
+		if dealprop7.Label != prop8LabelString {
+			return xerrors.Errorf("deal labels were not the same after migration.")
 		}
 	} else { // dealprop8.Label.IsBytes()
 		bs, err := dealprop8.Label.ToBytes()
 		if err != nil {
 			return err
 		}
-		prop8LabelString = string(bs)
+		if utf8.ValidString(string(bs)) {
+			return xerrors.Errorf("label converted to bytes in migration even though it is valid utf8")
+		}
+		if dealprop7.Label != string(bs) {
+			return xerrors.Errorf("deal labels were not the same after migration")
+		}
 	}
 
-	if dealprop7.Label != prop8LabelString {
-		return xerrors.Errorf("deal labels were not the same, modulo types, after migration.")
-	}
 	return nil
 }
