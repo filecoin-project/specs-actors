@@ -50,7 +50,6 @@ func main() {
 		// actor manifest
 		manifest.Manifest{},
 		manifest.ManifestEntry{},
-		manifest.ManifestData{},
 	); err != nil {
 		panic(err)
 	}
