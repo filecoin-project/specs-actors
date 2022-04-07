@@ -51,7 +51,7 @@ func (m *Manifest) Get(name string) (cid.Cid, bool) {
 	return c, ok
 }
 
-// this is a flat tuple, so we need to write this by hand
+// this is a flat tuple, so we need to write these by hand
 func (d *ManifestData) UnmarshalCBOR(r io.Reader) error {
 	*d = ManifestData{}
 
@@ -76,6 +76,31 @@ func (d *ManifestData) UnmarshalCBOR(r io.Reader) error {
 		}
 
 		d.Entries = append(d.Entries, entry)
+	}
+
+	return nil
+}
+
+func (d *ManifestData) MarshalCBOR(w io.Writer) error {
+	if d == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	if len(d.Entries) > cbg.MaxLength {
+		return fmt.Errorf("too many manifest entries")
+	}
+
+	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(d.Entries))); err != nil {
+		return err
+	}
+
+	for _, v := range d.Entries {
+		if err := v.MarshalCBOR(w); err != nil {
+			return err
+		}
 	}
 
 	return nil
