@@ -76,6 +76,7 @@ func main() {
 		//init_.ConstructorParams{}, // Aliased from v0
 		//init_.ExecParams{}, // Aliased from v0
 		//init_.ExecReturn{}, // Aliased from v0
+		init_.InstallReturn{},
 	); err != nil {
 		panic(err)
 	}

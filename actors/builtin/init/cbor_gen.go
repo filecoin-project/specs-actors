@@ -127,3 +127,79 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	}
 	return nil
 }
+
+var lengthBufInstallReturn = []byte{130}
+
+func (t *InstallReturn) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+	if _, err := w.Write(lengthBufInstallReturn); err != nil {
+		return err
+	}
+
+	scratch := make([]byte, 9)
+
+	// t.CodeCid (cid.Cid) (struct)
+
+	if err := cbg.WriteCidBuf(scratch, w, t.CodeCid); err != nil {
+		return xerrors.Errorf("failed to write cid field t.CodeCid: %w", err)
+	}
+
+	// t.Installed (bool) (bool)
+	if err := cbg.WriteBool(w, t.Installed); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *InstallReturn) UnmarshalCBOR(r io.Reader) error {
+	*t = InstallReturn{}
+
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
+
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajArray {
+		return fmt.Errorf("cbor input should be of type array")
+	}
+
+	if extra != 2 {
+		return fmt.Errorf("cbor input had wrong number of fields")
+	}
+
+	// t.CodeCid (cid.Cid) (struct)
+
+	{
+
+		c, err := cbg.ReadCid(br)
+		if err != nil {
+			return xerrors.Errorf("failed to read cid field t.CodeCid: %w", err)
+		}
+
+		t.CodeCid = c
+
+	}
+	// t.Installed (bool) (bool)
+
+	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	if err != nil {
+		return err
+	}
+	if maj != cbg.MajOther {
+		return fmt.Errorf("booleans must be major type 7")
+	}
+	switch extra {
+	case 20:
+		t.Installed = false
+	case 21:
+		t.Installed = true
+	default:
+		return fmt.Errorf("booleans are either major type 7, value 20 or 21 (got %d)", extra)
+	}
+	return nil
+}
