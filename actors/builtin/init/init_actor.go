@@ -109,6 +109,10 @@ func canExec(callerCodeID cid.Cid, execCodeID cid.Cid) bool {
 	}
 }
 
+type InstallParams struct {
+	Code []byte
+}
+
 type InstallReturn struct {
 	CodeCid   cid.Cid
 	Installed bool
