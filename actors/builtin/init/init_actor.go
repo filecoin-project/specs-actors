@@ -21,6 +21,7 @@ func (a Actor) Exports() []interface{} {
 	return []interface{}{
 		builtin.MethodConstructor: a.Constructor,
 		2:                         a.Exec,
+		3:                         a.Install,
 	}
 }
 
@@ -116,4 +117,9 @@ type InstallParams struct {
 type InstallReturn struct {
 	CodeCid   cid.Cid
 	Installed bool
+}
+
+// empty shim
+func (a Actor) Install(rt runtime.Runtime, params *InstallParams) *InstallReturn {
+	return nil
 }
