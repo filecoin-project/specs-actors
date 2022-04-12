@@ -66,9 +66,9 @@ func (a Actor) Constructor(rt runtime.Runtime, rootKey *addr.Address) *abi.Empty
 type AddVerifierParams = verifreg0.AddVerifierParams
 
 func (a Actor) AddVerifier(rt runtime.Runtime, params *AddVerifierParams) *abi.EmptyValue {
-	if params.Allowance.LessThan(MinVerifiedDealSize) {
-		rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verifier %v", params.Allowance, params.Address)
-	}
+	// if params.Allowance.LessThan(MinVerifiedDealSize) {
+	// 	rt.Abortf(exitcode.ErrIllegalArgument, "Allowance %d below MinVerifiedDealSize for add verifier %v", params.Allowance, params.Address)
+	// }
 
 	verifier, err := builtin.ResolveToIDAddr(rt, params.Address)
 	builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to resolve verifier address %v to ID address", params.Address)
