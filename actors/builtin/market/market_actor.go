@@ -225,15 +225,15 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 		if _, ok := totalClientLockup[client]; !ok {
 			totalClientLockup[client] = abi.NewTokenAmount(0)
 		}
-		totalClientLockup[client] = big.Sum(totalClientLockup[client], deal.Proposal.ClientBalanceRequirement())
-		clientBalanceOk, err := msm.balanceCovered(client, totalClientLockup[client])
+		clientTotalLockup := big.Sum(totalClientLockup[client], deal.Proposal.ClientBalanceRequirement())
+		clientBalanceOk, err := msm.balanceCovered(client, clientTotalLockup)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check client balance coverage")
 		if !clientBalanceOk {
 			rt.Log(rtt.INFO, "invalid deal: %d: insufficient client funds to cover proposal cost", di)
 			continue
 		}
-		totalProviderLockup = big.Sum(totalProviderLockup, deal.Proposal.ProviderCollateral)
-		providerBalanceOk, err := msm.balanceCovered(provider, totalProviderLockup)
+		providerTotalLockup := big.Sum(totalProviderLockup, deal.Proposal.ProviderCollateral)
+		providerBalanceOk, err := msm.balanceCovered(provider, providerTotalLockup)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to check provider balance coverage")
 		if !providerBalanceOk {
 			rt.Log(rtt.INFO, "invalid deal: %d: insufficient provider funds to cover proposal cost", di)
@@ -282,6 +282,10 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 				continue
 			}
 		}
+
+		// update
+		totalClientLockup[client] = clientTotalLockup
+		totalProviderLockup = providerTotalLockup
 
 		// update valid deal state
 		proposalCidLookup[pcid] = struct{}{}
