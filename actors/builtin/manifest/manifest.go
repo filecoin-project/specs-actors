@@ -66,6 +66,10 @@ func (d *ManifestData) UnmarshalCBOR(r io.Reader) error {
 		return fmt.Errorf("cbor input should be of type array")
 	}
 
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("too many manifest entries")
+	}
+
 	entries := int(extra)
 	d.Entries = make([]ManifestEntry, 0, entries)
 
