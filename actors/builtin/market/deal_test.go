@@ -2,7 +2,12 @@ package market_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
+
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/specs-actors/v8/actors/builtin/market"
 	tutil "github.com/filecoin-project/specs-actors/v8/support/testing"
@@ -73,6 +78,77 @@ func TestDealLabel(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot unmarshal into nil pointer")
 
+}
+func TestDealLabelJSON(t *testing.T) {
+
+	// Non-empty string
+	label1, err := market.NewLabelFromString("i am a label, json me correctly plz")
+	require.NoError(t, err, "failed to create label from string")
+	label1JSON, err := json.Marshal(&label1)
+	require.NoError(t, err, "failed to JSON marshal string label")
+	label2 := &market.DealLabel{}
+	require.NoError(t, label2.UnmarshalJSON(label1JSON))
+	assert.True(t, label2.IsString())
+	assert.False(t, label2.IsBytes())
+	str, err := label2.ToString()
+	assert.NoError(t, err)
+	assert.Equal(t, "i am a label, json me correctly plz", str)
+
+	dp := &market.DealProposal{
+		PieceCID:             cid.Undef,
+		PieceSize:            0,
+		VerifiedDeal:         false,
+		Client:               address.Undef,
+		Provider:             address.Undef,
+		Label:                label1,
+		StoragePricePerEpoch: big.Zero(),
+		ProviderCollateral:   big.Zero(),
+		ClientCollateral:     big.Zero(),
+	}
+
+	dpJSON, err := json.Marshal(dp)
+	require.NoError(t, err, "failed to JSON marshal deal proposal")
+	dp2 := market.DealProposal{}
+	require.NoError(t, json.Unmarshal(dpJSON, &dp2))
+	assert.True(t, dp2.Label.IsString())
+	assert.False(t, dp2.Label.IsBytes())
+	str, err = dp2.Label.ToString()
+	assert.NoError(t, err)
+	assert.Equal(t, "i am a label, json me correctly plz", str)
+
+	label1, err = market.NewLabelFromString("")
+	require.NoError(t, err, "failed to create label from string")
+	label1JSON, err = json.Marshal(&label1)
+	require.NoError(t, err, "failed to JSON marshal string label")
+	label2 = &market.DealLabel{}
+	require.NoError(t, label2.UnmarshalJSON(label1JSON))
+	assert.True(t, label2.IsString())
+	assert.False(t, label2.IsBytes())
+	str, err = label2.ToString()
+	assert.NoError(t, err)
+	assert.Equal(t, "", str)
+
+	dp = &market.DealProposal{
+		PieceCID:             cid.Undef,
+		PieceSize:            0,
+		VerifiedDeal:         false,
+		Client:               address.Undef,
+		Provider:             address.Undef,
+		Label:                label1,
+		StoragePricePerEpoch: big.Zero(),
+		ProviderCollateral:   big.Zero(),
+		ClientCollateral:     big.Zero(),
+	}
+
+	dpJSON, err = json.Marshal(dp)
+	require.NoError(t, err, "failed to JSON marshal deal proposal")
+	dp2 = market.DealProposal{}
+	require.NoError(t, json.Unmarshal(dpJSON, &dp2))
+	assert.True(t, dp2.Label.IsString())
+	assert.False(t, dp2.Label.IsBytes())
+	str, err = dp2.Label.ToString()
+	assert.NoError(t, err)
+	assert.Equal(t, "", str)
 }
 
 func TestDealLabelFromCBOR(t *testing.T) {
