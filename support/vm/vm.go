@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 
+	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -12,7 +14,6 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
-	vm2 "github.com/filecoin-project/specs-actors/v2/support/vm"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 
@@ -56,7 +57,7 @@ type VM struct {
 // VM types
 
 // type ActorImplLookup map[cid.Cid]runtime.VMActor
-type ActorImplLookup vm2.ActorImplLookup
+type ActorImplLookup vm6.ActorImplLookup
 
 type InternalMessage struct {
 	from   address.Address

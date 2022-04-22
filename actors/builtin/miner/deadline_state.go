@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 
+	prooftypes "github.com/filecoin-project/go-state-types/proof"
+
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -1143,7 +1145,7 @@ func (dl *Deadline) RecordProvenSectors(
 
 // RecordPoStProofs records a set of optimistically accepted PoSt proofs
 // (usually one), associating them with the given partitions.
-func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []proof.PoStProof) error {
+func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitField, proofs []prooftypes.PoStProof) error {
 	proofArr, err := dl.OptimisticProofsArray(store)
 	if err != nil {
 		return xerrors.Errorf("failed to load proofs: %w", err)
@@ -1167,7 +1169,7 @@ func (dl *Deadline) RecordPoStProofs(store adt.Store, partitions bitfield.BitFie
 // TakePoStProofs removes and returns a PoSt proof by index, along with the
 // associated partitions. This method takes the PoSt from the PoSt submissions
 // snapshot.
-func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitfield.BitField, proofs []proof.PoStProof, err error) {
+func (dl *Deadline) TakePoStProofs(store adt.Store, idx uint64) (partitions bitfield.BitField, proofs []prooftypes.PoStProof, err error) {
 	proofArr, err := dl.OptimisticProofsSnapshotArray(store)
 	if err != nil {
 		return bitfield.New(), nil, xerrors.Errorf("failed to load proofs: %w", err)

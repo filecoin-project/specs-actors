@@ -15,23 +15,21 @@ import (
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/v7/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/v7/actors/util/smoothing"
 	"github.com/filecoin-project/specs-actors/v7/support/vm"
 )
 
 func main() {
 	// Common types
-	if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof",
-		//proof.SectorInfo{},
-		proof.ExtendedSectorInfo{},
-		//proof.SealVerifyInfo{}, // Aliased from v0
-		//proof.PoStProof{}, // Aliased from v0
-		//proof.WindowPoStVerifyInfo{},
-		// proof.WinningPoStVerifyInfo{}, // Aliased from v0
-	); err != nil {
-		panic(err)
-	}
+	//if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof"); //proof.SectorInfo{},
+	//proof.ExtendedSectorInfo{},
+	//proof.SealVerifyInfo{}, // Aliased from v0
+	//proof.PoStProof{}, // Aliased from v0
+	//proof.WindowPoStVerifyInfo{},
+	// proof.WinningPoStVerifyInfo{}, // Aliased from v0
+	//err != nil {
+	//	panic(err)
+	//}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},
@@ -117,11 +115,11 @@ func main() {
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/paych/cbor_gen.go", "paych",
 		// actor state
 		paych.State{},
-		paych.LaneState{},
+		//paych.LaneState{},
 		// method params and returns
 		//paych.ConstructorParams{}, // Aliased from v0
-		paych.UpdateChannelStateParams{},
-		paych.SignedVoucher{},
+		//paych.UpdateChannelStateParams{},
+		//paych.SignedVoucher{},
 		//paych.ModVerifyParams{}, // Aliased from v0
 		// other types
 		//paych.Merge{}, // Aliased from v0

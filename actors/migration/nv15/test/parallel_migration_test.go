@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/filecoin-project/specs-actors/v7/support/ipld"
+
 	vm6 "github.com/filecoin-project/specs-actors/v6/support/vm"
 
 	"github.com/filecoin-project/go-state-types/abi"
-	ipld2 "github.com/filecoin-project/specs-actors/v2/support/ipld"
 	"github.com/filecoin-project/specs-actors/v7/actors/migration/nv15"
 	adt5 "github.com/filecoin-project/specs-actors/v7/actors/util/adt"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -22,7 +23,7 @@ func TestParallelMigrationCalls(t *testing.T) {
 	// Construct simple prior state tree over a synchronized store
 	ctx := context.Background()
 	log := nv15.TestLogger{TB: t}
-	bs := ipld2.NewSyncBlockStoreInMemory()
+	bs := ipld.NewSyncBlockStoreInMemory()
 	vm := vm6.NewVMWithSingletons(ctx, t, bs)
 
 	// Run migration

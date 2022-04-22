@@ -5,15 +5,21 @@ package multisig
 import (
 	"fmt"
 	"io"
+	"math"
+	"sort"
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
 	multisig "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
+var _ = cid.Undef
+var _ = math.E
+var _ = sort.Sort
 
 var lengthBufState = []byte{135}
 
@@ -22,89 +28,95 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-	if _, err := w.Write(lengthBufState); err != nil {
+
+	cw := cbg.NewCborWriter(w)
+
+	if _, err := cw.Write(lengthBufState); err != nil {
 		return err
 	}
-
-	scratch := make([]byte, 9)
 
 	// t.Signers ([]address.Address) (slice)
 	if len(t.Signers) > cbg.MaxLength {
 		return xerrors.Errorf("Slice value in field t.Signers was too long")
 	}
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajArray, uint64(len(t.Signers))); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.Signers))); err != nil {
 		return err
 	}
 	for _, v := range t.Signers {
-		if err := v.MarshalCBOR(w); err != nil {
+		if err := v.MarshalCBOR(cw); err != nil {
 			return err
 		}
 	}
 
 	// t.NumApprovalsThreshold (uint64) (uint64)
 
-	if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold)); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.NumApprovalsThreshold)); err != nil {
 		return err
 	}
 
 	// t.NextTxnID (multisig.TxnID) (int64)
 	if t.NextTxnID >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.NextTxnID)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.NextTxnID)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.NextTxnID-1)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.NextTxnID-1)); err != nil {
 			return err
 		}
 	}
 
 	// t.InitialBalance (big.Int) (struct)
-	if err := t.InitialBalance.MarshalCBOR(w); err != nil {
+	if err := t.InitialBalance.MarshalCBOR(cw); err != nil {
 		return err
 	}
 
 	// t.StartEpoch (abi.ChainEpoch) (int64)
 	if t.StartEpoch >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.StartEpoch)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.StartEpoch)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.StartEpoch-1)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.StartEpoch-1)); err != nil {
 			return err
 		}
 	}
 
 	// t.UnlockDuration (abi.ChainEpoch) (int64)
 	if t.UnlockDuration >= 0 {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.UnlockDuration)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.UnlockDuration)); err != nil {
 			return err
 		}
 	} else {
-		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.UnlockDuration-1)); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.UnlockDuration-1)); err != nil {
 			return err
 		}
 	}
 
 	// t.PendingTxns (cid.Cid) (struct)
 
-	if err := cbg.WriteCidBuf(scratch, w, t.PendingTxns); err != nil {
+	if err := cbg.WriteCid(cw, t.PendingTxns); err != nil {
 		return xerrors.Errorf("failed to write cid field t.PendingTxns: %w", err)
 	}
 
 	return nil
 }
 
-func (t *State) UnmarshalCBOR(r io.Reader) error {
+func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 	*t = State{}
 
-	br := cbg.GetPeeker(r)
-	scratch := make([]byte, 8)
+	cr := cbg.NewCborReader(r)
 
-	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+	maj, extra, err := cr.ReadHeader()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
 	if maj != cbg.MajArray {
 		return fmt.Errorf("cbor input should be of type array")
 	}
@@ -115,7 +127,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	// t.Signers ([]address.Address) (slice)
 
-	maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+	maj, extra, err = cr.ReadHeader()
 	if err != nil {
 		return err
 	}
@@ -135,7 +147,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	for i := 0; i < int(extra); i++ {
 
 		var v address.Address
-		if err := v.UnmarshalCBOR(br); err != nil {
+		if err := v.UnmarshalCBOR(cr); err != nil {
 			return err
 		}
 
@@ -146,7 +158,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		maj, extra, err = cbg.CborReadHeaderBuf(br, scratch)
+		maj, extra, err = cr.ReadHeader()
 		if err != nil {
 			return err
 		}
@@ -158,7 +170,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	}
 	// t.NextTxnID (multisig.TxnID) (int64)
 	{
-		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		maj, extra, err := cr.ReadHeader()
 		var extraI int64
 		if err != nil {
 			return err
@@ -185,14 +197,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		if err := t.InitialBalance.UnmarshalCBOR(br); err != nil {
+		if err := t.InitialBalance.UnmarshalCBOR(cr); err != nil {
 			return xerrors.Errorf("unmarshaling t.InitialBalance: %w", err)
 		}
 
 	}
 	// t.StartEpoch (abi.ChainEpoch) (int64)
 	{
-		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		maj, extra, err := cr.ReadHeader()
 		var extraI int64
 		if err != nil {
 			return err
@@ -217,7 +229,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 	}
 	// t.UnlockDuration (abi.ChainEpoch) (int64)
 	{
-		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
+		maj, extra, err := cr.ReadHeader()
 		var extraI int64
 		if err != nil {
 			return err
@@ -244,7 +256,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) error {
 
 	{
 
-		c, err := cbg.ReadCid(br)
+		c, err := cbg.ReadCid(cr)
 		if err != nil {
 			return xerrors.Errorf("failed to read cid field t.PendingTxns: %w", err)
 		}
