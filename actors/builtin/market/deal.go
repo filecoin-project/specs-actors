@@ -2,6 +2,7 @@ package market
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"unicode/utf8"
@@ -149,6 +150,30 @@ func (label *DealLabel) UnmarshalCBOR(br io.Reader) error {
 		return fmt.Errorf("label string not valid utf8")
 	}
 
+	return nil
+}
+
+func (label *DealLabel) MarshalJSON() ([]byte, error) {
+	str, err := label.ToString()
+	if err != nil {
+		return nil, xerrors.Errorf("can only marshal strings: %w", err)
+	}
+
+	return json.Marshal(str)
+}
+
+func (label *DealLabel) UnmarshalJSON(b []byte) error {
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		return xerrors.Errorf("failed to unmarshal string: %w", err)
+	}
+
+	newLabel, err := NewLabelFromString(str)
+	if err != nil {
+		return xerrors.Errorf("failed to create label from string: %w", err)
+	}
+
+	*label = newLabel
 	return nil
 }
 
