@@ -5,19 +5,13 @@ package paych
 import (
 	"fmt"
 	"io"
-	"math"
-	"sort"
 
 	abi "github.com/filecoin-project/go-state-types/abi"
-	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
-var _ = cid.Undef
-var _ = math.E
-var _ = sort.Sort
 
 var lengthBufState = []byte{134}
 
@@ -26,74 +20,68 @@ func (t *State) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-
-	cw := cbg.NewCborWriter(w)
-
-	if _, err := cw.Write(lengthBufState); err != nil {
+	if _, err := w.Write(lengthBufState); err != nil {
 		return err
 	}
 
+	scratch := make([]byte, 9)
+
 	// t.From (address.Address) (struct)
-	if err := t.From.MarshalCBOR(cw); err != nil {
+	if err := t.From.MarshalCBOR(w); err != nil {
 		return err
 	}
 
 	// t.To (address.Address) (struct)
-	if err := t.To.MarshalCBOR(cw); err != nil {
+	if err := t.To.MarshalCBOR(w); err != nil {
 		return err
 	}
 
 	// t.ToSend (big.Int) (struct)
-	if err := t.ToSend.MarshalCBOR(cw); err != nil {
+	if err := t.ToSend.MarshalCBOR(w); err != nil {
 		return err
 	}
 
 	// t.SettlingAt (abi.ChainEpoch) (int64)
 	if t.SettlingAt >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.SettlingAt)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.SettlingAt)); err != nil {
 			return err
 		}
 	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.SettlingAt-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.SettlingAt-1)); err != nil {
 			return err
 		}
 	}
 
 	// t.MinSettleHeight (abi.ChainEpoch) (int64)
 	if t.MinSettleHeight >= 0 {
-		if err := cw.WriteMajorTypeHeader(cbg.MajUnsignedInt, uint64(t.MinSettleHeight)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajUnsignedInt, uint64(t.MinSettleHeight)); err != nil {
 			return err
 		}
 	} else {
-		if err := cw.WriteMajorTypeHeader(cbg.MajNegativeInt, uint64(-t.MinSettleHeight-1)); err != nil {
+		if err := cbg.WriteMajorTypeHeaderBuf(scratch, w, cbg.MajNegativeInt, uint64(-t.MinSettleHeight-1)); err != nil {
 			return err
 		}
 	}
 
 	// t.LaneStates (cid.Cid) (struct)
 
-	if err := cbg.WriteCid(cw, t.LaneStates); err != nil {
+	if err := cbg.WriteCidBuf(scratch, w, t.LaneStates); err != nil {
 		return xerrors.Errorf("failed to write cid field t.LaneStates: %w", err)
 	}
 
 	return nil
 }
 
-func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
+func (t *State) UnmarshalCBOR(r io.Reader) error {
 	*t = State{}
 
-	cr := cbg.NewCborReader(r)
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
 
-	maj, extra, err := cr.ReadHeader()
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err == io.EOF {
-			err = io.ErrUnexpectedEOF
-		}
-	}()
-
 	if maj != cbg.MajArray {
 		return fmt.Errorf("cbor input should be of type array")
 	}
@@ -106,7 +94,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		if err := t.From.UnmarshalCBOR(cr); err != nil {
+		if err := t.From.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.From: %w", err)
 		}
 
@@ -115,7 +103,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		if err := t.To.UnmarshalCBOR(cr); err != nil {
+		if err := t.To.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.To: %w", err)
 		}
 
@@ -124,14 +112,14 @@ func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		if err := t.ToSend.UnmarshalCBOR(cr); err != nil {
+		if err := t.ToSend.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.ToSend: %w", err)
 		}
 
 	}
 	// t.SettlingAt (abi.ChainEpoch) (int64)
 	{
-		maj, extra, err := cr.ReadHeader()
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
 		if err != nil {
 			return err
@@ -156,7 +144,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 	// t.MinSettleHeight (abi.ChainEpoch) (int64)
 	{
-		maj, extra, err := cr.ReadHeader()
+		maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 		var extraI int64
 		if err != nil {
 			return err
@@ -183,7 +171,7 @@ func (t *State) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		c, err := cbg.ReadCid(cr)
+		c, err := cbg.ReadCid(br)
 		if err != nil {
 			return xerrors.Errorf("failed to read cid field t.LaneStates: %w", err)
 		}

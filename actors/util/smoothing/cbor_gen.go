@@ -5,18 +5,12 @@ package smoothing
 import (
 	"fmt"
 	"io"
-	"math"
-	"sort"
 
-	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"
 )
 
 var _ = xerrors.Errorf
-var _ = cid.Undef
-var _ = math.E
-var _ = sort.Sort
 
 var lengthBufFilterEstimate = []byte{130}
 
@@ -25,40 +19,32 @@ func (t *FilterEstimate) MarshalCBOR(w io.Writer) error {
 		_, err := w.Write(cbg.CborNull)
 		return err
 	}
-
-	cw := cbg.NewCborWriter(w)
-
-	if _, err := cw.Write(lengthBufFilterEstimate); err != nil {
+	if _, err := w.Write(lengthBufFilterEstimate); err != nil {
 		return err
 	}
 
 	// t.PositionEstimate (big.Int) (struct)
-	if err := t.PositionEstimate.MarshalCBOR(cw); err != nil {
+	if err := t.PositionEstimate.MarshalCBOR(w); err != nil {
 		return err
 	}
 
 	// t.VelocityEstimate (big.Int) (struct)
-	if err := t.VelocityEstimate.MarshalCBOR(cw); err != nil {
+	if err := t.VelocityEstimate.MarshalCBOR(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *FilterEstimate) UnmarshalCBOR(r io.Reader) (err error) {
+func (t *FilterEstimate) UnmarshalCBOR(r io.Reader) error {
 	*t = FilterEstimate{}
 
-	cr := cbg.NewCborReader(r)
+	br := cbg.GetPeeker(r)
+	scratch := make([]byte, 8)
 
-	maj, extra, err := cr.ReadHeader()
+	maj, extra, err := cbg.CborReadHeaderBuf(br, scratch)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err == io.EOF {
-			err = io.ErrUnexpectedEOF
-		}
-	}()
-
 	if maj != cbg.MajArray {
 		return fmt.Errorf("cbor input should be of type array")
 	}
@@ -71,7 +57,7 @@ func (t *FilterEstimate) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		if err := t.PositionEstimate.UnmarshalCBOR(cr); err != nil {
+		if err := t.PositionEstimate.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.PositionEstimate: %w", err)
 		}
 
@@ -80,7 +66,7 @@ func (t *FilterEstimate) UnmarshalCBOR(r io.Reader) (err error) {
 
 	{
 
-		if err := t.VelocityEstimate.UnmarshalCBOR(cr); err != nil {
+		if err := t.VelocityEstimate.UnmarshalCBOR(br); err != nil {
 			return xerrors.Errorf("unmarshaling t.VelocityEstimate: %w", err)
 		}
 
