@@ -2,6 +2,8 @@ package agent
 
 import (
 	"bytes"
+	"context"
+
 	block "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -19,7 +21,7 @@ func BlockstoreCopy(from, to cbor.IpldBlockstore, root cid.Cid) (blocks uint64, 
 	cp := func(blk block.Block) error {
 		numBlocks++
 		totalCopySize += uint64(len(blk.RawData()))
-		return to.Put(blk)
+		return to.Put(context.TODO(), blk)
 	}
 
 	if err := copyRec(from, to, root, cp); err != nil {
@@ -35,7 +37,7 @@ func copyRec(from, to cbor.IpldBlockstore, root cid.Cid, cp func(block.Block) er
 		return nil
 	}
 
-	blk, err := from.Get(root)
+	blk, err := from.Get(context.TODO(), root)
 	if err != nil {
 		return xerrors.Errorf("get %s failed: %w", root, err)
 	}
