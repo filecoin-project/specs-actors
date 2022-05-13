@@ -8,8 +8,8 @@ import (
 
 	address "github.com/filecoin-project/go-address"
 	abi "github.com/filecoin-project/go-state-types/abi"
+	proof "github.com/filecoin-project/go-state-types/proof"
 	miner "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	proof "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	cid "github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	xerrors "golang.org/x/xerrors"

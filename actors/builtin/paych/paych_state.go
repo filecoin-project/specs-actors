@@ -4,6 +4,7 @@ import (
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	paychtypes "github.com/filecoin-project/go-state-types/builtin/v8/paych"
 	"github.com/ipfs/go-cid"
 )
 
@@ -30,10 +31,7 @@ type State struct {
 
 // The Lane state tracks the latest (highest) voucher nonce used to merge the lane
 // as well as the amount it has already redeemed.
-type LaneState struct {
-	Redeemed big.Int
-	Nonce    uint64
-}
+type LaneState = paychtypes.LaneState
 
 const LaneStatesAmtBitwidth = 3
 

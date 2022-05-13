@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"math"
 
+	prooftypes "github.com/filecoin-project/go-state-types/proof"
+
+	minertypes "github.com/filecoin-project/go-state-types/builtin/v8/miner"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -312,7 +316,7 @@ func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *abi
 //	// Sectors skipped while proving that weren't already declared faulty
 //	Skipped bitfield.BitField
 //}
-type PoStPartition = miner0.PoStPartition
+type PoStPartition = minertypes.PoStPartition
 
 // Information submitted by a miner to provide a Window PoSt.
 //type SubmitWindowedPoStParams struct {
@@ -330,7 +334,7 @@ type PoStPartition = miner0.PoStPartition
 //	// The ticket randomness on the chain at the chain commit epoch.
 //	ChainCommitRand abi.Randomness
 //}
-type SubmitWindowedPoStParams = miner0.SubmitWindowedPoStParams
+type SubmitWindowedPoStParams = minertypes.SubmitWindowedPoStParams
 
 // Invoked by miner's worker address to submit their fallback post
 func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) *abi.EmptyValue {
@@ -2251,7 +2255,7 @@ func (a Actor) ProveReplicaUpdates(rt Runtime, params *ProveReplicaUpdatesParams
 				builtin.RequirePredicate(rt, updateWithDetails.update.UpdateProofType == updateProofType, exitcode.ErrIllegalArgument, "unsupported update proof type %d", updateWithDetails.update.UpdateProofType)
 
 				err = rt.VerifyReplicaUpdate(
-					proof.ReplicaUpdateInfo{
+					prooftypes.ReplicaUpdateInfo{
 						UpdateProofType:      updateProofType,
 						NewSealedSectorCID:   updateWithDetails.update.NewSealedSectorCID,
 						OldSealedSectorCID:   updateWithDetails.sectorInfo.SealedCID,

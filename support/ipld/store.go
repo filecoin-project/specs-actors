@@ -31,7 +31,7 @@ func NewBlockStoreInMemory() *BlockStoreInMemory {
 	return &BlockStoreInMemory{make(map[cid.Cid]block.Block)}
 }
 
-func (mb *BlockStoreInMemory) Get(c cid.Cid) (block.Block, error) {
+func (mb *BlockStoreInMemory) Get(ctx context.Context, c cid.Cid) (block.Block, error) {
 	d, ok := mb.data[c]
 	if ok {
 		return d, nil
@@ -39,7 +39,7 @@ func (mb *BlockStoreInMemory) Get(c cid.Cid) (block.Block, error) {
 	return nil, fmt.Errorf("not found")
 }
 
-func (mb *BlockStoreInMemory) Put(b block.Block) error {
+func (mb *BlockStoreInMemory) Put(ctx context.Context, b block.Block) error {
 	mb.data[b.Cid()] = b
 	return nil
 }
@@ -60,16 +60,16 @@ func NewSyncBlockStore(bs ipldcbor.IpldBlockstore) *SyncBlockStore {
 	}
 }
 
-func (ss *SyncBlockStore) Get(c cid.Cid) (block.Block, error) {
+func (ss *SyncBlockStore) Get(ctx context.Context, c cid.Cid) (block.Block, error) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	return ss.bs.Get(c)
+	return ss.bs.Get(ctx, c)
 }
 
-func (ss *SyncBlockStore) Put(b block.Block) error {
+func (ss *SyncBlockStore) Put(ctx context.Context, b block.Block) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	return ss.bs.Put(b)
+	return ss.bs.Put(ctx, b)
 }
 
 //
@@ -89,9 +89,9 @@ func NewMetricsBlockStore(underlying ipldcbor.IpldBlockstore) *MetricsBlockStore
 	return &MetricsBlockStore{bs: underlying}
 }
 
-func (ms *MetricsBlockStore) Get(c cid.Cid) (block.Block, error) {
+func (ms *MetricsBlockStore) Get(ctx context.Context, c cid.Cid) (block.Block, error) {
 	ms.Reads++
-	blk, err := ms.bs.Get(c)
+	blk, err := ms.bs.Get(ctx, c)
 	if err != nil {
 		return blk, err
 	}
@@ -99,10 +99,10 @@ func (ms *MetricsBlockStore) Get(c cid.Cid) (block.Block, error) {
 	return blk, nil
 }
 
-func (ms *MetricsBlockStore) Put(b block.Block) error {
+func (ms *MetricsBlockStore) Put(ctx context.Context, b block.Block) error {
 	ms.Writes++
 	ms.WriteBytes += uint64(len(b.RawData()))
-	return ms.bs.Put(b)
+	return ms.bs.Put(ctx, b)
 }
 
 func (ms *MetricsBlockStore) ReadCount() uint64 {
@@ -119,4 +119,27 @@ func (ms *MetricsBlockStore) ReadSize() uint64 {
 
 func (ms *MetricsBlockStore) WriteSize() uint64 {
 	return ms.WriteBytes
+}
+
+type SyncBlockStoreInMemory struct {
+	bs *BlockStoreInMemory
+	mu sync.Mutex
+}
+
+func NewSyncBlockStoreInMemory() *SyncBlockStoreInMemory {
+	return &SyncBlockStoreInMemory{
+		bs: NewBlockStoreInMemory(),
+	}
+}
+
+func (ss *SyncBlockStoreInMemory) Get(ctx context.Context, c cid.Cid) (block.Block, error) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.bs.Get(ctx, c)
+}
+
+func (ss *SyncBlockStoreInMemory) Put(ctx context.Context, b block.Block) error {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.bs.Put(ctx, b)
 }

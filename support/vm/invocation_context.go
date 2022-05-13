@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"runtime/debug"
 
+	prooftypes "github.com/filecoin-project/go-state-types/proof"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -261,7 +263,7 @@ func (ic *invocationContext) VerifyAggregateSeals(agg proof.AggregateSealVerifyP
 	return ic.Syscalls().VerifyAggregateSeals(agg)
 }
 
-func (ic *invocationContext) VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error {
+func (ic *invocationContext) VerifyReplicaUpdate(replicaInfo prooftypes.ReplicaUpdateInfo) error {
 	ic.topLevel.fakeSyscallsAccessed = true
 	return ic.Syscalls().VerifyReplicaUpdate(replicaInfo)
 }

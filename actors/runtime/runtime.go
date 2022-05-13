@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 
+	prooftypes "github.com/filecoin-project/go-state-types/proof"
+
 	addr "github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
@@ -11,9 +13,6 @@ import (
 	"github.com/filecoin-project/go-state-types/network"
 	"github.com/filecoin-project/go-state-types/rt"
 	cid "github.com/ipfs/go-cid"
-
-	proof5 "github.com/filecoin-project/specs-actors/v5/actors/runtime/proof"
-	"github.com/filecoin-project/specs-actors/v7/actors/runtime/proof"
 )
 
 // Interfaces for the runtime.
@@ -183,15 +182,15 @@ type Syscalls interface {
 	ComputeUnsealedSectorCID(reg abi.RegisteredSealProof, pieces []abi.PieceInfo) (cid.Cid, error)
 	// Verifies a sector seal proof.
 	// Deprecated and un-used.
-	VerifySeal(vi proof.SealVerifyInfo) error
+	VerifySeal(vi prooftypes.SealVerifyInfo) error
 
-	BatchVerifySeals(vis map[addr.Address][]proof.SealVerifyInfo) (map[addr.Address][]bool, error)
-	VerifyAggregateSeals(aggregate proof.AggregateSealVerifyProofAndInfos) error
+	BatchVerifySeals(vis map[addr.Address][]prooftypes.SealVerifyInfo) (map[addr.Address][]bool, error)
+	VerifyAggregateSeals(aggregate prooftypes.AggregateSealVerifyProofAndInfos) error
 
-	VerifyReplicaUpdate(replicaInfo proof.ReplicaUpdateInfo) error
+	VerifyReplicaUpdate(replicaInfo prooftypes.ReplicaUpdateInfo) error
 
 	// Verifies a proof of spacetime.
-	VerifyPoSt(vi proof5.WindowPoStVerifyInfo) error
+	VerifyPoSt(vi prooftypes.WindowPoStVerifyInfo) error
 	// Verifies that two block headers provide proof of a consensus fault:
 	// - both headers mined by the same actor
 	// - headers are different
