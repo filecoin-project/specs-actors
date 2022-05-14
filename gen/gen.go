@@ -15,22 +15,12 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/reward"
 	"github.com/filecoin-project/specs-actors/actors/builtin/system"
 	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	"github.com/filecoin-project/specs-actors/actors/states"
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
 func main() {
 	// Common types
-	if err := gen.WriteTupleEncodersToFile("./actors/runtime/proof/cbor_gen.go", "proof",
-		proof.SectorInfo{},
-		proof.SealVerifyInfo{},
-		proof.PoStProof{},
-		proof.WindowPoStVerifyInfo{},
-		proof.WinningPoStVerifyInfo{},
-	); err != nil {
-		panic(err)
-	}
 
 	if err := gen.WriteTupleEncodersToFile("./actors/builtin/cbor_gen.go", "builtin",
 		builtin.MinerAddrs{},

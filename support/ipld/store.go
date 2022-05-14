@@ -19,7 +19,7 @@ func NewBlockStoreInMemory() *BlockStoreInMemory {
 	return &BlockStoreInMemory{make(map[cid.Cid]block.Block)}
 }
 
-func (mb *BlockStoreInMemory) Get(c cid.Cid) (block.Block, error) {
+func (mb *BlockStoreInMemory) Get(ctx context.Context, c cid.Cid) (block.Block, error) {
 	d, ok := mb.data[c]
 	if ok {
 		return d, nil
@@ -27,7 +27,7 @@ func (mb *BlockStoreInMemory) Get(c cid.Cid) (block.Block, error) {
 	return nil, fmt.Errorf("not found")
 }
 
-func (mb *BlockStoreInMemory) Put(b block.Block) error {
+func (mb *BlockStoreInMemory) Put(ctx context.Context, b block.Block) error {
 	mb.data[b.Cid()] = b
 	return nil
 }
