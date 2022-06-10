@@ -2,7 +2,6 @@ package nv16
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/filecoin-project/go-state-types/rt"
 	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 	states7 "github.com/filecoin-project/specs-actors/v7/actors/states"
+	"github.com/filecoin-project/specs-actors/v8/actors/builtin/exported"
 	manifest8 "github.com/filecoin-project/specs-actors/v8/actors/builtin/manifest"
 	states8 "github.com/filecoin-project/specs-actors/v8/actors/states"
 	adt8 "github.com/filecoin-project/specs-actors/v8/actors/util/adt"
@@ -125,8 +125,8 @@ func MigrateStateTree(ctx context.Context, store cbor.IpldStore, actorsManifest 
 	}
 	migrations[builtin7.StorageMarketActorCodeID] = marketMigrator{market8Cid}
 
-	if len(migrations)+len(deferredCodeIDs) != 11 {
-		panic(fmt.Sprintf("incomplete migration specification with %d code CIDs", len(migrations)))
+	if len(migrations)+len(deferredCodeIDs) != len(exported.BuiltinActors()) {
+		return cid.Undef, xerrors.Errorf("incomplete migration specification with %d code CIDs", len(migrations))
 	}
 	startTime := time.Now()
 
