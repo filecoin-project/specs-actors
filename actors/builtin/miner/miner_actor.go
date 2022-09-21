@@ -12,6 +12,7 @@ import (
 	"github.com/filecoin-project/go-bitfield"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	miner8 "github.com/filecoin-project/go-state-types/builtin/v8/miner"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/go-state-types/dline"
@@ -107,7 +108,7 @@ func (a Actor) Constructor(rt Runtime, params *ConstructorParams) *abi.EmptyValu
 	checkControlAddresses(rt, params.ControlAddrs)
 	checkPeerInfo(rt, params.PeerId, params.Multiaddrs)
 
-	if !CanWindowPoStProof(params.WindowPoStProofType) {
+	if !miner8.CanWindowPoStProof(params.WindowPoStProofType) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed for new miner actors", params.WindowPoStProofType)
 	}
 
@@ -346,7 +347,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 		rt.Abortf(exitcode.ErrIllegalArgument, "expected exactly one proof, got %d", len(params.Proofs))
 	}
 
-	if !CanWindowPoStProof(params.Proofs[0].PoStProof) {
+	if !miner8.CanWindowPoStProof(params.Proofs[0].PoStProof) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "proof type %d not allowed", params.Proofs[0].PoStProof)
 	}
 
@@ -698,7 +699,7 @@ func (a Actor) PreCommitSectorBatch(rt Runtime, params *PreCommitSectorBatchPara
 		}
 		sectorNumbers.Set(uint64(precommit.SectorNumber))
 
-		if !CanPreCommitSealProof(precommit.SealProof) {
+		if !miner8.CanPreCommitSealProof(precommit.SealProof) {
 			rt.Abortf(exitcode.ErrIllegalArgument, "unsupported seal proof type %v", precommit.SealProof)
 		}
 		if precommit.SectorNumber > abi.MaxSectorNumber {
@@ -1329,7 +1330,7 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in deadline %v partition %v", dlIdx, decl.Partition)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
-					if !CanExtendSealProofType(sector.SealProof) {
+					if !miner8.CanExtendSealProofType(sector.SealProof) {
 						rt.Abortf(exitcode.ErrForbidden, "cannot extend expiration for sector %v with unsupported seal type %v",
 							sector.SectorNumber, sector.SealProof)
 					}

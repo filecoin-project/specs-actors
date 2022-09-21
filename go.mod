@@ -5,9 +5,9 @@ go 1.17
 require (
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-amt-ipld/v4 v4.0.0
-	github.com/filecoin-project/go-bitfield v0.2.3
+	github.com/filecoin-project/go-bitfield v0.2.4
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0
-	github.com/filecoin-project/go-state-types v0.1.3
+	github.com/filecoin-project/go-state-types v0.1.11
 	github.com/filecoin-project/specs-actors v0.9.13
 	github.com/filecoin-project/specs-actors/v2 v2.3.5-0.20210114162132-5b58b773f4fb
 	github.com/filecoin-project/specs-actors/v3 v3.1.0
@@ -17,7 +17,7 @@ require (
 	github.com/filecoin-project/specs-actors/v7 v7.0.0
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-cid v0.0.7
-	github.com/ipfs/go-ipld-cbor v0.0.5
+	github.com/ipfs/go-ipld-cbor v0.0.6-0.20211211231443-5d9b9e1f6fa8
 	github.com/ipfs/go-ipld-format v0.0.2
 	github.com/ipld/go-car v0.1.0
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
