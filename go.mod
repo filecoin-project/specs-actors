@@ -72,3 +72,5 @@ require (
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
+
+replace github.com/ipfs/go-ipld-cbor => github.com/ipfs/go-ipld-cbor v0.0.5
