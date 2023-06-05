@@ -155,8 +155,9 @@ github.com/ipfs/go-ipld-cbor v0.0.4/go.mod h1:BkCduEx3XBCO6t2Sfo5BaHzuok7hbhdMm9
 github.com/ipfs/go-ipld-cbor v0.0.5 h1:ovz4CHKogtG2KB/h1zUp5U0c/IzZrL435rCh5+K/5G8=
 github.com/ipfs/go-ipld-cbor v0.0.5/go.mod h1:BkCduEx3XBCO6t2Sfo5BaHzuok7hbhdMm9Oh8B2Ftq4=
 github.com/ipfs/go-ipld-format v0.0.1/go.mod h1:kyJtbkDALmFHv3QR6et67i35QzO3S0dCDnkOJhcZkms=
-github.com/ipfs/go-ipld-format v0.0.2 h1:OVAGlyYT6JPZ0pEfGntFPS40lfrDmaDbQwNHEY2G9Zs=
 github.com/ipfs/go-ipld-format v0.0.2/go.mod h1:4B6+FM2u9OJ9zCV+kSbgFAZlOrv1Hqbf0INGQgiKf9k=
+github.com/ipfs/go-ipld-format v0.4.1-0.20230530195241-c3da01c74a06 h1:veXief2ep+niDh2HuhDrOk0+W2iqn4QdIcmI+8MD9bc=
+github.com/ipfs/go-ipld-format v0.4.1-0.20230530195241-c3da01c74a06/go.mod h1:ImdZqJQaEouMjCvqCe0ORUS+uoBmf7Hf+EO/jh+nk3M=
 github.com/ipfs/go-log v0.0.1/go.mod h1:kL1d2/hzSpI0thNYjiKfjanbVNU+IIGA/WnNESY9leM=
 github.com/ipfs/go-log v1.0.4 h1:6nLQdX4W8P9yZZFH7mO+X/PzjN8Laozm/lMJ6esdgzY=
 github.com/ipfs/go-log v1.0.4/go.mod h1:oDCg2FkjogeFOhqqb+N39l2RpTNPL6F/StPkB3kPgcs=

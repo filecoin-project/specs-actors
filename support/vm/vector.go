@@ -17,6 +17,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 
 	"github.com/ipfs/go-cid"
+	ipldcbor "github.com/ipfs/go-ipld-cbor"
 	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipld/go-car"
 	cbg "github.com/whyrusleeping/cbor-gen"
@@ -334,7 +335,7 @@ func (a *adtNodeGetter) Get(ctx context.Context, c cid.Cid) (format.Node, error)
 	if err != nil {
 		return nil, err
 	}
-	return format.Decode(b)
+	return format.Decode(b, ipldcbor.DecodeBlock)
 }
 
 func (a *adtNodeGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *format.NodeOption {
