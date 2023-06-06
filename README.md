@@ -1,3 +1,11 @@
+# This repo is deprecated
+
+To support the transition to FVM the specs-actors logic is now actively developed in the [builtin actors](https://github.com/filecoin-project/builtin-actors) code base.  
+
+(Read only) specs-actors code is still called by historical chain syncing but its logic will never change.
+
+Issues in this repo may still be relevant for filecoin protocol and builtin actors development.
+
 # Filecoin actors
 [![CircleCI](https://circleci.com/gh/filecoin-project/specs-actors.svg?style=svg)](https://circleci.com/gh/filecoin-project/specs-actors)
 [![codecov](https://codecov.io/gh/filecoin-project/specs-actors/branch/master/graph/badge.svg)](https://codecov.io/gh/filecoin-project/specs-actors)
